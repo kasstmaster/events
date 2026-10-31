@@ -28,3 +28,5 @@ Automatic routing is an events-only backend service in the existing EventsDataba
 Both Workers require `global_fetch_strictly_public` for the public verification/forwarding architecture. Derive test runtime compatibility settings from production configs and keep a regression check for this flag. Persist only safe stage/status diagnostic codes; never log transport messages, headers, bodies, credentials or probes. Do not force pending jobs active to bypass verification. Public-network routing must be verified after an explicitly approved deployment; mocked local transport is not that verification.
 
 Private runtime verification traces must contain only fixed stage/outcome codes and numeric status. Never copy raw request envelopes, headers, probe values, response bodies or exception messages into diagnostics. Keep tracing independent from activation and preserve pending protections.
+
+Keep public verification fan-out bounded to two and drain each batch before failure/retry or activation. Preserve every proof, asset, context and final inventory/claim check; concurrency must never activate partial verification.

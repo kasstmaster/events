@@ -62,6 +62,53 @@ const env = {
   HOUSEHOLD_ROUTING_ENABLED: "true",
   HOUSEHOLD_DNS_TOKEN: "synthetic-not-real",
 };
+
+test("verification bounds concurrency and drains failed batches before retrying", async () => {
+  const { store } = await fixture();
+  const api = cloudflareRouting();
+  let releaseRoot, rootStarted;
+  const started = new Promise((resolve) => {
+    rootStarted = resolve;
+  });
+  const calls = [];
+  try {
+    const work = runProvisioning(
+      store,
+      env,
+      async (url, init) => {
+        if (url.startsWith("https://api.cloudflare.com/"))
+          return api.fetcher(url, init);
+        calls.push(new URL(url).pathname);
+        if (new URL(url).pathname === "/api/routing/probe")
+          return new Response("unavailable", { status: 404 });
+        rootStarted();
+        return new Promise((resolve) => {
+          releaseRoot = resolve;
+        });
+      },
+      () => 1000,
+    );
+    await started;
+    await new Promise(setImmediate);
+    assert.equal(store.routingJob("dubois").phase, "verifying");
+    assert.deepEqual(calls, ["/api/routing/probe", "/"]);
+    assert.deepEqual(store.activeRoutingHosts(), []);
+    releaseRoot(new Response("/app.js"));
+    await work;
+    assert.equal(store.routingJob("dubois").phase, "pending");
+    assert.equal(
+      store.routingJob("dubois").error,
+      "verification_probe_http_404",
+    );
+    assert.equal(
+      calls.length,
+      2,
+      "later batches cannot run after failed proof",
+    );
+  } finally {
+    store.db.close();
+  }
+});
 function network(
   store,
   api,

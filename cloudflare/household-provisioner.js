@@ -158,7 +158,7 @@ export async function provisionHousehold(
     ["style", "/style.css"],
     ["context", "/api/public/context"],
   ];
-  for (const [stage, path] of paths) {
+  const verify = async ([stage, path]) => {
     let response;
     try {
       response = await fetcher(`https://${hostname}${path}`, {
@@ -203,6 +203,15 @@ export async function provisionHousehold(
       }[stage];
       if (!content.includes(expected)) stop(`verification_${stage}_mismatch`);
     }
+  };
+  // Bound fan-out below the shared Durable Object connection limit, including
+  // callbacks that read ASSETS. Drain each batch before retrying or activating.
+  for (let offset = 0; offset < paths.length; offset += 2) {
+    const results = await Promise.allSettled(
+      paths.slice(offset, offset + 2).map(verify),
+    );
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed) throw failed.reason;
   }
   // Last conflict/claim check before activation. Retired/changed claims cannot activate.
   await inventory();
