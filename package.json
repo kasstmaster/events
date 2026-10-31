@@ -1,0 +1,25 @@
+{
+  "name": "shared-event-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "admin": "node server/admin.js",
+    "test": "node --test test/*.test.js",
+    "test:mobile": "node test/mobile.cjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "playwright": "1.58.2",
+    "prettier": "3.8.1"
+  }
+}
