@@ -10,7 +10,7 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "admin": "node server/admin.js",
-    "test": "node --test test/platform.test.js test/domains.test.js",
+    "test": "node --test test/platform.test.js test/domains.test.js test/provisioning.test.js",
     "test:mobile": "node test/mobile.cjs && node test/domains-mobile.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

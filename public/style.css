@@ -709,3 +709,7 @@ dialog::backdrop {
     display: none;
   }
 }
+
+#household-address {
+  overflow-wrap: anywhere;
+}

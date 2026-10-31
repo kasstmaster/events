@@ -8,7 +8,10 @@ export const alphaOrigin = "https://theraudmans.ilymmd.com";
 export const betaOrigin = "https://thedubois.ilymmd.com";
 export const password = "Synthetic-domain-password-2026";
 export const secret = "synthetic-gateway-key-not-a-real-secret-0123456789";
-export async function domainRuntime() {
+export async function domainRuntime({
+  automatic = false,
+  cloudflareFetch,
+} = {}) {
   const bundle = async (entry) =>
     (
       await build({
@@ -30,10 +33,17 @@ export async function domainRuntime() {
     EVENTS_GATEWAY_SECRET: secret,
     ADMIN_SETUP_TOKEN: "synthetic-setup-token-0123456789-abcdefgh",
   };
+  if (automatic) {
+    bindings.HOUSEHOLD_ROUTING_ENABLED = "true";
+    bindings.HOUSEHOLD_DNS_TOKEN = "synthetic-management-token";
+    bindings.HOUSEHOLD_HOSTS = "";
+  }
+  const trace = [];
   let app;
   const runtime = new Miniflare(
     convertV4MiniflareOptions({
       log: new Log(LogLevel.ERROR),
+      unsafeInspectDurableObjects: true,
       workers: [
         {
           name: "events",
@@ -46,6 +56,27 @@ export async function domainRuntime() {
           durableObjects: {
             EVENTS_DATABASE: { className: "EventsDatabase", useSQLite: true },
           },
+          ...(automatic
+            ? {
+                outboundService: async (req) => {
+                  if (new URL(req.url).hostname === "api.cloudflare.com")
+                    return cloudflareFetch(req);
+                  if (!new URL(req.url).hostname.endsWith(".ilymmd.com"))
+                    throw new Error("Unexpected provisioning destination");
+                  const response = await runtime.dispatchFetch(req.url, {
+                    method: req.method,
+                    headers: req.headers,
+                    body: req.body,
+                    duplex: "half",
+                  });
+                  trace.push({
+                    path: new URL(req.url).pathname,
+                    status: response.status,
+                  });
+                  return response;
+                },
+              }
+            : {}),
           serviceBindings: {
             ASSETS: async (req) => {
               const file = new URL(req.url).pathname.slice(1);
@@ -128,9 +159,9 @@ export async function domainRuntime() {
         : await response.text(),
     };
   }
-  return { runtime, app, gateway, dispatch, request, bindings };
+  return { runtime, app, gateway, dispatch, request, bindings, trace };
 }
-export async function seedDomains(f) {
+export async function seedDomains(f, { simpleNames = false } = {}) {
   const { request } = f;
   const admin = await request("/api/setup", {
     method: "POST",
@@ -146,10 +177,15 @@ export async function seedDomains(f) {
       `Synthetic setup failed: ${admin.status} ${JSON.stringify(admin.body)}`,
     );
   const hosts = [];
-  for (const [i, label, name] of [
-    [0, "theraudmans", "theraudmans"],
-    [1, "thedubois", "thedubois"],
-  ]) {
+  for (const [i, label, name] of simpleNames
+    ? [
+        [0, "raudman", "Raudman"],
+        [1, "dubois", "Dubois"],
+      ]
+    : [
+        [0, "theraudmans", "theraudmans"],
+        [1, "thedubois", "thedubois"],
+      ]) {
     const email = `host${i}@example.test`;
     await request("/api/admin/approvals", {
       method: "POST",

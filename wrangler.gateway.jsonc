@@ -10,5 +10,9 @@
   "send_metrics": false,
   // No routes until approved and provisioned by scripts/prepare-household-routing.js.
   "routes": [],
-  "vars": { "EVENTS_ORIGIN": "", "HOUSEHOLD_HOSTS": "" },
+  "vars": {
+    "EVENTS_ORIGIN": "",
+    "HOUSEHOLD_HOSTS": "",
+    "HOUSEHOLD_ROUTING_ENABLED": "false",
+  },
 }

@@ -5,7 +5,7 @@ import {
   randomUUID,
 } from "node:crypto";
 import { Buffer } from "node:buffer";
-import { configuredHosts } from "../server/household-domains.js";
+import { configuredHosts, hostnameLabel } from "../server/household-domains.js";
 
 export const upstreamOrigin = (value) => {
   if (!/^https:\/\/events\.[a-z0-9-]+\.workers\.dev$/.test(value || ""))
@@ -33,6 +33,7 @@ const forwardedHeaders = [
   "cookie",
   "origin",
   "x-events-client-ip",
+  "x-events-routing-probe",
 ];
 async function digest(request) {
   if (!request.body) return createHash("sha256").update("").digest("hex");
@@ -55,7 +56,11 @@ async function signature(request, secret) {
     request.headers.get("x-events-hostname"),
     request.headers.get("x-events-time"),
     request.headers.get("x-events-nonce"),
-    forwardedHeaders.map((key) => [key, request.headers.get(key)]),
+    forwardedHeaders
+      .filter(
+        (key) => key !== "x-events-routing-probe" || request.headers.has(key),
+      )
+      .map((key) => [key, request.headers.get(key)]),
     await digest(request),
   ]);
   return createHmac("sha256", secret).update(message).digest("hex");
@@ -101,7 +106,13 @@ export async function forwardRequest(request, env) {
 }
 export async function verifyRequest(request, env) {
   const hostname = request.headers.get("x-events-hostname");
-  if (!hostname || !configuredHosts(env.HOUSEHOLD_HOSTS).has(hostname))
+  if (
+    !hostname ||
+    !(
+      configuredHosts(env.HOUSEHOLD_HOSTS).has(hostname) ||
+      (env.HOUSEHOLD_ROUTING_ENABLED === "true" && hostnameLabel(hostname))
+    )
+  )
     return null;
   if (new URL(request.url).origin !== upstreamOrigin(env.EVENTS_ORIGIN))
     return null;

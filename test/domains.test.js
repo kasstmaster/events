@@ -118,6 +118,8 @@ test("registration derives exact names atomically and rejects collisions, reserv
       { status: 400 },
     );
     assert.equal(store.one("SELECT count(*) AS n FROM approvals").n, 3);
+    assert.equal(store.one("SELECT count(*) AS n FROM household_routing").n, 1);
+    assert.equal(store.routingJob("dubois").phase, "pending");
   } finally {
     store.db.close();
   }

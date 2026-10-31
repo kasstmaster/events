@@ -9,6 +9,8 @@
   "preview_urls": false,
   "send_metrics": false,
   "keep_vars": true,
+  // Recovery wake-up for the transactional routing outbox; disabled by runtime flag.
+  "triggers": { "crons": ["*/5 * * * *"] },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

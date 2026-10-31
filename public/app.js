@@ -154,17 +154,12 @@ function setupPage() {
 }
 function subdomainField() {
   return (
-    field(
-      "Household web address",
-      "subdomain",
-      "",
-      "text",
-      'readonly aria-describedby="subdomain-help"',
-    ) +
-    '<p id="subdomain-help" class="small muted">Generated from your household name; it cannot be edited. Use a different household name if the address is unavailable. Your invitation link works immediately; custom routing remains pending until verified.</p>' +
+    '<p class="small">Your household address: <output id="household-address" aria-label="Household web address"></output></p>' +
+    '<p class="small muted">Generated automatically from your household name. Routing activates automatically after verification; your invitation link works while pending.</p>' +
     '<p id="subdomain-status" class="small" role="status"></p>'
   );
 }
+
 let addressTimer;
 async function checkAddress(form) {
   const name = form.elements.name.value;
@@ -175,7 +170,9 @@ async function checkAddress(form) {
       "/api/subdomains?householdName=" + encodeURIComponent(name),
     );
     if (!form.isConnected || form.elements.name.value !== name) return;
-    form.elements.subdomain.value = result.suggested || "";
+    form.querySelector("#household-address").textContent = result.suggested
+      ? `${result.suggested}.ilymmd.com`
+      : "";
     status.textContent = result.available
       ? `${result.suggested}.ilymmd.com is available. Registration will claim it; routing activation is pending.`
       : "That household address is unavailable or invalid. Enter a different household name.";
@@ -654,7 +651,11 @@ document.addEventListener("submit", async (event) => {
 document.addEventListener("input", (event) => {
   const form = event.target.closest("form");
   if (form?.dataset.form === "register" && event.target.name === "name") {
-    form.elements.subdomain.value = suggestLabel(event.target.value);
+    form.querySelector("#household-address").textContent = suggestLabel(
+      event.target.value,
+    )
+      ? `${suggestLabel(event.target.value)}.ilymmd.com`
+      : "";
     form.querySelector("#subdomain-status").textContent = "Checking address…";
     clearTimeout(addressTimer);
     addressTimer = setTimeout(() => void checkAddress(form), 400);

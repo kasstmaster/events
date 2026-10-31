@@ -11,10 +11,19 @@ import {
   betaOrigin,
   password,
 } from "./helpers/domain-runtime.js";
-const f = await domainRuntime();
+import {
+  cloudflareRouting,
+  waitForActive,
+} from "./helpers/cloudflare-routing.js";
+const control = cloudflareRouting();
+const f = await domainRuntime({
+  automatic: true,
+  cloudflareFetch: control.fetcher,
+});
 let browser;
 try {
   const { hosts } = await seedDomains(f);
+  for (const host of hosts) await waitForActive(f, host);
   const fixtures = [];
   for (const [i, origin] of [alphaOrigin, betaOrigin].entries()) {
     const host = hosts[i],
@@ -73,7 +82,14 @@ try {
     await context.route("**/*", async (route) => {
       const req = route.request();
       const origin = new URL(req.url()).origin;
-      if (![canonical, alphaOrigin, betaOrigin].includes(origin))
+      if (
+        ![
+          canonical,
+          alphaOrigin,
+          betaOrigin,
+          "https://dubois.ilymmd.com",
+        ].includes(origin)
+      )
         throw new Error("External browser request blocked");
       const response = await f.dispatch(req.url(), {
         method: req.method(),
@@ -190,20 +206,25 @@ try {
   await page
     .getByRole("button", { name: "Create your account", exact: true })
     .click();
+  assert.equal(await page.locator('input[name="subdomain"]').count(), 0);
+  await page
+    .getByLabel("Family household name", { exact: true })
+    .fill("a".repeat(63));
   assert.equal(
-    await page
-      .getByLabel("Household web address", { exact: true })
-      .getAttribute("readonly"),
-    "",
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+    true,
   );
+
   await page
     .getByLabel("Family household name", { exact: true })
     .fill("Dubois");
   assert.equal(
     await page
       .getByLabel("Household web address", { exact: true })
-      .inputValue(),
-    "dubois",
+      .textContent(),
+    "dubois.ilymmd.com",
   );
   await page
     .getByText("dubois.ilymmd.com is available", { exact: false })
@@ -217,8 +238,8 @@ try {
   assert.equal(
     await page
       .getByLabel("Household web address", { exact: true })
-      .inputValue(),
-    "themeyers",
+      .textContent(),
+    "themeyers.ilymmd.com",
   );
   await page
     .getByLabel("Family household name", { exact: true })
@@ -237,7 +258,11 @@ try {
   });
   const host = await f.request("/api/host", { cookie: session.cookie });
   assert.equal(host.body.household.subdomain, "dubois");
-  assert.equal(host.body.household.subdomainStatus, "pending");
+  const active = await waitForActive(f, {
+    ...host.body.household,
+    cookie: session.cookie,
+  });
+  assert.equal(active.shareUrl, "https://dubois.ilymmd.com/");
   await page.getByRole("button", { name: "✎ Household", exact: true }).click();
   assert.equal(
     await page.getByLabel("Household web address", { exact: true }).count(),
@@ -248,6 +273,9 @@ try {
     .getByRole("button", { name: "Save", exact: true })
     .click();
   await page.getByText("Appearance saved.", { exact: true }).waitFor();
+  await page.goto("https://dubois.ilymmd.com/");
+  await page.getByRole("heading", { name: "Dubois", exact: true }).waitFor();
+  assert.equal(new URL(page.url()).hostname, "dubois.ilymmd.com");
   await context.close();
   assert.deepEqual(errors, []);
   console.log(

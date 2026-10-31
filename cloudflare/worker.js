@@ -2,8 +2,10 @@ import { DurableObject } from "cloudflare:workers";
 import { Buffer } from "node:buffer";
 import { Store } from "../server/model.js";
 import { createHandler } from "../server/handler.js";
-import { configuredHosts } from "../server/household-domains.js";
+import { configuredHosts, hostnameLabel } from "../server/household-domains.js";
 import { verifyRequest, unavailable } from "./gateway-protocol.js";
+
+import { runProvisioning } from "./household-provisioner.js";
 
 // Thin runtime adapters only: authorization, validation and RSVP behavior remain shared.
 function database(storage) {
@@ -69,11 +71,91 @@ export class EventsDatabase extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.store = new Store(database(ctx.storage));
+    ctx.blockConcurrencyWhile(() => this.scheduleRouting());
+  }
+  async scheduleRouting() {
+    if (this.env.HOUSEHOLD_ROUTING_ENABLED !== "true") return;
+    const due = this.store.routingDue();
+    if (due === null || due === undefined) return;
+    const next = Math.max(Date.now() + 1000, due);
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > next)
+      await this.ctx.storage.setAlarm(next);
+  }
+  async alarm() {
+    if (this.env.HOUSEHOLD_ROUTING_ENABLED !== "true") {
+      await this.ctx.storage.deleteAlarm();
+      return;
+    }
+    // Set a recovery alarm first so process termination/exhausted platform retries
+    // cannot strand the transactional outbox. Only one alarm handler runs per DO.
+    await this.ctx.storage.setAlarm(Date.now() + 60000);
+    try {
+      await runProvisioning(this.store, this.env);
+    } finally {
+      if (this.store.routingDue() === null)
+        await this.ctx.storage.deleteAlarm();
+      else await this.scheduleRouting();
+    }
+  }
+  async wakeRouting() {
+    await this.scheduleRouting();
   }
   async fetch(request) {
     const store = this.store;
     const householdHostname =
       request.headers.get("x-events-verified-hostname") || "";
+    const path = new URL(request.url).pathname;
+    if (
+      householdHostname &&
+      !configuredHosts(this.env.HOUSEHOLD_HOSTS).has(householdHostname)
+    ) {
+      const label = hostnameLabel(householdHostname);
+      if (
+        this.env.HOUSEHOLD_ROUTING_ENABLED !== "true" ||
+        !store.routingAllowed(
+          label,
+          request.headers.get("x-events-routing-probe"),
+        )
+      )
+        return unavailable();
+      const job = store.routingJob(label);
+      if (
+        job.phase !== "active" &&
+        (request.method !== "GET" ||
+          ![
+            "/api/routing/status",
+            "/api/routing/probe",
+            "/",
+            "/app.js",
+            "/household-address.js",
+            "/style.css",
+            "/api/public/context",
+          ].includes(path))
+      )
+        return unavailable();
+    }
+    if (path === "/api/routing/status" || path === "/api/routing/probe") {
+      if (!householdHostname || request.method !== "GET") return unavailable();
+      const label = hostnameLabel(householdHostname);
+      try {
+        store.hostnameHousehold(label);
+      } catch {
+        return unavailable();
+      }
+      if (path === "/api/routing/status")
+        return Response.json(
+          { allowed: true, hostname: householdHostname },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      const job = store.routingJob(label);
+      if (!job || request.headers.get("x-events-routing-probe") !== job.probe)
+        return unavailable();
+      return Response.json(
+        { probe: job.probe, household: job.household },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
     // Only this Worker's private DO binding can invoke this adapter. The public edge
     // deletes these internal headers before it verifies the gateway envelope.
     if (householdHostname && request.method !== "GET") {
@@ -101,7 +183,7 @@ export class EventsDatabase extends DurableObject {
         });
       }
     }
-    return serve(request, {
+    const response = await serve(request, {
       store,
       setupSecret: this.env.ADMIN_SETUP_TOKEN || "",
       setupEmail: this.env.BOOTSTRAP_ADMIN_EMAIL || "",
@@ -111,7 +193,12 @@ export class EventsDatabase extends DurableObject {
         : this.env.APP_ORIGIN || new URL(request.url).origin,
       canonicalOrigin: this.env.APP_ORIGIN || new URL(request.url).origin,
       householdHostname,
-      householdHosts: configuredHosts(this.env.HOUSEHOLD_HOSTS),
+      householdHosts: new Set([
+        ...configuredHosts(this.env.HOUSEHOLD_HOSTS),
+        ...(this.env.HOUSEHOLD_ROUTING_ENABLED === "true"
+          ? store.activeRoutingHosts()
+          : []),
+      ]),
       readAsset: async (file) => {
         const response = await this.env.ASSETS.fetch(
           new URL("/" + file, request.url),
@@ -120,9 +207,30 @@ export class EventsDatabase extends DurableObject {
         return Buffer.from(await response.arrayBuffer());
       },
     });
+    if (
+      request.method === "POST" &&
+      path === "/api/register" &&
+      response.status === 201
+    ) {
+      // Claim + job already committed together; retry scheduling on the next wake
+      // if storage scheduling itself fails, without pretending registration failed.
+      try {
+        await this.scheduleRouting();
+      } catch {
+        /* durable outbox retained */
+      }
+    }
+    return response;
   }
 }
 export default {
+  async scheduled(event, env) {
+    if (env.HOUSEHOLD_ROUTING_ENABLED !== "true") return;
+    const stub = env.EVENTS_DATABASE.get(
+      env.EVENTS_DATABASE.idFromName("events-platform-v1"),
+    );
+    await stub.wakeRouting();
+  },
   async fetch(request, env) {
     if (env.EVENTS_ORIGIN && new URL(request.url).origin !== env.EVENTS_ORIGIN)
       return unavailable(403);

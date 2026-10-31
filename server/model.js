@@ -136,6 +136,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS session_origins(token TEXT PRIMARY KEY, origin TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS gateway_nonces(nonce TEXT PRIMARY KEY, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS household_domains(label TEXT PRIMARY KEY COLLATE NOCASE, household TEXT NOT NULL, retired INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS household_routing(label TEXT PRIMARY KEY COLLATE NOCASE, household TEXT NOT NULL, id TEXT NOT NULL, probe TEXT NOT NULL, phase TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0, dns_id TEXT, route_id TEXT, error TEXT, verified_at INTEGER);
       CREATE TABLE IF NOT EXISTS limits(key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS record_chunks(kind TEXT NOT NULL, id TEXT NOT NULL, household TEXT NOT NULL, chunk INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(kind,id,household,chunk));`);
   }
@@ -291,6 +292,84 @@ export class Store {
       label,
     );
     return !claim || (claim.household === household && !claim.retired);
+  }
+  routingClaim(label, household) {
+    const claim = this.one(
+      "SELECT * FROM household_domains WHERE label=? AND household=? AND retired=0",
+      label,
+      household,
+    );
+    return !!claim && this.household(household)?.subdomain === label;
+  }
+  routingJob(label) {
+    return this.one("SELECT * FROM household_routing WHERE label=?", label);
+  }
+  nextRoutingJob(now) {
+    return this.one(
+      "SELECT * FROM household_routing WHERE phase!='active' AND next_attempt<=? ORDER BY next_attempt,label LIMIT 1",
+      now,
+    );
+  }
+  routingDue() {
+    return this.one(
+      "SELECT min(next_attempt) AS due FROM household_routing WHERE phase!='active'",
+    )?.due;
+  }
+  routingReceipt(label, receipt) {
+    this.run(
+      "UPDATE household_routing SET dns_id=COALESCE(?,dns_id), route_id=COALESCE(?,route_id) WHERE label=?",
+      receipt.dns_id || null,
+      receipt.route_id || null,
+      label,
+    );
+  }
+  routingPhase(label, phase) {
+    this.run(
+      "UPDATE household_routing SET phase=? WHERE label=?",
+      phase,
+      label,
+    );
+  }
+  retryRouting(label, code, now) {
+    const attempts = (this.routingJob(label)?.attempts || 0) + 1;
+    this.run(
+      "UPDATE household_routing SET phase='pending', attempts=?, next_attempt=?, error=? WHERE label=?",
+      attempts,
+      now + Math.min(3600000, 30000 * 2 ** Math.min(attempts - 1, 7)),
+      code,
+      label,
+    );
+  }
+  activateRouting(label, household, now) {
+    this.transaction(() => {
+      if (!this.routingClaim(label, household))
+        fail(409, "Household address unavailable.");
+      this.run(
+        "UPDATE household_routing SET phase='active', verified_at=?, error=NULL WHERE label=? AND household=?",
+        now,
+        label,
+        household,
+      );
+    });
+  }
+  activeRoutingHosts() {
+    return this.all(
+      "SELECT label,household FROM household_routing WHERE phase='active'",
+    )
+      .filter((j) => this.routingClaim(j.label, j.household))
+      .map((j) => `${j.label}.ilymmd.com`);
+  }
+  routingAllowed(label, probe) {
+    const job = this.routingJob(label);
+    if (!job || !this.routingClaim(label, job.household)) return false;
+    return (
+      job.phase === "active" ||
+      (job.phase === "verifying" &&
+        typeof probe === "string" &&
+        /^[a-f0-9]{64}$/.test(probe) &&
+        probe.length === job.probe.length &&
+        timingSafeEqual(Buffer.from(probe), Buffer.from(job.probe)))
+    );
   }
   consumeGatewayNonce(nonce) {
     this.transaction(() => {
@@ -496,6 +575,13 @@ export class Store {
         design: {},
         subdomain: this.claimDomain(label, household),
       });
+      this.run(
+        "INSERT INTO household_routing(label,household,id,probe) VALUES(?,?,?,?)",
+        label,
+        household,
+        id(),
+        randomBytes(32).toString("hex"),
+      );
       this.run(
         "INSERT INTO users VALUES(?,?,?,?,?)",
         user,
