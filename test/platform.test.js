@@ -943,6 +943,16 @@ test("malformed menus, dates, styles and registry IDs fail validation without st
     event = await f.addEvent(h, []);
   for (const patch of [
     { menu: [null] },
+    {
+      menu: [
+        {
+          id: "constructor",
+          name: "Unsafe identifier",
+          kind: "potluck",
+          quantity: 1,
+        },
+      ],
+    },
     { date: "2028-02-31" },
     { registries: [null] },
     {
@@ -964,4 +974,38 @@ test("malformed menus, dates, styles and registry IDs fail validation without st
     (await f.request("/api/host", { cookie: h.cookie })).body.events[0].version,
     1,
   );
+});
+
+test("administrator CLI bootstraps a private persisted database and rejects duplicate accounts", async (t) => {
+  const { spawnSync } = await import("node:child_process");
+  const dir = await mkdtemp(join(tmpdir(), "events-bootstrap-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, "private", "store.sqlite"),
+    env = {
+      ...process.env,
+      ADMIN_EMAIL: "operator@example.test",
+      ADMIN_PASSWORD: password,
+      DATABASE_PATH: path,
+    };
+  const first = spawnSync(process.execPath, ["server/admin.js"], {
+    env,
+    encoding: "utf8",
+  });
+  assert.equal(first.status, 0, first.stderr);
+  assert.match(first.stdout, /Administrator created/);
+  assert.equal(first.stdout.includes(password), false);
+  const duplicate = spawnSync(process.execPath, ["server/admin.js"], {
+    env,
+    encoding: "utf8",
+  });
+  assert.equal(duplicate.status, 1);
+  const reopened = new Store(path);
+  assert.equal(
+    reopened.one(
+      "SELECT role FROM users WHERE email=?",
+      "operator@example.test",
+    ).role,
+    "admin",
+  );
+  reopened.db.close();
 });

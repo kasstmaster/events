@@ -117,7 +117,11 @@ function eventInput(input, store, household, existing) {
     )
       fail(400, "Menu quantities must be between 1 and 10,000.");
     const key = item.id || id();
-    if (typeof key !== "string" || !/^[a-zA-Z0-9-]{1,80}$/.test(key))
+    if (
+      typeof key !== "string" ||
+      !/^[a-zA-Z0-9-]{1,80}$/.test(key) ||
+      Object.hasOwn(Object.prototype, key)
+    )
       fail(400, "Invalid item.");
     return {
       id: key,
