@@ -4,6 +4,30 @@ import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
+import { routingDiagnostic } from "../cloudflare/routing-diagnostics.js";
+
+test("runtime verification diagnostics reject private or unrecognized values", () => {
+  const output = [];
+  const report = (...fields) => output.push(fields);
+  routingDiagnostic("context", "shared_response", 404, report);
+  assert.deepEqual(output, [
+    ["events-routing-check", "context", "shared_response", 404],
+  ]);
+  for (const value of [
+    "private-token-or-household",
+    { secret: "private-probe" },
+    null,
+    404,
+  ]) {
+    routingDiagnostic(value, "shared_response", 404, report);
+    routingDiagnostic("context", value, 404, report);
+    routingDiagnostic("context", "shared_response", value, report);
+  }
+  for (const status of [99, 600, NaN, Infinity, 200.5])
+    routingDiagnostic("status", "allowed", status, report);
+  assert.equal(output.length, 2); // Only the numeric 404 status above is valid.
+  assert.doesNotMatch(JSON.stringify(output), /private|secret|probe/);
+});
 import { Store } from "../server/node-store.js";
 import {
   runProvisioning,

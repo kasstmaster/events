@@ -6,6 +6,7 @@ import { configuredHosts, hostnameLabel } from "../server/household-domains.js";
 import { verifyRequest, unavailable } from "./gateway-protocol.js";
 
 import { runProvisioning } from "./household-provisioner.js";
+import { routingDiagnostic } from "./routing-diagnostics.js";
 
 // Thin runtime adapters only: authorization, validation and RSVP behavior remain shared.
 function database(storage) {
@@ -106,6 +107,20 @@ export class EventsDatabase extends DurableObject {
     const householdHostname =
       request.headers.get("x-events-verified-hostname") || "";
     const path = new URL(request.url).pathname;
+    // Diagnostic codes only, for signed gateway verification reads. Never log
+    // hostname, headers, probe, household, response body or exception values.
+    const routingCheck = (stage, status) => {
+      if (
+        householdHostname &&
+        request.headers.has("x-events-routing-probe") &&
+        ["/api/routing/status", "/api/public/context"].includes(path)
+      )
+        routingDiagnostic(
+          path === "/api/routing/status" ? "status" : "context",
+          stage,
+          status,
+        );
+    };
     if (
       householdHostname &&
       !configuredHosts(this.env.HOUSEHOLD_HOSTS).has(householdHostname)
@@ -117,8 +132,10 @@ export class EventsDatabase extends DurableObject {
           label,
           request.headers.get("x-events-routing-probe"),
         )
-      )
+      ) {
+        routingCheck("claim_denied", 404);
         return unavailable();
+      }
       const job = store.routingJob(label);
       if (
         job.phase !== "active" &&
@@ -141,13 +158,16 @@ export class EventsDatabase extends DurableObject {
       try {
         store.hostnameHousehold(label);
       } catch {
+        routingCheck("household_missing", 404);
         return unavailable();
       }
-      if (path === "/api/routing/status")
+      if (path === "/api/routing/status") {
+        routingCheck("allowed", 200);
         return Response.json(
           { allowed: true, hostname: householdHostname },
           { headers: { "Cache-Control": "no-store" } },
         );
+      }
       const job = store.routingJob(label);
       if (!job || request.headers.get("x-events-routing-probe") !== job.probe)
         return unavailable();
@@ -220,6 +240,7 @@ export class EventsDatabase extends DurableObject {
         /* durable outbox retained */
       }
     }
+    routingCheck("shared_response", response.status);
     return response;
   }
 }
