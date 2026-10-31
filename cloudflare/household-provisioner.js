@@ -35,9 +35,9 @@ export async function provisionHousehold(
     stop("credentials_missing");
   // All API paths and destinations are fixed; a household cannot select account/zone/script.
   async function api(path, method = "GET", data) {
-    const response = await fetcher(
-      "https://api.cloudflare.com/client/v4" + path,
-      {
+    let response;
+    try {
+      response = await fetcher("https://api.cloudflare.com/client/v4" + path, {
         method,
         redirect: "manual",
         signal: AbortSignal.timeout(10000),
@@ -46,8 +46,10 @@ export async function provisionHousehold(
           "Content-Type": "application/json",
         },
         ...(data ? { body: JSON.stringify(data) } : {}),
-      },
-    );
+      });
+    } catch {
+      stop("cloudflare_transport_failed");
+    }
     if (!response.ok)
       stop(
         response.status === 401 || response.status === 403
@@ -149,44 +151,57 @@ export async function provisionHousehold(
   // Public HTTPS traverses DNS, TLS and the domain-account gateway. A secret probe
   // permits only these anonymous GETs before activation; no sessions/mutations.
   const paths = [
-    "/api/routing/probe",
-    "/",
-    "/app.js",
-    "/household-address.js",
-    "/style.css",
-    "/api/public/context",
+    ["probe", "/api/routing/probe"],
+    ["root", "/"],
+    ["app", "/app.js"],
+    ["normalizer", "/household-address.js"],
+    ["style", "/style.css"],
+    ["context", "/api/public/context"],
   ];
-  for (const path of paths) {
-    const response = await fetcher(`https://${hostname}${path}`, {
-      redirect: "manual",
-      signal: AbortSignal.timeout(10000),
-      headers: {
-        "x-events-routing-probe": job.probe,
-        "Cache-Control": "no-cache",
-      },
-    });
-    if (!response.ok || response.headers.has("set-cookie"))
-      stop("verification_pending");
-    if (path === "/api/routing/probe") {
-      const proof = await response.json();
-      if (proof.probe !== job.probe || proof.household !== job.household)
-        stop("verification_mismatch");
-    } else if (path === "/api/public/context") {
-      const context = await response.json();
-      if (context.household?.id !== job.household)
-        stop("verification_mismatch");
-    } else {
-      const content = await response.text();
+  for (const [stage, path] of paths) {
+    let response;
+    try {
+      response = await fetcher(`https://${hostname}${path}`, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(10000),
+        headers: {
+          "x-events-routing-probe": job.probe,
+          "Cache-Control": "no-cache",
+        },
+      });
+    } catch {
+      stop(`verification_${stage}_transport_failed`);
+    }
+    if (!response.ok) stop(`verification_${stage}_http_${response.status}`);
+    if (response.headers.has("set-cookie"))
+      stop(`verification_${stage}_unexpected_cookie`);
+    if (stage === "probe" || stage === "context") {
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        stop(`verification_${stage}_invalid_json`);
+      }
       if (
-        path === "/"
-          ? !content.includes("/app.js")
-          : path === "/app.js"
-            ? !content.includes("suggestLabel")
-            : path === "/household-address.js"
-              ? !content.includes("export function suggestLabel")
-              : !content.includes("--")
+        stage === "probe"
+          ? data?.probe !== job.probe || data?.household !== job.household
+          : data?.household?.id !== job.household
       )
-        stop("verification_mismatch");
+        stop(`verification_${stage}_mismatch`);
+    } else {
+      let content;
+      try {
+        content = await response.text();
+      } catch {
+        stop(`verification_${stage}_body_failed`);
+      }
+      const expected = {
+        root: "/app.js",
+        app: "suggestLabel",
+        normalizer: "export function suggestLabel",
+        style: "--",
+      }[stage];
+      if (!content.includes(expected)) stop(`verification_${stage}_mismatch`);
     }
   }
   // Last conflict/claim check before activation. Retired/changed claims cannot activate.

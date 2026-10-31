@@ -1,5 +1,6 @@
+import { parse } from "jsonc-parser";
 import test from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
@@ -357,6 +358,72 @@ test("incomplete paginated inventories and redirects fail closed", async () => {
         store.routingJob(job.label).error,
         /inventory_incomplete|cloudflare_unavailable/,
       );
+    } finally {
+      store.db.close();
+    }
+  }
+});
+
+test("production Worker configs use public fetch semantics for both directions", async () => {
+  for (const file of ["wrangler.jsonc", "wrangler.gateway.jsonc"]) {
+    const config = parse(await readFile(file, "utf8"));
+    assert.ok(
+      config.compatibility_flags.includes("global_fetch_strictly_public"),
+      `${file}: public verification must reach the routed gateway, not its 100:: placeholder origin`,
+    );
+    assert.ok(config.compatibility_flags.includes("nodejs_compat"));
+  }
+});
+
+test("verification failures persist only safe stage/status codes, never private transport details", async () => {
+  for (const scenario of [
+    "transport",
+    "http",
+    "cookie",
+    "json",
+    "null",
+    "body",
+    "api",
+  ]) {
+    const { store, job } = await fixture();
+    const api = cloudflareRouting();
+    const normal = network(store, api);
+    try {
+      const fetcher = async (url, init) => {
+        if (url.startsWith("https://api.cloudflare.com/")) {
+          if (scenario === "api")
+            throw new Error("synthetic-private-control-plane-detail");
+          return normal(url, init);
+        }
+        if (scenario === "transport")
+          throw new Error("synthetic-private-probe-detail");
+        if (scenario === "http")
+          return new Response("synthetic-private-body", { status: 403 });
+        if (scenario === "cookie")
+          return new Response("{}", {
+            headers: { "set-cookie": "synthetic-private-cookie" },
+          });
+        if (scenario === "json") return new Response("invalid-json");
+        if (scenario === "null") return Response.json(null);
+        if (scenario === "body" && url.endsWith("/app.js"))
+          return new Response("unexpected");
+        return normal(url, init);
+      };
+      await runProvisioning(store, env, fetcher, () => 1000);
+      assert.equal(store.routingJob(job.label).phase, "pending");
+      assert.equal(
+        store.routingJob(job.label).error,
+        {
+          transport: "verification_probe_transport_failed",
+          http: "verification_probe_http_403",
+          cookie: "verification_probe_unexpected_cookie",
+          json: "verification_probe_invalid_json",
+          null: "verification_probe_mismatch",
+          body: "verification_app_mismatch",
+          api: "cloudflare_transport_failed",
+        }[scenario],
+      );
+      assert.equal(store.activeRoutingHosts().length, 0);
     } finally {
       store.db.close();
     }

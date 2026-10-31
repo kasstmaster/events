@@ -4,7 +4,7 @@
   "account_id": "37d068144865a0b725ee272bc7b2eb71",
   "main": "cloudflare/worker.js",
   "compatibility_date": "2026-10-30",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "workers_dev": true,
   "preview_urls": false,
   "send_metrics": false,

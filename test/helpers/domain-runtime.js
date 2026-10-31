@@ -3,6 +3,7 @@ import { Miniflare, Log, LogLevel, convertV4MiniflareOptions } from "miniflare";
 import { build } from "esbuild";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { parse } from "jsonc-parser";
 export const canonical = "https://events.synthetic.workers.dev";
 export const alphaOrigin = "https://theraudmans.ilymmd.com";
 export const betaOrigin = "https://thedubois.ilymmd.com";
@@ -12,6 +13,8 @@ export async function domainRuntime({
   automatic = false,
   cloudflareFetch,
 } = {}) {
+  const appConfig = parse(await readFile("wrangler.jsonc", "utf8"));
+  const gatewayConfig = parse(await readFile("wrangler.gateway.jsonc", "utf8"));
   const bundle = async (entry) =>
     (
       await build({
@@ -50,8 +53,8 @@ export async function domainRuntime({
           routes: ["events.synthetic.workers.dev/*"],
           modules: true,
           script: await bundle("cloudflare/worker.js"),
-          compatibilityDate: "2026-10-30",
-          compatibilityFlags: ["nodejs_compat"],
+          compatibilityDate: appConfig.compatibility_date,
+          compatibilityFlags: appConfig.compatibility_flags,
           bindings,
           durableObjects: {
             EVENTS_DATABASE: { className: "EventsDatabase", useSQLite: true },
@@ -98,8 +101,8 @@ export async function domainRuntime({
           routes: ["*.ilymmd.com/*"],
           modules: true,
           script: await bundle("cloudflare/gateway.js"),
-          compatibilityDate: "2026-10-30",
-          compatibilityFlags: ["nodejs_compat", "global_fetch_strictly_public"],
+          compatibilityDate: gatewayConfig.compatibility_date,
+          compatibilityFlags: gatewayConfig.compatibility_flags,
           bindings,
           outboundService: async (req) => {
             if (new URL(req.url).origin !== canonical)

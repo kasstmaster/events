@@ -1,3 +1,11 @@
+# Pending-verification correction review
+
+This review revision adds `global_fetch_strictly_public` to the events Worker (already enabled on the gateway) so verification uses public Worker routing. The Name job's DNS/route already exists but the job remains pending; its original generic error cannot identify the failed request. This correction adds safe stage/status-only diagnostic codes without recording probe/credential values, URLs, bodies or upstream exception messages. No pending job is forced active.
+
+The local gateway/runtime topology now consumes production compatibility dates/flags. New regression checks cover both config files and diagnostic failures, in addition to the existing automatic registration/activation, privacy, concurrency and phone/desktop suites. Live public verification after approval is still required; this is a likely configuration correction, not a claim that Name is already active.
+
+Only the existing events Worker needs a newly approved deployment. No gateway code/DNS/routes/bindings/secrets/cron/data migration changes are proposed. Preserve the active deployment as the rollback checkpoint and all routing metadata. The previously deployed release and its recorded checks are described below.
+
 # Review: automatic immutable household addresses
 
 The shared registration flow derives the exact normalized whole-name address without a separate domain input, extra words, suffixes or editing. The server atomically claims it with approval consumption/user/household creation and a durable outbox job. Collisions/reserved/retired names fail without consuming approval. Existing claims and opaque links/QR remain intact; display-name changes do not rename domains.

@@ -1,5 +1,13 @@
 # Household addresses: architecture, deployment and rollback
 
+## Pending-verification correction (review only)
+
+Live Name registration created its exact proxied record/route but remained pending with the original generic `verification_pending` error. The events Worker production flags contain only `nodejs_compat`; the gateway already enables `global_fetch_strictly_public`. This revision adds public-fetch semantics to events as well. Cloudflare's [compatibility-flag documentation](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public) and [Worker fetch documentation](https://developers.cloudflare.com/workers/runtime-apis/fetch/#worker-to-worker) specify public routing for Worker-to-Worker fetch. Without it, legacy routing can bypass the Worker and target its placeholder origin. This is the leading configuration cause; successful live verification after approved deployment is required to confirm resolution.
+
+The verifier now records only a fixed stage and safe HTTP/failure code, such as `verification_probe_transport_failed` or `verification_app_http_404`, instead of losing the failed step in a generic error. It never records secret/probe/header/body/error-message values. Unknown failures remain generic. Failed checks still stay pending and share opaque links; no activation is forced.
+
+The local topology now reads dates/flags from actual production config files instead of duplicating them. Regression checks require both Workers to enable public fetch and exercise safe diagnostics for transport, status, unexpected cookies, malformed/null JSON and asset mismatch. Local mocked transport cannot prove actual public cross-account delivery. No new schema, credential, binding, DNS/route or gateway-code change is proposed. After approval, deploy only the events Worker and let the existing Name job retry (or separately authorize advancing its retry time); retain all existing secrets, flags, cron, storage and websites. Rollback is to the currently deployed events version with all existing metadata retained, or disable automation as described below. No deployment is authorized merely by publishing this correction.
+
 ## Current source and live status
 
 This automatic-routing follow-up is implemented for review and **not deployed**. The prior approved source `71eaa2e` remains deployed as application version `63356f37-9fe0-43ae-836b-57fea4607430` and gateway version `54c5a9f1-11a9-43e2-95c3-94a2b19aaf9b`. Both previously inspected exact-host allowlists are empty; no household DNS records/routes were created. Existing opaque links continue working. Do not confuse published source or local tests with live activation.
