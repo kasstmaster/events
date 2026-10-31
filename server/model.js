@@ -126,6 +126,7 @@ export class Store {
     this.transactionDepth = 0;
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','host')), household TEXT);
+      CREATE TABLE IF NOT EXISTS setup_state(id INTEGER PRIMARY KEY CHECK(id=1), completed INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS approvals(email TEXT PRIMARY KEY, created TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL, id TEXT NOT NULL, household TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, body TEXT NOT NULL, PRIMARY KEY(kind,id));
       CREATE INDEX IF NOT EXISTS tenant_records ON records(household,kind);
@@ -330,6 +331,36 @@ export class Store {
     );
     if (this.one("SELECT count FROM limits WHERE key=?", key).count > max)
       fail(429, "Too many attempts. Please try again later.");
+  }
+  adminSetupComplete() {
+    return Boolean(
+      this.one("SELECT id FROM users WHERE role='admin' LIMIT 1") ||
+      this.one("SELECT id FROM setup_state WHERE id=1 AND completed=1"),
+    );
+  }
+  async setupAdmin(address, password) {
+    if (this.adminSetupComplete())
+      fail(410, "Administrator setup is already complete.");
+    const normalized = email(address),
+      hash = await hashPassword(password);
+    return this.transaction(() => {
+      if (this.adminSetupComplete())
+        fail(410, "Administrator setup is already complete.");
+      if (this.one("SELECT id FROM users WHERE email=?", normalized))
+        fail(409, "These administrator details are unavailable.");
+      const user = id();
+      this.run(
+        "INSERT INTO users VALUES(?,?,?,?,NULL)",
+        user,
+        normalized,
+        hash,
+        "admin",
+      );
+      this.run(
+        "INSERT INTO setup_state VALUES(1,1) ON CONFLICT(id) DO UPDATE SET completed=1",
+      );
+      return { user, role: "admin" };
+    });
   }
   async createAdmin(address, password) {
     this.run(

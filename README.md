@@ -13,7 +13,7 @@ npm start
 
 The default server is `http://127.0.0.1:3000`. The default database is `var/events.sqlite`; the directory is ignored by Git. Keep the application server running for cross-device use. Data is never stored primarily in browser local storage.
 
-Create the initial administrator with `npm run admin` after supplying `ADMIN_EMAIL` and `ADMIN_PASSWORD` through a secure shell environment. There is no default account or password; use at least 12 characters. Do not put passwords in source code, shell command history, or committed configuration. Unset the bootstrap variables afterward. The command creates an administrator account, never sends an email, and refuses duplicate email addresses.
+For this local Node development workflow, create the initial administrator with `npm run admin` after supplying `ADMIN_EMAIL` and `ADMIN_PASSWORD` through a secure shell environment. There is no default account or password; use at least 12 characters. Do not put passwords in source code, shell command history, or committed configuration. Unset the bootstrap variables afterward. The command creates an administrator account, never sends an email, and refuses duplicate email addresses.
 
 ### Everyday workflow
 
@@ -74,7 +74,7 @@ Appearance resolves as **platform defaults → household settings → event over
 | `NODE_ENV`                      | unset                   | `production` requires HTTPS `APP_ORIGIN`                                                         |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | none                    | Initial administrator CLI only; never needed by the running server                               |
 
-Cloudflare is the selected deployment target, using a separate `gather-events-platform` Worker and SQLite-backed Durable Object in the owner's chosen account. See [deployment and administrator bootstrap instructions](docs/cloudflare.md). `npm run deploy:cloudflare` requires working Cloudflare authentication; configuration or a dry run alone does not establish a live deployment. No custom domain route or existing gatherings resource is changed. The administrator is bootstrapped once from an encrypted password-hash secret, never from a public first-user registration flow.
+Cloudflare is the selected deployment target, using a separate `events` Worker and SQLite-backed Durable Object in the owner's chosen account. See [deployment and administrator bootstrap instructions](docs/cloudflare.md). `npm run deploy:cloudflare` requires working Cloudflare authentication; configuration or a dry run alone does not establish a live deployment. No custom domain route or existing gatherings resource is changed. The administrator can complete one-time browser setup at `/setup` using a securely configured `ADMIN_SETUP_TOKEN` secret. No local installation is needed. Passwords are hashed server-side, setup is origin-checked and rate-limited, and a durable completion marker locks it permanently after creating the administrator. Existing administrators are unaffected. See the deployment guide for the dashboard steps.
 
 The original Node server remains available for local development or a separately chosen single-server host. Its database lives at `DATABASE_PATH`; the Cloudflare adapter uses Cloudflare's durable storage instead. The local database is never silently uploaded to Cloudflare. Multiple Node replicas need a shared database service rather than separate database copies. Use SQLite-consistent backups for the local server; cloud storage recovery/exports require an operator procedure as documented in the deployment guide.
 

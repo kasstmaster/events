@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import QRCode from "qrcode";
 import {
   Problem,
@@ -204,6 +204,9 @@ export function createHandler({
   origin = "http://127.0.0.1:3000",
   secureCookies = new URL(origin).protocol === "https:",
   logger = console,
+  setupSecret = "",
+  setupEmail = "",
+  requireAdmin = false,
 } = {}) {
   if (new URL(origin).origin !== origin)
     throw new Error(
@@ -238,6 +241,7 @@ export function createHandler({
       if (method === "GET" && !path.startsWith("/api/")) {
         const entry =
           files.get(path) ||
+          (path === "/setup" ? files.get("/") : null) ||
           (/^\/h\/[A-Za-z0-9_-]+$/.test(path) ? files.get("/") : null);
         if (!entry) fail(404, "Page not found.");
         res.writeHead(200, { "Content-Type": entry[1] });
@@ -248,6 +252,43 @@ export function createHandler({
         fail(405, "Method not allowed.");
       if (method !== "GET" && req.headers.origin !== origin)
         fail(403, "Please use the application’s own page to submit changes.");
+      if (path === "/api/setup") {
+        const required = !store.adminSetupComplete();
+        const enabled =
+          typeof setupSecret === "string" &&
+          setupSecret.length >= 32 &&
+          setupSecret.length <= 256;
+        if (method === "GET") {
+          json(res, { required, enabled: required && enabled });
+          return;
+        }
+        if (method === "POST") {
+          if (!required) fail(410, "Administrator setup is already complete.");
+          if (!enabled)
+            fail(
+              503,
+              "Administrator setup is not enabled. The owner must configure ADMIN_SETUP_TOKEN.",
+            );
+          store.limit("setup-ip:" + req.socket.remoteAddress, 5);
+          store.limit("setup-global", 20);
+          const input = await body(req),
+            token = text(input.token, 256, true);
+          const digest = (value) => createHash("sha256").update(value).digest();
+          if (!timingSafeEqual(digest(token), digest(setupSecret)))
+            fail(403, "Unable to authorize administrator setup.");
+          if (setupEmail && email(input.email) !== email(setupEmail))
+            fail(403, "Unable to authorize administrator setup.");
+          if (input.password !== input.confirmPassword)
+            fail(400, "The passwords must match.");
+          const account = await store.setupAdmin(input.email, input.password);
+          cookie(res, store.newSession(account));
+          json(res, { ok: true }, 201);
+          return;
+        }
+        fail(405, "Method not allowed.");
+      }
+      if (requireAdmin && !store.adminSetupComplete())
+        fail(503, "Administrator setup is pending. Open /setup to continue.");
       const raw = req.headers.cookie
         ?.split(";")
         .map((p) => p.trim())

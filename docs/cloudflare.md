@@ -1,6 +1,6 @@
 # Cloudflare deployment
 
-This application deploys as its own **`gather-events-platform`** Worker and **`EventsDatabase`** SQLite-backed Durable Object namespace. It serves its own static frontend and stores its own data. It does not use or modify the gatherings site's Workers, routes, databases, buckets, secrets or deployments. Use the intended existing Cloudflare account, not a temporary Wrangler account.
+This application deploys as its own **`events`** Worker and **`EventsDatabase`** SQLite-backed Durable Object namespace. It serves its own static frontend and stores its own data. It does not use or modify the gatherings site's Workers, routes, databases, buckets, secrets or deployments. Use the intended existing Cloudflare account, not a temporary Wrangler account.
 
 ## Why SQLite-backed Durable Objects
 
@@ -40,19 +40,21 @@ npm run deploy:cloudflare
 
 Deployment does not merge a branch. Deploy only the reviewed/tested commit selected by the owner. No GitHub workflow automatically deploys on a push. This deployment command needs working Cloudflare credentials; a dry run does not create a live site.
 
-## 3. Set up the administrator securely
+## 3. Set up the administrator in your browser
 
-The Worker intentionally returns a setup-pending error for its API until an administrator has been provisioned. This prevents public registration or an exposed first-user-wins setup screen.
+The owner does not need Node.js, Terminal, a local server, or an email service. After deploying this version:
 
-On your own computer, provide `ADMIN_EMAIL` and `ADMIN_PASSWORD` through a secure shell environment, then run:
+1. In Cloudflare, open **Workers & Pages → events → Settings → Variables and Secrets**.
+2. Add a **Secret** named `ADMIN_SETUP_TOKEN`. Generate a unique random 32–256 character value using a password manager. Save it securely and deploy the secret update. This token is not your administrator password. Do not put it in a URL, source file, screenshot or chat.
+3. Open `https://events.kassandraraudman.workers.dev/setup`. Enter the setup token, your chosen administrator email, a new password of at least 12 characters, and its confirmation.
+4. Choose **Create administrator**. The server checks the secret and request origin, hashes the password with scrypt and atomically creates exactly one administrator. It signs you in automatically. No emails are sent.
+5. After confirming the administrator screen opens, delete `ADMIN_SETUP_TOKEN` from the **events** Worker's secrets and deploy that secret removal. The account and setup-completion marker remain in persistent storage.
 
-```sh
-npm run cloudflare:bootstrap
-```
+Without a sufficiently long configured token, the setup form cannot create any account. Setup attempts are limited to five per IP and twenty globally per 15 minutes. The setup token, password and confirmation are never returned in API responses or saved in browser storage. They are submitted in an HTTPS request body, not a URL.
 
-Use the owner's chosen administrator email and a password of at least 12 characters. Do not put the password in command history or send it through chat. The command hashes the password locally using the same scrypt implementation and uploads only `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_HASH` as encrypted Worker secrets. It does not print their values, send emails, approve any hosts or overwrite an existing administrator. Clear the local password variable afterward.
+After completion, `POST /api/setup` returns 410 even if the token remains configured or is replaced. A persistent completion marker prevents setup from becoming an account-replacement flow. Concurrent submissions can create only one administrator. If `BOOTSTRAP_ADMIN_EMAIL` is already configured, the browser form must use that address. Existing administrators are never changed by deploying this feature.
 
-The next API request inserts the initial administrator once, atomically. Sign in through **Host Login** and approve the desired host email addresses. Once the first login succeeds, remove both bootstrap secrets in the new Worker's settings; the administrator remains in the persistent database. Updating bootstrap secrets is not a password reset. Never delete the Durable Object namespace, change its class or change the singleton name to recover an account: those actions would disconnect live data.
+The earlier `npm run cloudflare:bootstrap` hash-upload tool remains an optional operator alternative; it is not required for browser setup. If legacy bootstrap secrets are already configured, the existing one-time hash initialization remains compatible. Remove any legacy bootstrap secrets after successful initialization. Never delete the Durable Object namespace, change its class or change `events-platform-v1` to reset setup: those actions would disconnect live data. Account recovery is a separate operator procedure.
 
 ## 4. Verify the live site
 
@@ -64,7 +66,7 @@ curl -fsS https://YOUR-EVENTS-WORKER.workers.dev/
 curl -fsS https://YOUR-EVENTS-WORKER.workers.dev/api/session
 ```
 
-After bootstrap, an anonymous session response must be `{"role":null}`. Protected host endpoints must return 401 without a session. Confirm the first Host Login in a browser. Do not run the synthetic test suites against live users or data. The automated runtime test uses a temporary database and never deploys.
+Before setup, `/api/setup` returns only `required` and `enabled` flags; `/api/session` returns setup-pending HTTP 503. After setup, an anonymous session response must be `{"role":null}`. Protected host endpoints must return 401 without a session. Confirm the first Host Login in a browser. Do not run the synthetic test suites against live users or data. The automated runtime test uses a temporary database and never deploys.
 
 `APP_ORIGIN` is optional for workers.dev: the Worker uses the HTTPS request origin for same-origin checks, Secure cookies and stable QR links. If a separately approved custom hostname is added later, set `APP_ORIGIN` to that exact canonical HTTPS origin. Do not configure it to the gatherings site's existing origin. Cookie paths, authentication and all data remain separate from that site.
 

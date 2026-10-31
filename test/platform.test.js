@@ -9,9 +9,17 @@ import { Store } from "../server/node-store.js";
 import { createApp } from "../server/app.js";
 const origin = "http://127.0.0.1:3000";
 const password = "Synthetic-only-password-2026";
-async function fixture(t, { path } = {}) {
+async function fixture(
+  t,
+  { path, uninitialized = false, setupSecret = "" } = {},
+) {
   const store = new Store(path),
-    server = createApp({ store, origin, logger: { error: () => {} } });
+    server = createApp({
+      store,
+      origin,
+      setupSecret,
+      logger: { error: () => {} },
+    });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -42,13 +50,15 @@ async function fixture(t, { path } = {}) {
       headers: res.headers,
     };
   };
-  await store.createAdmin("admin@example.test", password);
-  const admin = (
-    await request("/api/login", {
-      method: "POST",
-      data: { email: "admin@example.test", password },
-    })
-  ).cookie;
+  if (!uninitialized) await store.createAdmin("admin@example.test", password);
+  const admin = uninitialized
+    ? undefined
+    : (
+        await request("/api/login", {
+          method: "POST",
+          data: { email: "admin@example.test", password },
+        })
+      ).cookie;
   const host = async (name) => {
     await request("/api/admin/approvals", {
       method: "POST",
@@ -1070,4 +1080,76 @@ test("storage chunk boundaries preserve Unicode pairs", (t) => {
   const text = "x".repeat(249990) + "😀" + "x".repeat(50);
   const saved = store.put("test", id(), "test-tenant", { text });
   assert.equal(saved.text, text);
+});
+
+test("browser setup is disabled without a strong configured secret and rate-limits guesses", async (t) => {
+  const disabled = await fixture(t, { uninitialized: true });
+  assert.deepEqual((await disabled.request("/api/setup")).body, {
+    required: true,
+    enabled: false,
+  });
+  assert.equal(
+    (
+      await disabled.request("/api/setup", {
+        method: "POST",
+        data: { token: "anything" },
+      })
+    ).status,
+    503,
+  );
+  const enabled = await fixture(t, {
+    uninitialized: true,
+    setupSecret: "synthetic-protected-setup-token-0123456789",
+  });
+  for (let n = 0; n < 5; n++)
+    assert.equal(
+      (
+        await enabled.request("/api/setup", {
+          method: "POST",
+          data: { token: "wrong" },
+        })
+      ).status,
+      403,
+    );
+  assert.equal(
+    (
+      await enabled.request("/api/setup", {
+        method: "POST",
+        data: { token: "wrong" },
+      })
+    ).status,
+    429,
+  );
+});
+
+test("competing administrator setup attempts create one hashed account and a permanent completion marker", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "events-setup-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, "setup.sqlite"),
+    store = new Store(path);
+  const results = await Promise.allSettled([
+    store.setupAdmin("one@example.test", password),
+    store.setupAdmin("two@example.test", password),
+  ]);
+  assert.equal(
+    results.filter((result) => result.status === "fulfilled").length,
+    1,
+  );
+  assert.equal(
+    results.find((result) => result.status === "rejected").reason.status,
+    410,
+  );
+  const user = store.one("SELECT * FROM users WHERE role='admin'");
+  assert.ok(await checkPassword(password, user.password));
+  assert.notEqual(user.password, password);
+  store.db.close();
+  const reopened = new Store(path);
+  assert.equal(reopened.adminSetupComplete(), true);
+  reopened.run("DELETE FROM users");
+  assert.equal(reopened.adminSetupComplete(), true);
+  await assert.rejects(
+    reopened.setupAdmin("replacement@example.test", password),
+    { status: 410 },
+  );
+  reopened.db.close();
 });

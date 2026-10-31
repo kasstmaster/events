@@ -7,7 +7,6 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
-import { hashPassword } from "../server/model.js";
 import { parse as parseConfig } from "jsonc-parser";
 
 test(
@@ -21,7 +20,8 @@ test(
     const port = socket.address().port;
     await new Promise((r) => socket.close(r));
     const origin = `http://127.0.0.1:${port}`,
-      password = "Synthetic-cloudflare-password";
+      password = "Synthetic-cloudflare-password",
+      setupToken = "synthetic-setup-token-0123456789-abcdefgh";
     const config = parseConfig(
       await (
         await import("node:fs/promises")
@@ -33,7 +33,7 @@ test(
     await writeFile(join(dir, "wrangler.json"), JSON.stringify(config));
     await writeFile(
       join(dir, ".dev.vars"),
-      `BOOTSTRAP_ADMIN_EMAIL=admin@example.test\nBOOTSTRAP_ADMIN_HASH=${await hashPassword(password)}\n`,
+      `ADMIN_SETUP_TOKEN=${setupToken}\n`,
       { mode: 0o600 },
     );
     let child;
@@ -76,7 +76,7 @@ test(
         if (child.exitCode !== null)
           throw new Error("Local Cloudflare runtime exited unexpectedly.");
         try {
-          const response = await fetch(origin + "/api/session");
+          const response = await fetch(origin + "/api/setup");
           if (response.ok) return;
         } catch {}
         await delay(250);
@@ -115,6 +115,117 @@ test(
       };
     }
     await start();
+    assert.deepEqual((await request("/api/setup")).body, {
+      required: true,
+      enabled: true,
+    });
+    assert.equal((await request("/api/session")).status, 503);
+    assert.equal((await request("/setup")).status, 200);
+    assert.equal(
+      (
+        await request("/api/setup", {
+          method: "POST",
+          requestOrigin: "https://untrusted.test",
+          data: { token: setupToken },
+        })
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await request("/api/setup", {
+          method: "POST",
+          data: {
+            token: "wrong",
+            email: "admin@example.test",
+            password,
+            confirmPassword: password,
+          },
+        })
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await request("/api/setup", {
+          method: "POST",
+          data: {
+            token: setupToken,
+            email: "admin@example.test",
+            password,
+            confirmPassword: "mismatch",
+          },
+        })
+      ).status,
+      400,
+    );
+    const { chromium: setupChromium } = await import("playwright");
+    const { existsSync: setupExists } = await import("node:fs");
+    const setupBrowser = await setupChromium.launch({
+      executablePath:
+        process.env.CHROMIUM_PATH ||
+        (setupExists("/usr/bin/chromium")
+          ? "/usr/bin/chromium"
+          : setupChromium.executablePath()),
+      args: ["--no-sandbox"],
+    });
+    try {
+      const page = await setupBrowser.newPage({
+        viewport: { width: 390, height: 844 },
+      });
+      await page.route("**/*", (route) =>
+        route
+          .request()
+          .url()
+          .startsWith(origin + "/")
+          ? route.continue()
+          : route.abort(),
+      );
+      await page.goto(origin + "/setup");
+      await page.getByLabel("Setup token", { exact: true }).fill(setupToken);
+      await page
+        .getByLabel("Administrator email", { exact: true })
+        .fill("admin@example.test");
+      await page
+        .getByLabel("Choose administrator password", { exact: true })
+        .fill(password);
+      await page.getByLabel("Confirm password", { exact: true }).fill(password);
+      await page
+        .getByRole("button", { name: "Create administrator", exact: true })
+        .click();
+      await page
+        .getByRole("heading", { name: "Approved emails", exact: true })
+        .waitFor();
+      assert.ok(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth + 1,
+        ),
+      );
+      assert.equal(
+        await page.evaluate(() => localStorage.length + sessionStorage.length),
+        0,
+      );
+    } finally {
+      await setupBrowser.close();
+    }
+    assert.deepEqual((await request("/api/setup")).body, {
+      required: false,
+      enabled: false,
+    });
+    assert.equal(
+      (
+        await request("/api/setup", {
+          method: "POST",
+          data: {
+            token: setupToken,
+            email: "replacement@example.test",
+            password,
+            confirmPassword: password,
+          },
+        })
+      ).status,
+      410,
+    );
     const admin = (
       await request("/api/login", {
         method: "POST",
@@ -123,7 +234,7 @@ test(
     ).cookie;
     assert.ok(
       admin,
-      "bootstrap hash must authenticate using the shared scrypt implementation",
+      "browser-created administrator must authenticate using the shared scrypt implementation",
     );
     assert.match((await request("/")).body, /Gather/);
     assert.match((await request("/app.js")).body, /registry/);
