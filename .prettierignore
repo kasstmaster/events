@@ -1,0 +1,4 @@
+node_modules/
+var/
+package-lock.json
+test-results/
