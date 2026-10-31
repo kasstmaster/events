@@ -65,7 +65,11 @@ test(
           String(port),
         ],
         {
-          env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
+          env: {
+            ...process.env,
+            WRANGLER_SEND_METRICS: "false",
+            NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require ${resolve("test/helpers/loopback-only.cjs")}`,
+          },
           stdio: ["ignore", "pipe", "pipe"],
         },
       );

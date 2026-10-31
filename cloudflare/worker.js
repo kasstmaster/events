@@ -2,6 +2,8 @@ import { DurableObject } from "cloudflare:workers";
 import { Buffer } from "node:buffer";
 import { Store } from "../server/model.js";
 import { createHandler } from "../server/handler.js";
+import { configuredHosts } from "../server/household-domains.js";
+import { verifyRequest, unavailable } from "./gateway-protocol.js";
 
 // Thin runtime adapters only: authorization, validation and RSVP behavior remain shared.
 function database(storage) {
@@ -70,6 +72,17 @@ export class EventsDatabase extends DurableObject {
   }
   async fetch(request) {
     const store = this.store;
+    const householdHostname =
+      request.headers.get("x-events-verified-hostname") || "";
+    // Only this Worker's private DO binding can invoke this adapter. The public edge
+    // deletes these internal headers before it verifies the gateway envelope.
+    if (householdHostname && request.method !== "GET") {
+      try {
+        store.consumeGatewayNonce(request.headers.get("x-events-nonce"));
+      } catch {
+        return unavailable(403);
+      }
+    }
     if (!store.adminSetupComplete()) {
       const address = this.env.BOOTSTRAP_ADMIN_EMAIL,
         hash = this.env.BOOTSTRAP_ADMIN_HASH;
@@ -93,18 +106,54 @@ export class EventsDatabase extends DurableObject {
       setupSecret: this.env.ADMIN_SETUP_TOKEN || "",
       setupEmail: this.env.BOOTSTRAP_ADMIN_EMAIL || "",
       requireAdmin: true,
-      origin: this.env.APP_ORIGIN || new URL(request.url).origin,
+      origin: householdHostname
+        ? `https://${householdHostname}`
+        : this.env.APP_ORIGIN || new URL(request.url).origin,
+      canonicalOrigin: this.env.APP_ORIGIN || new URL(request.url).origin,
+      householdHostname,
+      householdHosts: configuredHosts(this.env.HOUSEHOLD_HOSTS),
+      readAsset: async (file) => {
+        const response = await this.env.ASSETS.fetch(
+          new URL("/" + file, request.url),
+        );
+        if (!response.ok) throw new Error("Missing frontend asset");
+        return Buffer.from(await response.arrayBuffer());
+      },
     });
   }
 }
 export default {
   async fetch(request, env) {
-    if (new URL(request.url).pathname.startsWith("/api/")) {
-      const headers = new Headers(request.headers);
+    if (env.EVENTS_ORIGIN && new URL(request.url).origin !== env.EVENTS_ORIGIN)
+      return unavailable(403);
+    const headers = new Headers(request.headers);
+    headers.delete("x-events-verified-hostname");
+    const gatewayAttempt = [
+      "x-events-hostname",
+      "x-events-signature",
+      "x-events-time",
+      "x-events-nonce",
+    ].some((name) => headers.has(name));
+    let householdHostname = "";
+    if (gatewayAttempt) {
+      try {
+        householdHostname = await verifyRequest(request, env);
+      } catch {
+        return unavailable(403);
+      }
+      if (!householdHostname) return unavailable(403);
+      headers.set("x-events-verified-hostname", householdHostname);
+    }
+    if (
+      householdHostname ||
+      new URL(request.url).pathname.startsWith("/api/")
+    ) {
       // Always overwrite a caller-supplied forwarding header at the trusted Cloudflare edge.
       headers.set(
         "x-events-client-ip",
-        request.headers.get("CF-Connecting-IP") || "unknown",
+        householdHostname
+          ? request.headers.get("x-events-client-ip")
+          : request.headers.get("CF-Connecting-IP") || "unknown",
       );
       const stub = env.EVENTS_DATABASE.get(
         env.EVENTS_DATABASE.idFromName("events-platform-v1"),

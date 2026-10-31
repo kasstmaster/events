@@ -102,10 +102,11 @@ async function load({ background = false } = {}) {
       render();
       return;
     }
+    const context = await api("/api/public/context");
     const session = await api("/api/session");
     let data = null,
       templates = [],
-      publicHousehold = null;
+      publicHousehold = context.household;
     if (session.role) {
       data = await api(
         session.role === "admin" ? "/api/admin" : `/api/${session.role}`,
@@ -138,7 +139,7 @@ async function load({ background = false } = {}) {
       );
     } else
       $("#app").innerHTML =
-        `<main id="main"><div class="panel"><h1>Couldn’t open this page</h1><p>${escape(error.message)}</p>${button("reload", "Try again")}</div></main>`;
+        `<main id="main"><div class="panel"><h1>${error.status === 404 ? "This household address is unavailable." : "Couldn’t open this page"}</h1><p>${escape(error.message)}</p>${button("reload", "Try again")}</div></main>`;
   }
 }
 
@@ -150,6 +151,24 @@ function setupPage() {
     return `<section class="auth panel"><h1>Administrator setup</h1><p>The site owner must first add an encrypted <strong>ADMIN_SETUP_TOKEN</strong> secret to the <strong>events</strong> Worker in Cloudflare, then refresh this page.</p><p>Use a unique random token of 32–256 characters from a password manager. No installation or local server is needed.</p>${button("reload", "Check again", "", "")}</section>`;
   return `<section class="auth"><p class="eyebrow">One-time owner setup</p><h1>Make Gather yours.</h1><div class="panel"><p>Enter the setup token you saved in Cloudflare, then choose your administrator login. This page locks after setup.</p><form data-form="setup">${field("Setup token", "token", "", "password", 'required minlength="32" maxlength="256" autocomplete="off"')}${field("Administrator email", "email", "", "email", 'required maxlength="254" autocomplete="username"')}${field("Choose administrator password", "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}${field("Confirm password", "confirmPassword", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Create administrator</button></form></div><p class="small muted">Use HTTPS. Do not put the setup token in the URL or send it through chat.</p></section>`;
 }
+const suggestedAddress = "household-" + crypto.randomUUID().slice(0, 8);
+function subdomainField(value = "") {
+  return (
+    field(
+      "Household web address",
+      "subdomain",
+      value,
+      "text",
+      'required minlength="3" maxlength="63" pattern="[A-Za-z0-9][A-Za-z0-9-]{1,61}[A-Za-z0-9]" autocapitalize="none" spellcheck="false" aria-describedby="subdomain-help"',
+    ) +
+    '<p id="subdomain-help" class="small muted">Choose your own name before .ilymmd.com. Use 3–63 letters, numbers or internal hyphens. Names are case-insensitive. New addresses need activation; your existing link works while pending. Retired names stay reserved permanently.</p>' +
+    button("check-subdomain", "Check address availability") +
+    '<p id="subdomain-status" class="small" role="status"></p>'
+  );
+}
+const householdShareUrl = () =>
+  state.data.household.shareUrl ||
+  location.origin + "/h/" + state.data.household.slug;
 function authPage() {
   if (
     state.setup?.required ||
@@ -157,12 +176,12 @@ function authPage() {
   )
     return setupPage();
   const household = state.publicHousehold;
+  if (household) applyDesign(household.design);
   if (household && !["login", "register"].includes(state.view)) {
-    applyDesign(household.design);
     return `<section class="auth"><div class="panel"><p class="eyebrow">You’re in good company</p><h1>${escape(household.name)}</h1><p>Welcome. Enter your name to see your invitations.</p><form data-form="guest-login" class="stack">${field("First name", "first", "", "text", 'required autocomplete="given-name" maxlength="80"')}${field("Last name", "last", "", "text", 'required autocomplete="family-name" maxlength="80"')}${field("Suffix, if applicable", "suffix", "", "text", 'autocomplete="honorific-suffix" maxlength="30" placeholder="Jr., Sr., III…"')}<p class="form-error" role="alert"></p><button>See my invitations</button></form><p class="small muted">Use the name your host has on file. If you share an identical name, ask your host for help.</p></div><p class="small" style="text-align:center">${button("host-login", "Host Login", "", "quiet")}</p></section>`;
   }
   const register = state.view === "register";
-  return `<section class="auth"><p class="eyebrow">A place for your people</p><h1>${register ? "Make yourself at home." : "Good things begin together."}</h1><div class="panel"><h2>${register ? "Create your host account" : "Host Login"}</h2><p class="muted">${register ? "Registration is available only for administrator-approved email addresses. No emails will be sent." : "Plan a little. Gather a lot."}</p><form data-form="${register ? "register" : "login"}">${field("Email address", "email", "", "email", 'required autocomplete="username" maxlength="254"')}${field("Password", "password", "", "password", `required minlength="12" maxlength="256" autocomplete="${register ? "new-password" : "current-password"}"`)}${register ? field("Family household name", "name", "", "text", 'required maxlength="100" placeholder="The Meyer Family"') : ""}<p class="form-error" role="alert"></p><button>${register ? "Create account" : "Sign in"}</button></form></div><p class="small">${register ? "Already registered?" : "Approved to host?"} ${button(register ? "host-login" : "register", register ? "Sign in" : "Create your account", "", "quiet")}</p>${household ? button("guest-login", "Back to guest sign-in", "", "quiet") : ""}</section>`;
+  return `<section class="auth"><p class="eyebrow">A place for your people</p><h1>${register ? "Make yourself at home." : "Good things begin together."}</h1><div class="panel"><h2>${register ? "Create your host account" : "Host Login"}</h2><p class="muted">${register ? "Registration is available only for administrator-approved email addresses. No emails will be sent." : "Plan a little. Gather a lot."}</p><form data-form="${register ? "register" : "login"}">${field("Email address", "email", "", "email", 'required autocomplete="username" maxlength="254"')}${field("Password", "password", "", "password", `required minlength="12" maxlength="256" autocomplete="${register ? "new-password" : "current-password"}"`)}${register ? field("Family household name", "name", "", "text", 'required maxlength="100" placeholder="The Meyer Family"') + subdomainField(suggestedAddress) : ""}<p class="form-error" role="alert"></p><button>${register ? "Create account" : "Sign in"}</button></form></div><p class="small">${register ? "Already registered?" : "Approved to host?"} ${button(register ? "host-login" : "register", register ? "Sign in" : "Create your account", "", "quiet")}</p>${household ? button("guest-login", "Back to guest sign-in", "", "quiet") : ""}</section>`;
 }
 function toolbar(event) {
   const role = state.session.role;
@@ -246,7 +265,7 @@ function appearanceForm(event = false) {
   state.editingDesign = d;
   modal(
     event ? "Event appearance" : "Household & login appearance",
-    `${event ? "<p>Changes apply only to this event.</p>" : field("Family household name", "householdName", household.name, "text", 'required maxlength="100"') + '<p class="muted small">Sets the guest login page and defaults for events. Event overrides stay independent.</p>'}${appearanceFields(d)}${event ? '<label class="check"><input type="checkbox" name="resetDesign">Use household defaults (remove all event overrides)</label>' : ""}`,
+    `${event ? "<p>Changes apply only to this event.</p>" : field("Family household name", "householdName", household.name, "text", 'required maxlength="100"') + subdomainField(household.subdomain || suggestedAddress) + `<p class="small muted">Address status: ${escape(household.subdomainStatus || "unclaimed")}. Renaming retires your old address permanently; existing /h/ links remain valid.</p>` + '<p class="muted small">Sets the guest login page and defaults for events. Event overrides stay independent.</p>'}${appearanceFields(d)}${event ? '<label class="check"><input type="checkbox" name="resetDesign">Use household defaults (remove all event overrides)</label>' : ""}`,
     event ? "event-design" : "household",
   );
   updatePreview();
@@ -412,10 +431,10 @@ async function dashboard() {
   );
 }
 async function share() {
-  const link = location.origin + "/h/" + state.data.household.slug;
+  const link = householdShareUrl();
   modal(
     "One link for every gathering",
-    `<p>${escape(state.data.household.name)}</p><img class="qr" src="/api/host/qr" alt="Household sign-in QR code"><p class="share-link">${escape(link)}</p><div class="row">${button("copy-link", "Copy link")}${button("native-share", "Share link")}<a class="button secondary" href="/api/host/qr" download="household-qr.svg">Download QR</a><a class="button secondary" href="/h/${state.data.household.slug}" target="_blank" rel="noopener">Open guest page</a></div><p class="small muted">The link and QR stay the same when you add events or change your design. Guests still sign in with their names.</p>`,
+    `<p>${escape(state.data.household.name)}</p><img class="qr" src="/api/host/qr" alt="Household sign-in QR code"><p class="share-link">${escape(link)}</p><div class="row">${button("copy-link", "Copy link")}${button("native-share", "Share link")}<a class="button secondary" href="/api/host/qr" download="household-qr.svg">Download QR</a><a class="button secondary" href="${escape(link)}" target="_blank" rel="noopener">Open guest page</a></div><p class="small muted">Your link stays the same when you add events or change your design. A new web address is used after activation. Existing /h/ links always keep working. Guests still sign in with their names.</p>`,
   );
 }
 function invitation() {
@@ -503,11 +522,22 @@ async function submit(form) {
     if (upload) d.backgroundImage = upload;
     if (data.has("removeBackground")) d.backgroundImage = "";
     if (kind === "household") {
-      await api("/api/host/household", {
+      const updated = await api("/api/host/household", {
         method: "PUT",
         version: state.data.household.version,
-        data: { name: value.householdName, design: d },
+        data: {
+          name: value.householdName,
+          design: d,
+          subdomain: value.subdomain,
+        },
       });
+      if (
+        location.hostname === state.data.household.subdomain + ".ilymmd.com" &&
+        updated.subdomain !== state.data.household.subdomain
+      ) {
+        location.assign(updated.platformUrl);
+        return;
+      }
     } else {
       const e = selectedEvent();
       let overrides = { ...e.design };
@@ -744,14 +774,23 @@ document.addEventListener("click", async (event) => {
       await dashboard();
       return;
     }
+    if (action === "check-subdomain") {
+      const form = target.closest("form");
+      const label = form.elements.subdomain.value;
+      const result = await api(
+        "/api/subdomains?name=" + encodeURIComponent(label),
+      );
+      form.querySelector("#subdomain-status").textContent = result.available
+        ? "Available to claim. Saving reserves the name; activation is a separate step."
+        : "That address is unavailable. Choose another name.";
+      return;
+    }
     if (action === "share") {
       await share();
       return;
     }
     if (action === "copy-link") {
-      await navigator.clipboard.writeText(
-        location.origin + "/h/" + state.data.household.slug,
-      );
+      await navigator.clipboard.writeText(householdShareUrl());
       notify("Link copied.");
       return;
     }
@@ -759,12 +798,10 @@ document.addEventListener("click", async (event) => {
       if (navigator.share)
         await navigator.share({
           title: state.data.household.name,
-          url: location.origin + "/h/" + state.data.household.slug,
+          url: householdShareUrl(),
         });
       else {
-        await navigator.clipboard.writeText(
-          location.origin + "/h/" + state.data.household.slug,
-        );
+        await navigator.clipboard.writeText(householdShareUrl());
         notify("Link copied.");
       }
       return;

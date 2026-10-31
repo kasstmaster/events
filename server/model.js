@@ -7,6 +7,7 @@ import {
   createHash,
 } from "node:crypto";
 import { promisify } from "node:util";
+import { normalizeLabel } from "./household-domains.js";
 const scrypt = promisify(scryptCallback);
 export const id = () => randomUUID();
 export class Problem extends Error {
@@ -132,6 +133,9 @@ export class Store {
       CREATE INDEX IF NOT EXISTS tenant_records ON records(household,kind);
       CREATE UNIQUE INDEX IF NOT EXISTS household_slugs ON records(json_extract(body,'$.slug')) WHERE kind='household';
       CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user TEXT, household TEXT, guest TEXT, role TEXT NOT NULL, expires INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS session_origins(token TEXT PRIMARY KEY, origin TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS gateway_nonces(nonce TEXT PRIMARY KEY, expires INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS household_domains(label TEXT PRIMARY KEY COLLATE NOCASE, household TEXT NOT NULL, retired INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS limits(key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS record_chunks(kind TEXT NOT NULL, id TEXT NOT NULL, household TEXT NOT NULL, chunk INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(kind,id,household,chunk));`);
   }
@@ -279,6 +283,82 @@ export class Store {
   household(household) {
     return this.get("household", household, household);
   }
+  domainAvailable(value, household = null) {
+    const label = normalizeLabel(value);
+    if (!label) return false;
+    const claim = this.one(
+      "SELECT * FROM household_domains WHERE label=?",
+      label,
+    );
+    return !claim || (claim.household === household && !claim.retired);
+  }
+  consumeGatewayNonce(nonce) {
+    this.transaction(() => {
+      this.run("DELETE FROM gateway_nonces WHERE expires<?", Date.now());
+      if (this.one("SELECT nonce FROM gateway_nonces WHERE nonce=?", nonce))
+        fail(403, "Request already used.");
+      this.run(
+        "INSERT INTO gateway_nonces VALUES(?,?)",
+        nonce,
+        Date.now() + 120_000,
+      );
+    });
+  }
+  claimDomain(value, household, previous = "") {
+    const label = normalizeLabel(value);
+    if (!label)
+      fail(
+        400,
+        "Use an available 3–63 character address: letters, numbers and internal hyphens only.",
+      );
+    if (!this.domainAvailable(label, household))
+      fail(409, "That household address is unavailable.");
+    // Called only inside the same transaction as registration or version-checked editing.
+    this.run(
+      "INSERT OR IGNORE INTO household_domains(label,household) VALUES(?,?)",
+      label,
+      household,
+    );
+    if (previous && previous !== label)
+      this.run(
+        "UPDATE household_domains SET retired=1 WHERE label=? AND household=?",
+        previous,
+        household,
+      );
+    return label;
+  }
+  updateHousehold(household, input, version) {
+    return this.transaction(() => {
+      const existing = this.household(household);
+      if (!existing) fail(404, "Household not found.");
+      const subdomain =
+        input.subdomain === undefined
+          ? existing.subdomain
+          : this.claimDomain(input.subdomain, household, existing.subdomain);
+      return this.put(
+        "household",
+        household,
+        household,
+        {
+          name: text(input.name, 100, true),
+          slug: existing.slug,
+          design: design(input.design),
+          ...(subdomain ? { subdomain } : {}),
+        },
+        version,
+      );
+    });
+  }
+  hostnameHousehold(label) {
+    const claim = this.one(
+      "SELECT * FROM household_domains WHERE label=? AND retired=0",
+      label,
+    );
+    const household = claim && this.household(claim.household);
+    if (!household || household.subdomain !== label)
+      fail(404, "This household address is unavailable.");
+    return this.publicHousehold(household.slug);
+  }
   publicHousehold(slug) {
     const row = this.one(
       "SELECT * FROM records WHERE kind='household' AND json_extract(body,'$.slug')=?",
@@ -293,7 +373,7 @@ export class Store {
       design: record.design,
     };
   }
-  session(raw) {
+  session(raw, origin, allowLegacy = true) {
     if (!raw) return null;
     const session = this.one(
       "SELECT * FROM sessions WHERE token=? AND expires>?",
@@ -301,16 +381,26 @@ export class Store {
       Date.now(),
     );
     if (!session) return null;
+    if (origin) {
+      const scope = this.one(
+        "SELECT origin FROM session_origins WHERE token=?",
+        session.token,
+      );
+      if (scope ? scope.origin !== origin : !allowLegacy) return null;
+    }
     if (session.guest) {
       const guest = this.get("guest", session.guest, session.household);
       if (!guest || guest.parent) return null;
     }
     return session;
   }
-  newSession({ user = null, household = null, guest = null, role }) {
+  newSession({ user = null, household = null, guest = null, role }, origin) {
     const token = randomBytes(32).toString("base64url");
     const seconds = role === "guest" ? 7 * 86400 : 8 * 3600;
     this.run("DELETE FROM sessions WHERE expires<?", Date.now());
+    this.run(
+      "DELETE FROM session_origins WHERE token NOT IN (SELECT token FROM sessions)",
+    );
     this.run(
       "INSERT INTO sessions VALUES(?,?,?,?,?,?)",
       createHash("sha256").update(token).digest("hex"),
@@ -320,6 +410,12 @@ export class Store {
       role,
       Date.now() + seconds * 1000,
     );
+    if (origin)
+      this.run(
+        "INSERT INTO session_origins VALUES(?,?)",
+        createHash("sha256").update(token).digest("hex"),
+        origin,
+      );
     return { token, seconds };
   }
   limit(key, max = 15, window = 15 * 60_000) {
@@ -390,6 +486,9 @@ export class Store {
         name,
         slug: randomBytes(18).toString("base64url"),
         design: {},
+        ...(input.subdomain
+          ? { subdomain: this.claimDomain(input.subdomain, household) }
+          : {}),
       });
       this.run(
         "INSERT INTO users VALUES(?,?,?,?,?)",

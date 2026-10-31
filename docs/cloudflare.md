@@ -77,3 +77,7 @@ Cloudflare's SQLite-backed Durable Object storage persists across Worker deploym
 Cloudflare sets `CF-Connecting-IP`; the edge adapter overwrites the internal client-IP header before forwarding into the private Durable Object. The generic Node server still ignores untrusted forwarding headers. Name-only guest identity limitations remain unchanged; see [security.md](security.md).
 
 There is no automatic live deployment in CI. CI validates the Node application, mobile browser flow and actual local Workers/Durable Objects runtime, including bootstrap, two-host isolation, a mobile child RSVP, racing claims, large images, versions and persistence after a runtime restart.
+
+## Optional household routing gateway
+
+[Household subdomains](household-subdomains.md) extend this same Worker/database through an exact-host gateway in the separate domain account. Follow that guide for the current inspection evidence and deployment credential checks, new `EVENTS_GATEWAY_SECRET`, exact `EVENTS_ORIGIN`, operator-controlled `HOUSEHOLD_HOSTS`, provisioning, verification and rollback. `wrangler.gateway.jsonc` targets only the new gateway in Plex and initially contains no routes or configured origin; do not deploy it as a working feature. The existing events namespace/class/object name and stored data must remain unchanged. Automatic/preview build safety must be verified before pushing the review branch. No wildcard or CNAME-only cross-account design is used.

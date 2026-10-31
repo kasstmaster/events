@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createHash, timingSafeEqual } from "node:crypto";
 import QRCode from "qrcode";
+import { householdLink, hostnameLabel } from "./household-domains.js";
 import {
   Problem,
   fail,
@@ -207,6 +208,9 @@ export function createHandler({
   setupSecret = "",
   setupEmail = "",
   requireAdmin = false,
+  householdHostname = "",
+  householdHosts = new Set(),
+  canonicalOrigin = origin,
 } = {}) {
   if (new URL(origin).origin !== origin)
     throw new Error(
@@ -215,7 +219,7 @@ export function createHandler({
   const cookie = (res, session) =>
     res.setHeader(
       "Set-Cookie",
-      `events_session=${session?.token || ""}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${session?.seconds || 0}${secureCookies ? "; Secure" : ""}`,
+      `${householdHostname ? "__Host-events_session" : "events_session"}=${session?.token || ""}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${session?.seconds || 0}${secureCookies ? "; Secure" : ""}`,
     );
   const json = (res, data, status = 200) => {
     res.writeHead(status, {
@@ -238,6 +242,30 @@ export function createHandler({
       const url = new URL(req.url, origin),
         path = url.pathname,
         method = req.method;
+      // This context comes only from a verified runtime adapter, never a client header.
+      const selected = householdHostname
+        ? store.hostnameHousehold(hostnameLabel(householdHostname))
+        : null;
+      const presentHousehold = (household) => ({
+        ...household,
+        shareUrl: householdLink(household, canonicalOrigin, householdHosts),
+        platformUrl: canonicalOrigin + "/",
+        subdomainStatus: !household.subdomain
+          ? "unclaimed"
+          : householdHosts.has(`${household.subdomain}.ilymmd.com`)
+            ? "active"
+            : "pending",
+      });
+      if (selected && (path === "/setup" || path === "/api/setup")) {
+        if (method === "GET" && path === "/api/setup") {
+          json(res, { required: false, enabled: false });
+          return;
+        }
+        fail(404, "This household address is unavailable.");
+      }
+      const pageSlug = path.match(/^\/h\/([A-Za-z0-9_-]+)$/)?.[1];
+      if (selected && pageSlug && pageSlug !== selected.slug)
+        fail(404, "This household address is unavailable.");
       if (method === "GET" && !path.startsWith("/api/")) {
         const entry =
           files.get(path) ||
@@ -281,7 +309,7 @@ export function createHandler({
           if (input.password !== input.confirmPassword)
             fail(400, "The passwords must match.");
           const account = await store.setupAdmin(input.email, input.password);
-          cookie(res, store.newSession(account));
+          cookie(res, store.newSession(account, origin));
           json(res, { ok: true }, 201);
           return;
         }
@@ -292,9 +320,20 @@ export function createHandler({
       const raw = req.headers.cookie
         ?.split(";")
         .map((p) => p.trim())
-        .find((p) => p.startsWith("events_session="))
-        ?.slice(15);
-      const session = store.session(raw);
+        .find((p) =>
+          p.startsWith(
+            `${selected ? "__Host-events_session" : "events_session"}=`,
+          ),
+        )
+        ?.split("=")[1];
+      const session = store.session(raw, origin, !selected);
+      if (
+        selected &&
+        session &&
+        (session.role === "admin" || session.household !== selected.id)
+      )
+        fail(403, "This account is not available at this household address.");
+      const newSession = (account) => store.newSession(account, origin);
       const requireRole = (role) => {
         if (!session) fail(401, "Please sign in.");
         if (session.role !== role)
@@ -320,7 +359,7 @@ export function createHandler({
             ? {
                 role: session.role,
                 household: session.household
-                  ? store.household(session.household)
+                  ? presentHousehold(store.household(session.household))
                   : null,
               }
             : { role: null },
@@ -328,10 +367,11 @@ export function createHandler({
         return;
       }
       if (path === "/api/register" && method === "POST") {
+        if (selected) fail(403, "Create host accounts on the main platform.");
         const input = await body(req);
         authLimit("register", String(input.email).toLowerCase());
         const account = await store.register(input);
-        cookie(res, store.newSession(account));
+        cookie(res, store.newSession(account, origin));
         json(res, { ok: true }, 201);
         return;
       }
@@ -342,9 +382,14 @@ export function createHandler({
         const user = store.one("SELECT * FROM users WHERE email=?", address);
         const valid = await checkPassword(input.password, user?.password);
         if (!valid || !user) fail(401, "Unable to sign in with these details.");
+        if (
+          selected &&
+          (user.role !== "host" || user.household !== selected.id)
+        )
+          fail(401, "Unable to sign in with these details.");
         cookie(
           res,
-          store.newSession({
+          newSession({
             user: user.id,
             household: user.household,
             role: user.role,
@@ -360,11 +405,27 @@ export function createHandler({
         json(res, { ok: true });
         return;
       }
+      if (path === "/api/public/context" && method === "GET") {
+        json(res, { household: selected ? { ...selected, defaults } : null });
+        return;
+      }
+      if (path === "/api/subdomains" && method === "GET") {
+        store.limit(`availability:${req.socket.remoteAddress}`, 120);
+        json(res, {
+          available: store.domainAvailable(
+            url.searchParams.get("name"),
+            session?.role === "host" ? session.household : null,
+          ),
+        });
+        return;
+      }
       const publicMatch = path.match(
         /^\/api\/public\/households\/([A-Za-z0-9_-]+)(\/login)?$/,
       );
       if (publicMatch) {
         const household = store.publicHousehold(publicMatch[1]);
+        if (selected && selected.id !== household.id)
+          fail(404, "This household address is unavailable.");
         if (method === "GET" && !publicMatch[2]) {
           json(res, { ...household, defaults });
           return;
@@ -391,7 +452,7 @@ export function createHandler({
             );
           cookie(
             res,
-            store.newSession({
+            newSession({
               household: household.id,
               guest: candidates[0].id,
               role: "guest",
@@ -500,7 +561,7 @@ export function createHandler({
         const household = session.household;
         if (path === "/api/host" && method === "GET") {
           json(res, {
-            household: store.household(household),
+            household: presentHousehold(store.household(household)),
             guests: store.list("guest", household),
             addresses: store.list("address", household),
             events: store.list("event", household).map((e) => ({
@@ -514,26 +575,21 @@ export function createHandler({
           return;
         }
         if (path === "/api/host/household" && method === "PUT") {
-          const input = await body(req),
-            existing = store.household(household);
+          const input = await body(req);
           json(
             res,
-            store.put(
-              "household",
-              household,
-              household,
-              {
-                name: text(input.name, 100, true),
-                slug: existing.slug,
-                design: design(input.design),
-              },
-              version(req),
+            presentHousehold(
+              store.updateHousehold(household, input, version(req)),
             ),
           );
           return;
         }
         if (path === "/api/host/qr" && method === "GET") {
-          const link = `${origin}/h/${store.household(household).slug}`;
+          const link = householdLink(
+            store.household(household),
+            canonicalOrigin,
+            householdHosts,
+          );
           res.writeHead(200, {
             "Content-Type": "image/svg+xml",
             "Content-Disposition": 'inline; filename="household-qr.svg"',
@@ -674,7 +730,19 @@ export function createHandler({
     } catch (error) {
       if (!(error instanceof Problem))
         logger.error("Request failed:", error.code || error.name); // Never log submitted names, passwords or bodies.
-      if (!res.headersSent)
+      if (
+        !res.headersSent &&
+        householdHostname &&
+        req.method === "GET" &&
+        !req.url.startsWith("/api/")
+      ) {
+        res.writeHead(error.status || 500, {
+          "Content-Type": "text/html; charset=utf-8",
+        });
+        res.end(
+          "<!doctype html><html lang=en><meta name=viewport content='width=device-width, initial-scale=1'><title>Household unavailable</title><h1>This household address is unavailable.</h1><p>Please check the link with your host.</p></html>",
+        );
+      } else if (!res.headersSent)
         json(
           res,
           {
