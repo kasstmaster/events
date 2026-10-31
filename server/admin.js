@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { Store } from "./model.js";
+import { Store } from "./node-store.js";
 if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {
   console.error(
     "Set ADMIN_EMAIL and ADMIN_PASSWORD through your secure shell environment. Password must have at least 12 characters. No emails are sent.",

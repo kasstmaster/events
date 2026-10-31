@@ -1,4 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
+import { Buffer } from "node:buffer";
 import {
   randomBytes,
   randomUUID,
@@ -121,10 +121,10 @@ export function design(value = {}) {
   return result;
 }
 export class Store {
-  constructor(path = ":memory:") {
-    this.db = new DatabaseSync(path);
-    this.db
-      .exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+  constructor(database) {
+    this.db = database;
+    this.transactionDepth = 0;
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','host')), household TEXT);
       CREATE TABLE IF NOT EXISTS approvals(email TEXT PRIMARY KEY, created TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL, id TEXT NOT NULL, household TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, body TEXT NOT NULL, PRIMARY KEY(kind,id));
@@ -132,7 +132,7 @@ export class Store {
       CREATE UNIQUE INDEX IF NOT EXISTS household_slugs ON records(json_extract(body,'$.slug')) WHERE kind='household';
       CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user TEXT, household TEXT, guest TEXT, role TEXT NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS limits(key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL);
-      PRAGMA user_version=1;`);
+      CREATE TABLE IF NOT EXISTS record_chunks(kind TEXT NOT NULL, id TEXT NOT NULL, household TEXT NOT NULL, chunk INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(kind,id,household,chunk));`);
   }
   all(sql, ...args) {
     return this.db.prepare(sql).all(...args);
@@ -144,20 +144,38 @@ export class Store {
     return this.db.prepare(sql).run(...args);
   }
   transaction(callback) {
-    this.db.exec("BEGIN IMMEDIATE");
+    if (this.transactionDepth) return callback();
+    this.transactionDepth++;
     try {
-      const value = callback();
-      this.db.exec("COMMIT");
-      return value;
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
+      if (this.db.transaction) return this.db.transaction(callback);
+      this.db.exec("BEGIN IMMEDIATE");
+      try {
+        const result = callback();
+        this.db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        throw error;
+      }
+    } finally {
+      this.transactionDepth--;
     }
   }
   unpack(row) {
-    return row
-      ? { ...JSON.parse(row.body), id: row.id, version: row.version }
-      : null;
+    if (!row) return null;
+    let body = JSON.parse(row.body);
+    if (body.$chunked)
+      body = JSON.parse(
+        this.all(
+          "SELECT body FROM record_chunks WHERE kind=? AND id=? AND household=? ORDER BY chunk",
+          row.kind,
+          row.id,
+          row.household,
+        )
+          .map((chunk) => chunk.body)
+          .join(""),
+      );
+    return { ...body, id: row.id, version: row.version };
   }
   get(kind, recordId, household) {
     return this.unpack(
@@ -177,42 +195,85 @@ export class Store {
     ).map((row) => this.unpack(row));
   }
   put(kind, recordId, household, body, version) {
-    if (version === undefined) {
-      this.run(
-        "INSERT INTO records(kind,id,household,body) VALUES(?,?,?,?)",
-        kind,
-        recordId,
-        household,
-        JSON.stringify(body),
-      );
-    } else {
-      const result = this.run(
-        "UPDATE records SET body=?,version=version+1 WHERE kind=? AND id=? AND household=? AND version=?",
-        JSON.stringify(body),
-        kind,
-        recordId,
-        household,
-        version,
-      );
-      if (!result.changes)
+    return this.transaction(() => {
+      const serialized = JSON.stringify(body),
+        chunked = serialized.length > 250000;
+      const stored = chunked
+        ? JSON.stringify({
+            $chunked: true,
+            ...(kind === "household" ? { slug: body.slug } : {}),
+            ...(kind === "event" ? { template: body.template } : {}),
+          })
+        : serialized;
+      if (version === undefined)
+        this.run(
+          "INSERT INTO records(kind,id,household,body) VALUES(?,?,?,?)",
+          kind,
+          recordId,
+          household,
+          stored,
+        );
+      else if (
+        !this.run(
+          "UPDATE records SET body=?,version=version+1 WHERE kind=? AND id=? AND household=? AND version=?",
+          stored,
+          kind,
+          recordId,
+          household,
+          version,
+        ).changes
+      )
         fail(
           409,
           "This changed on another device. Reload the latest version before saving.",
         );
-    }
-    return this.get(kind, recordId, household);
-  }
-  remove(kind, recordId, household, version) {
-    if (
-      !this.run(
-        "DELETE FROM records WHERE kind=? AND id=? AND household=? AND version=?",
+      this.run(
+        "DELETE FROM record_chunks WHERE kind=? AND id=? AND household=?",
         kind,
         recordId,
         household,
-        version,
-      ).changes
-    )
-      fail(409, "This changed on another device. Reload before removing.");
+      );
+      if (chunked) {
+        let offset = 0,
+          index = 0;
+        while (offset < serialized.length) {
+          let end = Math.min(offset + 250000, serialized.length);
+          const last = serialized.charCodeAt(end - 1);
+          if (end < serialized.length && last >= 0xd800 && last <= 0xdbff)
+            end--;
+          this.run(
+            "INSERT INTO record_chunks VALUES(?,?,?,?,?)",
+            kind,
+            recordId,
+            household,
+            index++,
+            serialized.slice(offset, end),
+          );
+          offset = end;
+        }
+      }
+      return this.get(kind, recordId, household);
+    });
+  }
+  remove(kind, recordId, household, version) {
+    return this.transaction(() => {
+      if (
+        !this.run(
+          "DELETE FROM records WHERE kind=? AND id=? AND household=? AND version=?",
+          kind,
+          recordId,
+          household,
+          version,
+        ).changes
+      )
+        fail(409, "This changed on another device. Reload before removing.");
+      this.run(
+        "DELETE FROM record_chunks WHERE kind=? AND id=? AND household=?",
+        kind,
+        recordId,
+        household,
+      );
+    });
   }
   household(household) {
     return this.get("household", household, household);

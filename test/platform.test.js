@@ -4,7 +4,8 @@ import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Store, id, checkPassword, defaults } from "../server/model.js";
+import { id, checkPassword, defaults } from "../server/model.js";
+import { Store } from "../server/node-store.js";
 import { createApp } from "../server/app.js";
 const origin = "http://127.0.0.1:3000";
 const password = "Synthetic-only-password-2026";
@@ -1008,4 +1009,65 @@ test("administrator CLI bootstraps a private persisted database and rejects dupl
     "admin",
   );
   reopened.db.close();
+});
+
+test("large records round-trip atomically and retain indexed household/template metadata", (t) => {
+  const store = new Store();
+  t.after(() => store.db.close());
+  const household = id(),
+    large =
+      "data:image/png;base64," + Buffer.alloc(1_700_000, 42).toString("base64");
+  let record = store.put("household", household, household, {
+    name: "Large design",
+    slug: "stable-test-slug",
+    design: { backgroundImage: large },
+  });
+  assert.equal(
+    store.publicHousehold("stable-test-slug").design.backgroundImage,
+    large,
+  );
+  assert.ok(store.one("SELECT count(*) AS total FROM record_chunks").total > 1);
+  assert.throws(
+    () => store.put("household", household, household, { name: "Stale" }, 0),
+    { status: 409 },
+  );
+  assert.equal(
+    store.get("household", household, household).design.backgroundImage,
+    large,
+  );
+  record = store.put(
+    "household",
+    household,
+    household,
+    { name: "Small design", slug: "stable-test-slug", design: {} },
+    record.version,
+  );
+  assert.equal(
+    store.one("SELECT count(*) AS total FROM record_chunks").total,
+    0,
+  );
+  const event = store.put("event", id(), household, {
+    template: "template-id",
+    icon: large,
+  });
+  assert.equal(
+    store.one(
+      "SELECT id FROM records WHERE kind='event' AND json_extract(body,'$.template')=?",
+      "template-id",
+    ).id,
+    event.id,
+  );
+  store.remove("event", event.id, household, event.version);
+  assert.equal(
+    store.one("SELECT count(*) AS total FROM record_chunks").total,
+    0,
+  );
+});
+
+test("storage chunk boundaries preserve Unicode pairs", (t) => {
+  const store = new Store();
+  t.after(() => store.db.close());
+  const text = "x".repeat(249990) + "😀" + "x".repeat(50);
+  const saved = store.put("test", id(), "test-tenant", { text });
+  assert.equal(saved.text, text);
 });

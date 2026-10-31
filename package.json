@@ -10,16 +10,22 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "admin": "node server/admin.js",
-    "test": "node --test test/*.test.js",
+    "test": "node --test test/platform.test.js",
     "test:mobile": "node test/mobile.cjs",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "dev:cloudflare": "wrangler dev --local",
+    "deploy:cloudflare": "wrangler deploy",
+    "cloudflare:bootstrap": "node scripts/cloudflare-admin.js",
+    "test:cloudflare": "node --test test/cloudflare.test.js"
   },
   "dependencies": {
     "qrcode": "1.5.4"
   },
   "devDependencies": {
+    "jsonc-parser": "3.3.1",
     "playwright": "1.58.2",
-    "prettier": "3.8.1"
+    "prettier": "3.8.1",
+    "wrangler": "4.156.0"
   }
 }
