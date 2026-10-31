@@ -4,3 +4,6 @@ var/
 *.sqlite*
 coverage/
 test-results/
+.wrangler/
+.dev.vars
+.dev.vars.*

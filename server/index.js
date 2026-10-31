@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { Store } from "./model.js";
+import { Store } from "./node-store.js";
 import { createApp } from "./app.js";
 const port = Number(process.env.PORT || 3000),
   host = process.env.HOST || "127.0.0.1";

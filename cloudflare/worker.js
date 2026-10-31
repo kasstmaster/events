@@ -1,0 +1,126 @@
+import { DurableObject } from "cloudflare:workers";
+import { Buffer } from "node:buffer";
+import { Store } from "../server/model.js";
+import { createHandler } from "../server/handler.js";
+
+// Thin runtime adapters only: authorization, validation and RSVP behavior remain shared.
+function database(storage) {
+  return {
+    exec(query) {
+      for (const statement of query
+        .split(";")
+        .map((s) => s.trim())
+        .filter(Boolean))
+        storage.sql.exec(statement);
+    },
+    prepare(query) {
+      return {
+        all: (...args) => storage.sql.exec(query, ...args).toArray(),
+        get: (...args) => storage.sql.exec(query, ...args).toArray()[0],
+        run: (...args) => {
+          const cursor = storage.sql.exec(query, ...args);
+          return { changes: cursor.rowsWritten };
+        },
+      };
+    },
+    transaction: (callback) => storage.transactionSync(callback),
+  };
+}
+async function serve(request, options) {
+  const headers = new Headers();
+  let status = 200,
+    ended = false,
+    payload = "";
+  const req = {
+    url: new URL(request.url).pathname + new URL(request.url).search,
+    method: request.method,
+    headers: Object.fromEntries(request.headers),
+    socket: {
+      remoteAddress: request.headers.get("x-events-client-ip") || "unknown",
+    },
+    async *[Symbol.asyncIterator]() {
+      if (request.body)
+        for await (const part of request.body) yield Buffer.from(part);
+    },
+  };
+  const res = {
+    get headersSent() {
+      return ended;
+    },
+    setHeader(name, value) {
+      headers.set(name, value);
+    },
+    writeHead(code, values = {}) {
+      status = code;
+      for (const [key, value] of Object.entries(values))
+        headers.set(key, value);
+    },
+    end(value = "") {
+      payload = value;
+      ended = true;
+    },
+  };
+  await createHandler(options)(req, res);
+  return new Response(payload, { status, headers });
+}
+export class EventsDatabase extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.store = new Store(database(ctx.storage));
+  }
+  async fetch(request) {
+    const store = this.store;
+    if (!store.adminSetupComplete()) {
+      const address = this.env.BOOTSTRAP_ADMIN_EMAIL,
+        hash = this.env.BOOTSTRAP_ADMIN_HASH;
+      // Legacy operator alternative: accept only an already-derived scrypt hash.
+      if (address && /^[0-9a-f]{32}:[0-9a-f]{128}$/.test(hash || "")) {
+        const { email, id } = await import("../server/model.js");
+        store.transaction(() => {
+          if (!store.adminSetupComplete())
+            store.run(
+              "INSERT INTO users VALUES(?,?,?,?,NULL)",
+              id(),
+              email(address),
+              hash,
+              "admin",
+            );
+        });
+      }
+    }
+    return serve(request, {
+      store,
+      setupSecret: this.env.ADMIN_SETUP_TOKEN || "",
+      setupEmail: this.env.BOOTSTRAP_ADMIN_EMAIL || "",
+      requireAdmin: true,
+      origin: this.env.APP_ORIGIN || new URL(request.url).origin,
+    });
+  }
+}
+export default {
+  async fetch(request, env) {
+    if (new URL(request.url).pathname.startsWith("/api/")) {
+      const headers = new Headers(request.headers);
+      // Always overwrite a caller-supplied forwarding header at the trusted Cloudflare edge.
+      headers.set(
+        "x-events-client-ip",
+        request.headers.get("CF-Connecting-IP") || "unknown",
+      );
+      const stub = env.EVENTS_DATABASE.get(
+        env.EVENTS_DATABASE.idFromName("events-platform-v1"),
+      );
+      return stub.fetch(new Request(request, { headers }));
+    }
+    return serve(request, {
+      store: null,
+      origin: env.APP_ORIGIN || new URL(request.url).origin,
+      readAsset: async (file) => {
+        const response = await env.ASSETS.fetch(
+          new URL("/" + file, request.url),
+        );
+        if (!response.ok) throw new Error("Missing frontend asset");
+        return Buffer.from(await response.arrayBuffer());
+      },
+    });
+  },
+};

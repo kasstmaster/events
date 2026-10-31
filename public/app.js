@@ -11,6 +11,7 @@ const fullName = (guest) =>
   [guest.first, guest.last, guest.suffix].filter(Boolean).join(" ");
 const state = {
   session: null,
+  setup: null,
   data: null,
   event: null,
   view: "home",
@@ -89,6 +90,18 @@ async function load({ background = false } = {}) {
   if (background && isEditing()) return;
   const generation = ++loadGeneration;
   try {
+    const setup = await api("/api/setup");
+    state.setup = setup;
+    if (setup.required) {
+      if (generation !== loadGeneration || (background && isEditing())) return;
+      Object.assign(state, {
+        session: { role: null },
+        data: null,
+        publicHousehold: null,
+      });
+      render();
+      return;
+    }
     const session = await api("/api/session");
     let data = null,
       templates = [],
@@ -129,7 +142,20 @@ async function load({ background = false } = {}) {
   }
 }
 
+function setupPage() {
+  const setup = state.setup;
+  if (!setup?.required)
+    return `<section class="auth panel"><h1>Setup is complete</h1><p>This site already has an administrator. Setup cannot replace the account.</p>${button("host-login", "Host Login", "", "")}</section>`;
+  if (!setup.enabled)
+    return `<section class="auth panel"><h1>Administrator setup</h1><p>The site owner must first add an encrypted <strong>ADMIN_SETUP_TOKEN</strong> secret to the <strong>events</strong> Worker in Cloudflare, then refresh this page.</p><p>Use a unique random token of 32–256 characters from a password manager. No installation or local server is needed.</p>${button("reload", "Check again", "", "")}</section>`;
+  return `<section class="auth"><p class="eyebrow">One-time owner setup</p><h1>Make Gather yours.</h1><div class="panel"><p>Enter the setup token you saved in Cloudflare, then choose your administrator login. This page locks after setup.</p><form data-form="setup">${field("Setup token", "token", "", "password", 'required minlength="32" maxlength="256" autocomplete="off"')}${field("Administrator email", "email", "", "email", 'required maxlength="254" autocomplete="username"')}${field("Choose administrator password", "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}${field("Confirm password", "confirmPassword", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Create administrator</button></form></div><p class="small muted">Use HTTPS. Do not put the setup token in the URL or send it through chat.</p></section>`;
+}
 function authPage() {
+  if (
+    state.setup?.required ||
+    (location.pathname === "/setup" && state.view !== "login")
+  )
+    return setupPage();
   const household = state.publicHousehold;
   if (household && !["login", "register"].includes(state.view)) {
     applyDesign(household.design);
@@ -423,6 +449,14 @@ async function submit(form) {
   const data = new FormData(form),
     value = Object.fromEntries(data),
     kind = form.dataset.form;
+  if (kind === "setup") {
+    await api("/api/setup", { method: "POST", data: value });
+    form.reset();
+    state.view = "home";
+    await load();
+    notify("Your administrator account is ready.");
+    return;
+  }
   if (kind === "login" || kind === "register") {
     await api("/api/" + kind, { method: "POST", data: value });
     state.view = "home";

@@ -4,7 +4,7 @@ A mobile-first application for independent hosts and households. Every household
 
 ## Run locally
 
-Requires **Node.js 24** (also pinned in `.nvmrc`). There is no frontend build step.
+Requires **Node.js 24** for local development and deployment tooling (also pinned in `.nvmrc`). There is no frontend build step. Cloudflare Workers is supported through the same shared application; see [Cloudflare deployment](docs/cloudflare.md).
 
 ```sh
 npm ci
@@ -13,7 +13,7 @@ npm start
 
 The default server is `http://127.0.0.1:3000`. The default database is `var/events.sqlite`; the directory is ignored by Git. Keep the application server running for cross-device use. Data is never stored primarily in browser local storage.
 
-Create the initial administrator with `npm run admin` after supplying `ADMIN_EMAIL` and `ADMIN_PASSWORD` through a secure shell environment. There is no default account or password; use at least 12 characters. Do not put passwords in source code, shell command history, or committed configuration. Unset the bootstrap variables afterward. The command creates an administrator account, never sends an email, and refuses duplicate email addresses.
+For this local Node development workflow, create the initial administrator with `npm run admin` after supplying `ADMIN_EMAIL` and `ADMIN_PASSWORD` through a secure shell environment. There is no default account or password; use at least 12 characters. Do not put passwords in source code, shell command history, or committed configuration. Unset the bootstrap variables afterward. The command creates an administrator account, never sends an email, and refuses duplicate email addresses.
 
 ### Everyday workflow
 
@@ -45,16 +45,20 @@ npm run format:check
 # Use system Chromium, or install Playwright's browser first:
 npx playwright install chromium
 npm run test:mobile
+npm run test:cloudflare
 ```
 
 Set `CHROMIUM_PATH` to use another Chromium executable. Browser tests use an isolated in-memory database on loopback port 3147 and block all external browser requests. Do not run them against a deployed site. HTTP integration tests use temporary databases and randomly assigned loopback ports. Some managed environments require execution permission for local sockets and browser processes.
 
-The test suite covers two hosts, role/tenant isolation, approvals/passwords, CSRF, suffixes/ambiguous names, shared addresses, individually invited children, RSVP totals, racing quantities, deadlines, record conflicts, persistence after restart, templates/QR, and ordered registries. The browser test exercises approval through RSVP on a phone viewport, checks independent household/event colors, a second host on a tablet, another guest session on desktop, and automatic registry synchronization. CI runs both suites on Ubuntu 24.04, pinned because Playwright 1.58.2 does not support Ubuntu 26.04 selected by `ubuntu-latest`. Keep the runner and Playwright's supported operating systems compatible when updating either. There is no deployment workflow.
+The test suite covers two hosts, role/tenant isolation, approvals/passwords, CSRF, suffixes/ambiguous names, shared addresses, individually invited children, RSVP totals, racing quantities, deadlines, record conflicts, persistence after restart, templates/QR, and ordered registries. The browser test exercises approval through RSVP on a phone viewport, checks independent household/event colors, a second host on a tablet, another guest session on desktop, and automatic registry synchronization. CI runs both suites on Ubuntu 24.04, pinned because Playwright 1.58.2 does not support Ubuntu 26.04 selected by `ubuntu-latest`. Keep the runner and Playwright's supported operating systems compatible when updating either. There is no automatic deployment workflow. CI also validates the local Cloudflare Workers/Durable Objects runtime.
 
 ## Architecture and runtime configuration
 
-- `server/model.js`: SQLite storage, tenant-scoped access, design validation, password/session handling and transactional RSVPs.
-- `server/app.js`: shared HTTP API, server-side role authorization, input validation, CSRF protection, QR generation and static serving.
+- `server/model.js`: shared SQLite storage, tenant-scoped access, design validation, password/session handling and transactional RSVPs. Large records use transactional chunks compatible with Cloudflare row limits.
+- `server/node-store.js`: local Node.js SQLite driver.
+- `server/handler.js`: shared HTTP request handling, role authorization, validation, CSRF and QR generation.
+- `server/app.js`: local Node HTTP/static-file adapter.
+- `cloudflare/worker.js`: Cloudflare Fetch/assets and SQLite-backed Durable Object adapters; one new Worker and database namespace, without touching the gatherings site.
 - `public/app.js`: shared views/forms for administrator, host and guest; one event editor/page, RSVP system and appearance editor.
 - `public/style.css`: touch-friendly shared design and fixed toolbar, responsive dialogs, print and safe-area rules.
 - `test/`: HTTP integration and multi-session mobile browser checks.
@@ -70,7 +74,9 @@ Appearance resolves as **platform defaults → household settings → event over
 | `NODE_ENV`                      | unset                   | `production` requires HTTPS `APP_ORIGIN`                                                         |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | none                    | Initial administrator CLI only; never needed by the running server                               |
 
-No hosting provider, production database location, domain or deployment credentials have been selected. Deployment requires an explicitly approved follow-up. SQLite supports this centralized single-server architecture; multiple replicas need a shared database service and a corresponding storage adapter, not separate host applications. Back up the database using SQLite’s online backup facilities or stop the server and copy the database consistently with its WAL state. A local developer database is not a cloud deployment.
+Cloudflare is the selected deployment target, using a separate `events` Worker and SQLite-backed Durable Object in the owner's chosen account. See [deployment and administrator bootstrap instructions](docs/cloudflare.md). `npm run deploy:cloudflare` requires working Cloudflare authentication; configuration or a dry run alone does not establish a live deployment. No custom domain route or existing gatherings resource is changed. The administrator can complete one-time browser setup at `/setup` using a securely configured `ADMIN_SETUP_TOKEN` secret. No local installation is needed. Passwords are hashed server-side, setup is origin-checked and rate-limited, and a durable completion marker locks it permanently after creating the administrator. Existing administrators are unaffected. See the deployment guide for the dashboard steps.
+
+The original Node server remains available for local development or a separately chosen single-server host. Its database lives at `DATABASE_PATH`; the Cloudflare adapter uses Cloudflare's durable storage instead. The local database is never silently uploaded to Cloudflare. Multiple Node replicas need a shared database service rather than separate database copies. Use SQLite-consistent backups for the local server; cloud storage recovery/exports require an operator procedure as documented in the deployment guide.
 
 ## Security and limits
 
