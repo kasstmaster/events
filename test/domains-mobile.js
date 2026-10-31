@@ -183,46 +183,66 @@ try {
         .waitFor();
       await context.close();
     }
-  // Registration shows an editable suggestion and lets a host pick an unrelated name.
-  const { admin } = await seedRegistrationAdmin();
+  // Phone registration derives a non-editable address; later settings cannot rename it.
+  await seedRegistrationAdmin();
   const { context, page } = await device(390);
   await page.goto(canonical);
   await page
     .getByRole("button", { name: "Create your account", exact: true })
     .click();
-  assert.match(
+  assert.equal(
+    await page
+      .getByLabel("Household web address", { exact: true })
+      .getAttribute("readonly"),
+    "",
+  );
+  await page
+    .getByLabel("Family household name", { exact: true })
+    .fill("Dubois");
+  assert.equal(
     await page
       .getByLabel("Household web address", { exact: true })
       .inputValue(),
-    /^household-/,
+    "dubois",
   );
   await page
-    .getByLabel("Household web address", { exact: true })
-    .fill("chosen-name");
+    .getByText("dubois.ilymmd.com is available", { exact: false })
+    .waitFor();
   await page
-    .getByRole("button", { name: "Check address availability", exact: true })
-    .click();
-  await page.getByText("Available to claim.", { exact: false }).waitFor();
+    .getByLabel("Family household name", { exact: true })
+    .fill("TheMeyers");
+  await page
+    .getByText("That household address is unavailable", { exact: false })
+    .waitFor();
+  assert.equal(
+    await page
+      .getByLabel("Household web address", { exact: true })
+      .inputValue(),
+    "themeyers",
+  );
+  await page
+    .getByLabel("Family household name", { exact: true })
+    .fill("Dubois");
   await page
     .getByLabel("Email address", { exact: true })
     .fill("new@example.test");
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page
-    .getByLabel("Family household name", { exact: true })
-    .fill("Completely unrelated display name");
-  await page
     .getByRole("button", { name: "Create account", exact: true })
     .click();
-  await page
-    .getByRole("heading", {
-      name: "Completely unrelated display name",
-      exact: true,
-    })
-    .waitFor();
+  await page.getByRole("heading", { name: "Dubois", exact: true }).waitFor();
+  const session = await f.request("/api/login", {
+    method: "POST",
+    data: { email: "new@example.test", password },
+  });
+  const host = await f.request("/api/host", { cookie: session.cookie });
+  assert.equal(host.body.household.subdomain, "dubois");
+  assert.equal(host.body.household.subdomainStatus, "pending");
   await page.getByRole("button", { name: "✎ Household", exact: true }).click();
-  await page
-    .getByLabel("Household web address", { exact: true })
-    .fill("edited-name");
+  assert.equal(
+    await page.getByLabel("Household web address", { exact: true }).count(),
+    0,
+  );
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Save", exact: true })
@@ -231,7 +251,7 @@ try {
   await context.close();
   assert.deepEqual(errors, []);
   console.log(
-    "Two household hostnames passed phone (390px) and desktop (1440px): branding, guest sign-in, RSVP, assets, Secure host-only cookies and household isolation; editable registration and renaming passed.",
+    "Two household hostnames passed phone (390px) and desktop (1440px): branding, guest sign-in, RSVP, assets, Secure host-only cookies and household isolation; automatic registration and immutable addresses passed.",
   );
   async function seedRegistrationAdmin() {
     const admin = await f.request("/api/login", {

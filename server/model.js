@@ -7,7 +7,7 @@ import {
   createHash,
 } from "node:crypto";
 import { promisify } from "node:util";
-import { normalizeLabel } from "./household-domains.js";
+import { normalizeLabel, suggestLabel } from "./household-domains.js";
 const scrypt = promisify(scryptCallback);
 export const id = () => randomUUID();
 export class Problem extends Error {
@@ -331,10 +331,12 @@ export class Store {
     return this.transaction(() => {
       const existing = this.household(household);
       if (!existing) fail(404, "Household not found.");
-      const subdomain =
-        input.subdomain === undefined
-          ? existing.subdomain
-          : this.claimDomain(input.subdomain, household, existing.subdomain);
+      if (
+        input.subdomain !== undefined &&
+        input.subdomain !== existing.subdomain
+      )
+        fail(403, "Household web addresses cannot be changed.");
+      const subdomain = existing.subdomain;
       return this.put(
         "household",
         household,
@@ -480,15 +482,19 @@ export class Store {
           403,
           "Registration is unavailable for these details. Contact the administrator.",
         );
+      const label = suggestLabel(name);
+      if (
+        input.subdomain !== undefined &&
+        normalizeLabel(input.subdomain) !== label
+      )
+        fail(400, "The address must match the household name.");
       const household = id(),
         user = id();
       this.put("household", household, household, {
         name,
         slug: randomBytes(18).toString("base64url"),
         design: {},
-        ...(input.subdomain
-          ? { subdomain: this.claimDomain(input.subdomain, household) }
-          : {}),
+        subdomain: this.claimDomain(label, household),
       });
       this.run(
         "INSERT INTO users VALUES(?,?,?,?,?)",

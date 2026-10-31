@@ -1,3 +1,4 @@
+import { suggestLabel } from "./household-domains.js";
 import { Buffer } from "node:buffer";
 import { createHash, timingSafeEqual } from "node:crypto";
 import QRCode from "qrcode";
@@ -16,6 +17,10 @@ import {
 } from "./model.js";
 const files = new Map([
   ["/", ["index.html", "text/html; charset=utf-8"]],
+  [
+    "/household-address.js",
+    ["household-address.js", "text/javascript; charset=utf-8"],
+  ],
   ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
   ["/style.css", ["style.css", "text/css; charset=utf-8"]],
 ]);
@@ -411,11 +416,22 @@ export function createHandler({
       }
       if (path === "/api/subdomains" && method === "GET") {
         store.limit(`availability:${req.socket.remoteAddress}`, 120);
+        const fromName = url.searchParams.has("householdName");
+        const name = fromName
+          ? suggestLabel(
+              (url.searchParams.get("householdName") || "").slice(0, 100),
+            )
+          : url.searchParams.get("name");
         json(res, {
           available: store.domainAvailable(
-            url.searchParams.get("name"),
-            session?.role === "host" ? session.household : null,
+            name,
+            fromName
+              ? null
+              : session?.role === "host"
+                ? session.household
+                : null,
           ),
+          ...(fromName ? { suggested: name, status: "pending" } : {}),
         });
         return;
       }

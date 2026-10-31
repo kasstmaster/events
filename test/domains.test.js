@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Store } from "../server/node-store.js";
 import {
   normalizeLabel,
+  suggestLabel,
   householdLink,
   configuredHosts,
 } from "../server/household-domains.js";
@@ -57,6 +58,71 @@ test("single-label normalization, reserved sites and exact allowlists", () => {
   );
 });
 
+test("whole-name suggestions normalize consistently without added words", () => {
+  for (const [name, expected] of [
+    ["Dubois", "dubois"],
+    [" Raudman ", "raudman"],
+    ["Élodie O’Neil", "elodie-oneil"],
+    ["THE Family", "the-family"],
+    [" A__B & C ", "a-b-c"],
+    ["中文", ""],
+    ["a".repeat(70), "a".repeat(63)],
+  ])
+    assert.equal(suggestLabel(name), expected);
+});
+
+test("registration derives exact names atomically and rejects collisions, reserved names and overrides", async () => {
+  const store = new Store();
+  try {
+    for (const address of ["one", "two", "reserved", "short"])
+      store.run(
+        "INSERT INTO approvals VALUES(?,?)",
+        `${address}@example.test`,
+        "synthetic",
+      );
+    const results = await Promise.allSettled(
+      ["one", "two"].map((address) =>
+        store.register({
+          email: `${address}@example.test`,
+          password,
+          name: "Dubois",
+        }),
+      ),
+    );
+    assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+    assert.equal(
+      results.find((r) => r.status === "rejected").reason.status,
+      409,
+    );
+    assert.equal(
+      store.household(
+        results.find((r) => r.status === "fulfilled").value.household,
+      ).subdomain,
+      "dubois",
+    );
+    for (const [address, name] of [
+      ["reserved", "TheMeyers"],
+      ["short", "Li"],
+    ])
+      await assert.rejects(
+        store.register({ email: `${address}@example.test`, password, name }),
+        { status: 400 },
+      );
+    await assert.rejects(
+      store.register({
+        email: "short@example.test",
+        password,
+        name: "Valid",
+        subdomain: "arbitrary",
+      }),
+      { status: 400 },
+    );
+    assert.equal(store.one("SELECT count(*) AS n FROM approvals").n, 3);
+  } finally {
+    store.db.close();
+  }
+});
+
 test("atomic registration, competing case-insensitive claims, rollback and permanent retirement", async () => {
   const store = new Store();
   try {
@@ -67,7 +133,7 @@ test("atomic registration, competing case-insensitive claims, rollback and perma
         store.register({
           email,
           password,
-          name: "Synthetic household",
+          name: "RaceName",
           subdomain: "RaceName",
         }),
       ),
@@ -84,24 +150,38 @@ test("atomic registration, competing case-insensitive claims, rollback and perma
           { name: h.name, design: {}, subdomain: "newname" },
           0,
         ),
-      { status: 409 },
+      { status: 403 },
     );
     assert.equal(store.domainAvailable("newname"), true);
     assert.equal(store.domainAvailable("racename", h.id), true);
-    const renamed = store.updateHousehold(
+    assert.throws(
+      () =>
+        store.updateHousehold(
+          h.id,
+          { name: h.name, design: {}, subdomain: "newname" },
+          h.version,
+        ),
+      { status: 403 },
+    );
+    const updated = store.updateHousehold(
       h.id,
-      { name: h.name, design: { titleColor: "#123456" }, subdomain: "newname" },
+      { name: "New display name", design: {} },
       h.version,
     );
-    assert.equal(renamed.slug, h.slug);
-    assert.equal(store.publicHousehold(h.slug).id, h.id);
+    assert.equal(updated.subdomain, "racename");
+    assert.equal(updated.slug, h.slug);
+    // Synthetic historical retirement: hosts have no rename endpoint anymore.
+    store.run(
+      "UPDATE household_domains SET retired=1 WHERE label=?",
+      "racename",
+    );
     assert.throws(() => store.hostnameHousehold("racename"), { status: 404 });
     assert.equal(store.domainAvailable("racename", h.id), false);
     await assert.rejects(
       store.register({
         email: "c@example.test",
         password,
-        name: "Other household",
+        name: "RaceName",
         subdomain: "racename",
       }),
       { status: 409 },
@@ -430,10 +510,8 @@ test(
       version: alpha.version,
       data: { name: alpha.name, design: {}, subdomain: "newraudmans" },
     });
-    assert.equal(renamed.status, 200);
-    assert.equal(renamed.body.subdomainStatus, "pending");
-    assert.equal(renamed.body.shareUrl, canonical + "/h/" + alpha.slug);
-    assert.equal((await request("/", { origin: alphaOrigin })).status, 404);
+    assert.equal(renamed.status, 403);
+    assert.equal((await request("/", { origin: alphaOrigin })).status, 200);
     assert.equal(
       (await request(`/api/public/households/${alpha.slug}`)).status,
       200,

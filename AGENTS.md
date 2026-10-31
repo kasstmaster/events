@@ -17,7 +17,7 @@ Architecture reference: `server/model.js` owns storage and transactional rules; 
 
 ## Household hostname rules
 
-Keep household domains as transactional data in `household_domains`, with permanent retired-name reservations; do not infer surnames, preclaim names for real hosts, change opaque slugs or backfill existing accounts. Validate labels with `server/household-domains.js` and reserve all existing site/platform names, including `themeyers`. Registration and version-checked renames must atomically enforce ownership/uniqueness. Preserve all prior data and session/setup markers.
+Keep household domains as transactional data in `household_domains`, with permanent retired-name reservations; do not infer surnames, preclaim names for real hosts, change opaque slugs or backfill existing accounts. Validate labels with `server/household-domains.js` and reserve all existing site/platform names, including `themeyers`. Registration must derive the label from the entire household name using the shared normalizer and atomically enforce ownership/uniqueness. No independent domain choice, editor, numbered alternative or host rename is allowed. Reject API overrides/renames. Later display-name edits preserve existing claims. Preserve all prior data and session/setup markers.
 
 `cloudflare/gateway.js` is a stateless exact-host proxy, not another application. Only the reviewed events origin and provisioned hostnames may be forwarded. Verify HMAC at the public events edge before using hostname/IP context; strip untrusted private headers. Keep exact Origin CSRF, origin-bound host-only Secure cookies, role/household isolation and generic failures. Never activate sharing/QR for pending names. Keep household login appearance independent from event overrides.
 

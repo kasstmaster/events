@@ -1,3 +1,4 @@
+export { suggestLabel } from "../public/household-address.js";
 // Shared data validation, never a household-specific implementation.
 export const domain = "ilymmd.com";
 export const reservedLabels = new Set(

@@ -49,7 +49,14 @@ export async function domainRuntime() {
           serviceBindings: {
             ASSETS: async (req) => {
               const file = new URL(req.url).pathname.slice(1);
-              if (!["index.html", "style.css", "app.js"].includes(file))
+              if (
+                ![
+                  "index.html",
+                  "style.css",
+                  "app.js",
+                  "household-address.js",
+                ].includes(file)
+              )
                 return new Response("Missing", { status: 404 });
               return new Response(await readFile(resolve("public", file)));
             },
@@ -140,8 +147,8 @@ export async function seedDomains(f) {
     );
   const hosts = [];
   for (const [i, label, name] of [
-    [0, "theraudmans", "Synthetic Raudman household"],
-    [1, "thedubois", "Synthetic Dubois household"],
+    [0, "theraudmans", "theraudmans"],
+    [1, "thedubois", "thedubois"],
   ]) {
     const email = `host${i}@example.test`;
     await request("/api/admin/approvals", {

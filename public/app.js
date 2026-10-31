@@ -1,3 +1,4 @@
+import { suggestLabel } from "/household-address.js";
 const $ = (selector) => document.querySelector(selector);
 const escape = (value) =>
   String(value ?? "").replace(
@@ -151,21 +152,40 @@ function setupPage() {
     return `<section class="auth panel"><h1>Administrator setup</h1><p>The site owner must first add an encrypted <strong>ADMIN_SETUP_TOKEN</strong> secret to the <strong>events</strong> Worker in Cloudflare, then refresh this page.</p><p>Use a unique random token of 32–256 characters from a password manager. No installation or local server is needed.</p>${button("reload", "Check again", "", "")}</section>`;
   return `<section class="auth"><p class="eyebrow">One-time owner setup</p><h1>Make Gather yours.</h1><div class="panel"><p>Enter the setup token you saved in Cloudflare, then choose your administrator login. This page locks after setup.</p><form data-form="setup">${field("Setup token", "token", "", "password", 'required minlength="32" maxlength="256" autocomplete="off"')}${field("Administrator email", "email", "", "email", 'required maxlength="254" autocomplete="username"')}${field("Choose administrator password", "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}${field("Confirm password", "confirmPassword", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Create administrator</button></form></div><p class="small muted">Use HTTPS. Do not put the setup token in the URL or send it through chat.</p></section>`;
 }
-const suggestedAddress = "household-" + crypto.randomUUID().slice(0, 8);
-function subdomainField(value = "") {
+function subdomainField() {
   return (
     field(
       "Household web address",
       "subdomain",
-      value,
+      "",
       "text",
-      'required minlength="3" maxlength="63" pattern="[A-Za-z0-9][A-Za-z0-9-]{1,61}[A-Za-z0-9]" autocapitalize="none" spellcheck="false" aria-describedby="subdomain-help"',
+      'readonly aria-describedby="subdomain-help"',
     ) +
-    '<p id="subdomain-help" class="small muted">Choose your own name before .ilymmd.com. Use 3–63 letters, numbers or internal hyphens. Names are case-insensitive. New addresses need activation; your existing link works while pending. Retired names stay reserved permanently.</p>' +
-    button("check-subdomain", "Check address availability") +
+    '<p id="subdomain-help" class="small muted">Generated from your household name; it cannot be edited. Use a different household name if the address is unavailable. Your invitation link works immediately; custom routing remains pending until verified.</p>' +
     '<p id="subdomain-status" class="small" role="status"></p>'
   );
 }
+let addressTimer;
+async function checkAddress(form) {
+  const name = form.elements.name.value;
+  const status = form.querySelector("#subdomain-status");
+  status.textContent = "Checking address…";
+  try {
+    const result = await api(
+      "/api/subdomains?householdName=" + encodeURIComponent(name),
+    );
+    if (!form.isConnected || form.elements.name.value !== name) return;
+    form.elements.subdomain.value = result.suggested || "";
+    status.textContent = result.available
+      ? `${result.suggested}.ilymmd.com is available. Registration will claim it; routing activation is pending.`
+      : "That household address is unavailable or invalid. Enter a different household name.";
+  } catch {
+    if (form.isConnected && form.elements.name.value === name)
+      status.textContent =
+        "Preview unavailable. Registration will recheck before claiming.";
+  }
+}
+
 const householdShareUrl = () =>
   state.data.household.shareUrl ||
   location.origin + "/h/" + state.data.household.slug;
@@ -181,7 +201,7 @@ function authPage() {
     return `<section class="auth"><div class="panel"><p class="eyebrow">You’re in good company</p><h1>${escape(household.name)}</h1><p>Welcome. Enter your name to see your invitations.</p><form data-form="guest-login" class="stack">${field("First name", "first", "", "text", 'required autocomplete="given-name" maxlength="80"')}${field("Last name", "last", "", "text", 'required autocomplete="family-name" maxlength="80"')}${field("Suffix, if applicable", "suffix", "", "text", 'autocomplete="honorific-suffix" maxlength="30" placeholder="Jr., Sr., III…"')}<p class="form-error" role="alert"></p><button>See my invitations</button></form><p class="small muted">Use the name your host has on file. If you share an identical name, ask your host for help.</p></div><p class="small" style="text-align:center">${button("host-login", "Host Login", "", "quiet")}</p></section>`;
   }
   const register = state.view === "register";
-  return `<section class="auth"><p class="eyebrow">A place for your people</p><h1>${register ? "Make yourself at home." : "Good things begin together."}</h1><div class="panel"><h2>${register ? "Create your host account" : "Host Login"}</h2><p class="muted">${register ? "Registration is available only for administrator-approved email addresses. No emails will be sent." : "Plan a little. Gather a lot."}</p><form data-form="${register ? "register" : "login"}">${field("Email address", "email", "", "email", 'required autocomplete="username" maxlength="254"')}${field("Password", "password", "", "password", `required minlength="12" maxlength="256" autocomplete="${register ? "new-password" : "current-password"}"`)}${register ? field("Family household name", "name", "", "text", 'required maxlength="100" placeholder="The Meyer Family"') + subdomainField(suggestedAddress) : ""}<p class="form-error" role="alert"></p><button>${register ? "Create account" : "Sign in"}</button></form></div><p class="small">${register ? "Already registered?" : "Approved to host?"} ${button(register ? "host-login" : "register", register ? "Sign in" : "Create your account", "", "quiet")}</p>${household ? button("guest-login", "Back to guest sign-in", "", "quiet") : ""}</section>`;
+  return `<section class="auth"><p class="eyebrow">A place for your people</p><h1>${register ? "Make yourself at home." : "Good things begin together."}</h1><div class="panel"><h2>${register ? "Create your host account" : "Host Login"}</h2><p class="muted">${register ? "Registration is available only for administrator-approved email addresses. No emails will be sent." : "Plan a little. Gather a lot."}</p><form data-form="${register ? "register" : "login"}">${field("Email address", "email", "", "email", 'required autocomplete="username" maxlength="254"')}${field("Password", "password", "", "password", `required minlength="12" maxlength="256" autocomplete="${register ? "new-password" : "current-password"}"`)}${register ? field("Family household name", "name", "", "text", 'required maxlength="100" placeholder="Household name"') + subdomainField() : ""}<p class="form-error" role="alert"></p><button>${register ? "Create account" : "Sign in"}</button></form></div><p class="small">${register ? "Already registered?" : "Approved to host?"} ${button(register ? "host-login" : "register", register ? "Sign in" : "Create your account", "", "quiet")}</p>${household ? button("guest-login", "Back to guest sign-in", "", "quiet") : ""}</section>`;
 }
 function toolbar(event) {
   const role = state.session.role;
@@ -265,7 +285,7 @@ function appearanceForm(event = false) {
   state.editingDesign = d;
   modal(
     event ? "Event appearance" : "Household & login appearance",
-    `${event ? "<p>Changes apply only to this event.</p>" : field("Family household name", "householdName", household.name, "text", 'required maxlength="100"') + subdomainField(household.subdomain || suggestedAddress) + `<p class="small muted">Address status: ${escape(household.subdomainStatus || "unclaimed")}. Renaming retires your old address permanently; existing /h/ links remain valid.</p>` + '<p class="muted small">Sets the guest login page and defaults for events. Event overrides stay independent.</p>'}${appearanceFields(d)}${event ? '<label class="check"><input type="checkbox" name="resetDesign">Use household defaults (remove all event overrides)</label>' : ""}`,
+    `${event ? "<p>Changes apply only to this event.</p>" : field("Family household name", "householdName", household.name, "text", 'required maxlength="100"') + `<p class="small muted">Address status: ${escape(household.subdomainStatus || "unclaimed")}. Your web address cannot be changed. Display-name edits keep your address and existing /h/ links.</p>` + '<p class="muted small">Sets the guest login page and defaults for events. Event overrides stay independent.</p>'}${appearanceFields(d)}${event ? '<label class="check"><input type="checkbox" name="resetDesign">Use household defaults (remove all event overrides)</label>' : ""}`,
     event ? "event-design" : "household",
   );
   updatePreview();
@@ -477,6 +497,7 @@ async function submit(form) {
     return;
   }
   if (kind === "login" || kind === "register") {
+    if (kind === "register") delete value.subdomain;
     await api("/api/" + kind, { method: "POST", data: value });
     state.view = "home";
     await load();
@@ -522,22 +543,14 @@ async function submit(form) {
     if (upload) d.backgroundImage = upload;
     if (data.has("removeBackground")) d.backgroundImage = "";
     if (kind === "household") {
-      const updated = await api("/api/host/household", {
+      await api("/api/host/household", {
         method: "PUT",
         version: state.data.household.version,
         data: {
           name: value.householdName,
           design: d,
-          subdomain: value.subdomain,
         },
       });
-      if (
-        location.hostname === state.data.household.subdomain + ".ilymmd.com" &&
-        updated.subdomain !== state.data.household.subdomain
-      ) {
-        location.assign(updated.platformUrl);
-        return;
-      }
     } else {
       const e = selectedEvent();
       let overrides = { ...e.design };
@@ -628,15 +641,24 @@ document.addEventListener("submit", async (event) => {
   } catch (problem) {
     error.textContent =
       problem.message +
-      (problem.status === 409
+      (problem.status === 409 && form.dataset.form !== "register"
         ? " Close this editor and refresh before trying again."
         : "");
+    if (problem.status === 409 && form.dataset.form === "register")
+      void checkAddress(form);
     error.scrollIntoView({ block: "nearest", behavior: "smooth" });
   } finally {
     buttons.forEach((b) => (b.disabled = false));
   }
 });
 document.addEventListener("input", (event) => {
+  const form = event.target.closest("form");
+  if (form?.dataset.form === "register" && event.target.name === "name") {
+    form.elements.subdomain.value = suggestLabel(event.target.value);
+    form.querySelector("#subdomain-status").textContent = "Checking address…";
+    clearTimeout(addressTimer);
+    addressTimer = setTimeout(() => void checkAddress(form), 400);
+  }
   if (event.target.closest("form")?.querySelector("#design-preview"))
     updatePreview();
 });
@@ -772,17 +794,6 @@ document.addEventListener("click", async (event) => {
     }
     if (action === "dashboard" || action === "refresh-dashboard") {
       await dashboard();
-      return;
-    }
-    if (action === "check-subdomain") {
-      const form = target.closest("form");
-      const label = form.elements.subdomain.value;
-      const result = await api(
-        "/api/subdomains?name=" + encodeURIComponent(label),
-      );
-      form.querySelector("#subdomain-status").textContent = result.available
-        ? "Available to claim. Saving reserves the name; activation is a separate step."
-        : "That address is unavailable. Choose another name.";
       return;
     }
     if (action === "share") {

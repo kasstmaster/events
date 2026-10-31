@@ -1,3 +1,15 @@
+# Registration follow-up review
+
+The current follow-up is not deployed. It removes independent domain selection and all host domain editing. `Dubois` generates `dubois`, `Raudman` generates `raudman`. The same shared normalizer runs in browser/server. Registration atomically claims the exact normalized name, rejecting occupied/reserved/retired/invalid names and preserving approval on failure. No suffixes/extra words, existing-claim renames, data backfill or opaque-link changes. The API rejects arbitrary registration overrides and domain-change attempts. Display names remain editable without changing the claim.
+
+Automatic DNS/routing activation remains blocked by the missing deployed durable provisioner and runtime-scoped Cloudflare management credentials in both accounts (DNS/Routes in the domain account and controlled updates to full allowlists). Workstation OAuth is not a runtime credential and lacks DNS Edit. Claims stay pending; sharing/QR uses opaque links. See the architecture guide for exact missing integration, production changes and rollback. No settings or existing websites changed for this follow-up.
+
+Follow-up validation: Node.js 24.22.1, `npm ci`, `npm test` 26/26, original phone/tablet/desktop suite and domain phone (390px)/desktop (1440px) suite, real local Cloudflare Worker/Durable Object suite, format and diff checks passed. The pinned CDN archive was invalid in this environment; the same pinned Chrome version 145.0.7632.6 Headless Shell was downloaded from official Google storage and used through `CHROMIUM_PATH`. All fixtures are isolated; no live account/guest/RSVP writes.
+
+Publication gate: current browser is signed into the domain account, and the events-account dashboard returns “Page not found” / possible missing permission. Fresh production/preview-build inspection is therefore blocked. The prior verified settings had production builds disabled and preview branch builds off, but that historical result is not a fresh verification. No feature-branch push until read-only access is restored; source is locally committed and PR notes can be updated independently. GitHub workflow remains validation-only.
+
+The following original review records the earlier implementation and publication snapshot; current behavior above supersedes editable registration/rename references below.
+
 # Review: shared household subdomains
 
 ## Proposed pull request
@@ -12,7 +24,7 @@
 
 ## PR description prepared for publication
 
-Hosts can choose an available household subdomain at registration and edit it later. Exact provisioned hostnames open that household's personalized guest-login page using the existing shared frontend, authorization, RSVP code and database. Atomic claims prevent duplicate ownership; retired names stay reserved permanently. Existing opaque household links and QR codes keep working; newly generated sharing/QR links use the custom address after operator activation. Household login styles and event overrides remain independent.
+Registration now derives a non-editable address from the whole household name; hosts cannot change domains later. Exact provisioned hostnames open that household's personalized guest-login page using the existing shared frontend, authorization, RSVP code and database. Atomic claims prevent duplicate ownership; retired names stay reserved permanently. Existing opaque household links and QR codes keep working; newly generated sharing/QR links use the custom address after operator activation. Household login styles and event overrides remain independent.
 
 A new stateless gateway in the `ilymmd.com` account proxies only exact allowed household hostnames to the verified events workers.dev origin. HMAC verification, short validity windows and mutation replay protection secure forwarding. Custom-host sessions are origin-bound and use host-only Secure cookies; setup/registration are canonical-only and cross-household requests fail closed. DNS/routes are provisioned per hostname, never by a new wildcard. The events Worker/account is pinned, and the existing `EVENTS_DATABASE` class/namespace/object-name architecture is retained. The PR includes an offline provisioning planner, refreshed README/security/AGENTS documentation, inventory evidence and the complete deployment/rollback procedure.
 
