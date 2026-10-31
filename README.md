@@ -49,7 +49,7 @@ npm run test:mobile
 
 Set `CHROMIUM_PATH` to use another Chromium executable. Browser tests use an isolated in-memory database on loopback port 3147 and block all external browser requests. Do not run them against a deployed site. HTTP integration tests use temporary databases and randomly assigned loopback ports. Some managed environments require execution permission for local sockets and browser processes.
 
-The test suite covers two hosts, role/tenant isolation, approvals/passwords, CSRF, suffixes/ambiguous names, shared addresses, individually invited children, RSVP totals, racing quantities, deadlines, record conflicts, persistence after restart, templates/QR, and ordered registries. The browser test exercises approval through RSVP on a phone viewport, checks independent household/event colors, a second host on a tablet, another guest session on desktop, and automatic registry synchronization. CI runs both suites; there is no deployment workflow.
+The test suite covers two hosts, role/tenant isolation, approvals/passwords, CSRF, suffixes/ambiguous names, shared addresses, individually invited children, RSVP totals, racing quantities, deadlines, record conflicts, persistence after restart, templates/QR, and ordered registries. The browser test exercises approval through RSVP on a phone viewport, checks independent household/event colors, a second host on a tablet, another guest session on desktop, and automatic registry synchronization. CI runs both suites on Ubuntu 24.04, pinned because Playwright 1.58.2 does not support Ubuntu 26.04 selected by `ubuntu-latest`. Keep the runner and Playwright's supported operating systems compatible when updating either. There is no deployment workflow.
 
 ## Architecture and runtime configuration
 
