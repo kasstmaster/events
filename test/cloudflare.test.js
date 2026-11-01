@@ -65,7 +65,11 @@ test(
           String(port),
         ],
         {
-          env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
+          env: {
+            ...process.env,
+            WRANGLER_SEND_METRICS: "false",
+            NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require ${resolve("test/helpers/loopback-only.cjs")}`,
+          },
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
@@ -342,7 +346,14 @@ test(
     for (const person of [first, second]) {
       const login = await request(
         `/api/public/households/${host.household.slug}/login`,
-        { method: "POST", data: { first: person.first, last: person.last } },
+        {
+          method: "POST",
+          data: {
+            first: person.first,
+            last: person.last,
+            inviteCode: person.inviteCode,
+          },
+        },
       );
       assert.equal(login.status, 200);
       guests.push(login.cookie);
@@ -446,12 +457,9 @@ test(
         .getByRole("link", { name: "Our registry", exact: true })
         .waitFor();
       await page
+        .locator("#main")
         .getByRole("button", {
-          name: (await page
-            .getByRole("button", { name: "Update my RSVP", exact: true })
-            .count())
-            ? "Update my RSVP"
-            : "Save my RSVP",
+          name: "RSVP",
           exact: true,
         })
         .click();
@@ -464,7 +472,7 @@ test(
       await page.getByLabel("Quantity for Juice").fill("0");
       await page
         .getByRole("dialog")
-        .getByRole("button", { name: "Save my RSVP", exact: true })
+        .getByRole("button", { name: "RSVP", exact: true })
         .click();
       await page.getByRole("dialog").waitFor({ state: "hidden" });
       await page
@@ -479,6 +487,134 @@ test(
     } finally {
       await browser.close();
     }
+    // Exercise additive membership, fine-grained ACL and chunked private files in actual durable SQLite.
+    const kid = await request("/api/family/members", {
+      method: "POST",
+      cookie: host.cookie,
+      data: { name: "Family child", login: "child", role: "kid", password },
+    });
+    assert.equal(kid.status, 201);
+    const kidLogin = await request(
+      `/api/public/households/${host.household.slug}/members/login`,
+      { method: "POST", data: { login: "child", password } },
+    );
+    assert.equal(kidLogin.status, 200);
+    assert.equal(
+      (await request("/api/host", { cookie: kidLogin.cookie })).status,
+      403,
+    );
+    const list = await request("/api/family/records", {
+      method: "POST",
+      cookie: host.cookie,
+      data: {
+        type: "list",
+        title: "Private groceries",
+        childAccess: [kid.body.id],
+      },
+    });
+    assert.equal(list.status, 201);
+    const additions = await Promise.all(
+      [host.cookie, kidLogin.cookie].map((cookie, i) =>
+        request("/api/family/items", {
+          method: "POST",
+          cookie,
+          data: { list: list.body.id, title: "Item " + i },
+        }),
+      ),
+    );
+    assert.deepEqual(
+      additions.map((r) => r.status),
+      [201, 201],
+    );
+    const item = additions[1].body;
+    assert.equal(
+      (
+        await request(`/api/family/items/${item.id}`, {
+          method: "PUT",
+          cookie: kidLogin.cookie,
+          version: item.version,
+          data: { completed: true },
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await request(`/api/family/items/${item.id}`, {
+          method: "PUT",
+          cookie: host.cookie,
+          version: item.version,
+          data: { completed: false },
+        })
+      ).status,
+      409,
+    );
+    const home = await request("/api/family/records", {
+      method: "POST",
+      cookie: host.cookie,
+      data: { type: "record", title: "Warranty", childAccess: [kid.body.id] },
+    });
+    assert.equal(home.status, 201);
+    const contents = "Private warranty\n".repeat(90000);
+    const document = await request("/api/family/files", {
+      method: "POST",
+      cookie: host.cookie,
+      data: {
+        record: home.body.id,
+        name: "warranty.txt",
+        mime: "text/plain",
+        base64: Buffer.from(contents).toString("base64"),
+      },
+    });
+    assert.equal(document.status, 201);
+    await stop();
+    await start();
+    assert.equal(
+      (
+        await request(`/api/family/files/${document.body.id}`, {
+          cookie: kidLogin.cookie,
+        })
+      ).body,
+      contents,
+    );
+    assert.equal(
+      (
+        await request(`/api/family/files/${document.body.id}`, {
+          cookie: other.cookie,
+        })
+      ).status,
+      404,
+    );
+    assert.equal(
+      (await request("/api/family", { cookie: kidLogin.cookie })).body.items
+        .length,
+      2,
+    );
+    assert.equal(
+      (
+        await request(`/api/family/records/${home.body.id}`, {
+          method: "PUT",
+          cookie: host.cookie,
+          version: home.body.version,
+          data: { ...home.body, childAccess: [] },
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await request(`/api/family/files/${document.body.id}`, {
+          cookie: kidLogin.cookie,
+        })
+      ).status,
+      404,
+    );
+    assert.equal(
+      (
+        await request("/api/family", { cookie: kidLogin.cookie })
+      ).body.records.some((r) => r.id === home.body.id),
+      false,
+    );
     // The edge discards caller-supplied IP headers rather than letting them bypass limits.
     const loginPath = `/api/public/households/${host.household.slug}/login`;
     for (let index = 0; index < 10; index++)

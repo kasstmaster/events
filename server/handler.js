@@ -1,6 +1,34 @@
+import {
+  identityAPI,
+  identityFor,
+  guestContact,
+  authenticateGuest,
+  invitationView,
+  requestGuestLink,
+  claimPermanentCode,
+  guestBrandHousehold,
+} from "./guest-identities.js";
+import { familyAPI, membersView } from "./family-api.js";
+import { familyMember, manager } from "./family-permissions.js";
+import { featureAPI } from "./feature-api.js";
+import {
+  uiConfig,
+  hostUI,
+  effectiveUI,
+  webURL,
+  contactPhone,
+} from "./features.js";
+import {
+  reminderInput,
+  cancelReminders,
+  verifyTwilio,
+  processTwilio,
+} from "./reminders.js";
+import { suggestLabel } from "./household-domains.js";
 import { Buffer } from "node:buffer";
 import { createHash, timingSafeEqual } from "node:crypto";
 import QRCode from "qrcode";
+import { householdLink, hostnameLabel } from "./household-domains.js";
 import {
   Problem,
   fail,
@@ -8,6 +36,7 @@ import {
   email,
   normalizeName,
   checkPassword,
+  hashPassword,
   id,
   image,
   design,
@@ -15,8 +44,22 @@ import {
 } from "./model.js";
 const files = new Map([
   ["/", ["index.html", "text/html; charset=utf-8"]],
+  [
+    "/household-address.js",
+    ["household-address.js", "text/javascript; charset=utf-8"],
+  ],
   ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
   ["/style.css", ["style.css", "text/css; charset=utf-8"]],
+  ...[
+    "editor-tools.js",
+    "ui-system.js",
+    "ui-runtime.js",
+    "ui-copy.js",
+    "icons.js",
+    "card-system.js",
+    "reminder-time.js",
+    "family-ui.js",
+  ].map((file) => ["/" + file, [file, "text/javascript; charset=utf-8"]]),
 ]);
 const date = (value) => {
   const result = text(value ?? "", 10);
@@ -81,6 +124,15 @@ function guestInput(input, store, household, existing) {
     fail(400, "Choose an address in your household.");
   return {
     first: text(input.first, 80, true),
+    notes: text(input.notes ?? existing?.notes ?? "", 20000),
+    phone: contactPhone(input.phone ?? existing?.phone ?? ""),
+    smsConsent:
+      input.smsConsent === true ||
+      (input.smsConsent === undefined && existing?.smsConsent === true),
+    consentRecorded:
+      input.smsConsent === true
+        ? new Date().toISOString()
+        : existing?.consentRecorded || null,
     last: text(input.last, 80, true),
     suffix: text(input.suffix ?? "", 30),
     parent,
@@ -195,6 +247,16 @@ function eventInput(input, store, household, existing) {
     invited: input.invited,
     menu,
     template,
+    customItemsEnabled: input.customItemsEnabled === true,
+    saveCustomItems:
+      input.customItemsEnabled === true && input.saveCustomItems === true,
+    notes: text(input.notes ?? existing?.notes ?? "", 20000),
+    uploadURL: webURL(input.uploadURL ?? existing?.uploadURL ?? ""),
+    ui:
+      input.ui === undefined
+        ? existing?.ui || {}
+        : hostUI(input.ui, existing?.ui),
+    reminders: reminderInput(input.reminders ?? existing?.reminders ?? []),
     registries: savedRegistries,
   };
 }
@@ -207,6 +269,10 @@ export function createHandler({
   setupSecret = "",
   setupEmail = "",
   requireAdmin = false,
+  env = {},
+  householdHostname = "",
+  householdHosts = new Set(),
+  canonicalOrigin = origin,
 } = {}) {
   if (new URL(origin).origin !== origin)
     throw new Error(
@@ -215,7 +281,7 @@ export function createHandler({
   const cookie = (res, session) =>
     res.setHeader(
       "Set-Cookie",
-      `events_session=${session?.token || ""}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${session?.seconds || 0}${secureCookies ? "; Secure" : ""}`,
+      `${householdHostname ? "__Host-events_session" : "events_session"}=${session?.token || ""}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${session?.seconds || 0}${secureCookies ? "; Secure" : ""}`,
     );
   const json = (res, data, status = 200) => {
     res.writeHead(status, {
@@ -238,6 +304,30 @@ export function createHandler({
       const url = new URL(req.url, origin),
         path = url.pathname,
         method = req.method;
+      // This context comes only from a verified runtime adapter, never a client header.
+      const selected = householdHostname
+        ? store.hostnameHousehold(hostnameLabel(householdHostname))
+        : null;
+      const presentHousehold = (household) => ({
+        ...household,
+        shareUrl: householdLink(household, canonicalOrigin, householdHosts),
+        platformUrl: canonicalOrigin + "/",
+        subdomainStatus: !household.subdomain
+          ? "unclaimed"
+          : householdHosts.has(`${household.subdomain}.ilymmd.com`)
+            ? "active"
+            : "pending",
+      });
+      if (selected && (path === "/setup" || path === "/api/setup")) {
+        if (method === "GET" && path === "/api/setup") {
+          json(res, { required: false, enabled: false });
+          return;
+        }
+        fail(404, "This household address is unavailable.");
+      }
+      const pageSlug = path.match(/^\/h\/([A-Za-z0-9_-]+)$/)?.[1];
+      if (selected && pageSlug && pageSlug !== selected.slug)
+        fail(404, "This household address is unavailable.");
       if (method === "GET" && !path.startsWith("/api/")) {
         const entry =
           files.get(path) ||
@@ -250,6 +340,29 @@ export function createHandler({
       }
       if (!["GET", "POST", "PUT", "DELETE"].includes(method))
         fail(405, "Method not allowed.");
+      if (path === "/api/messaging/twilio" && method === "POST") {
+        let size = 0,
+          parts = [];
+        for await (const part of req) {
+          size += part.length;
+          if (size > 64000) fail(413, "Webhook too large.");
+          parts.push(part);
+        }
+        const params = new URLSearchParams(Buffer.concat(parts).toString());
+        if (
+          !verifyTwilio(
+            origin + req.url,
+            params,
+            req.headers["x-twilio-signature"],
+            env.TWILIO_AUTH_TOKEN,
+          )
+        )
+          fail(403, "Invalid webhook signature.");
+        processTwilio(store, params);
+        res.writeHead(200, { "Content-Type": "text/xml" });
+        res.end("<Response/>");
+        return;
+      }
       if (method !== "GET" && req.headers.origin !== origin)
         fail(403, "Please use the application’s own page to submit changes.");
       if (path === "/api/setup") {
@@ -281,7 +394,7 @@ export function createHandler({
           if (input.password !== input.confirmPassword)
             fail(400, "The passwords must match.");
           const account = await store.setupAdmin(input.email, input.password);
-          cookie(res, store.newSession(account));
+          cookie(res, store.newSession(account, origin));
           json(res, { ok: true }, 201);
           return;
         }
@@ -292,11 +405,33 @@ export function createHandler({
       const raw = req.headers.cookie
         ?.split(";")
         .map((p) => p.trim())
-        .find((p) => p.startsWith("events_session="))
-        ?.slice(15);
-      const session = store.session(raw);
+        .find((p) =>
+          p.startsWith(
+            `${selected ? "__Host-events_session" : "events_session"}=`,
+          ),
+        )
+        ?.split("=")[1];
+      const session = store.session(raw, origin, !selected);
+      if (
+        selected &&
+        session &&
+        (session.role === "admin" ||
+          (session.role === "guest"
+            ? store.one(
+                "SELECT entry_household FROM guest_identity_sessions WHERE token=?",
+                session.token,
+              )?.entry_household !== selected.id
+            : session.household !== selected.id))
+      )
+        fail(403, "This account is not available at this household address.");
+      const newSession = (account) => store.newSession(account, origin);
       const requireRole = (role) => {
         if (!session) fail(401, "Please sign in.");
+        if (role === "host" && ["host", "family"].includes(session.role)) {
+          if (!manager(familyMember(store, session)))
+            fail(403, "Household content requires an owner or administrator.");
+          return;
+        }
         if (session.role !== role)
           fail(403, "This action is not available to your account.");
       };
@@ -313,14 +448,150 @@ export function createHandler({
           10,
         );
       };
+      const familyLogin = path.match(
+        /^\/api\/public\/households\/([A-Za-z0-9_-]+)\/members\/login$/,
+      );
+      if (familyLogin && method === "POST") {
+        const household = store.publicHousehold(familyLogin[1]);
+        if (selected && selected.id !== household.id)
+          fail(404, "Household unavailable.");
+        const input = await body(req),
+          login = text(input.login, 100, true).toLowerCase();
+        authLimit("family-login", household.id + ":" + login);
+        const member = store.one(
+          "SELECT * FROM family_members WHERE household=? AND login=?",
+          household.id,
+          login,
+        );
+        const primary =
+          member &&
+          store.one("SELECT password FROM users WHERE id=?", member.id);
+        const valid = await checkPassword(
+          input.password,
+          primary?.password || member?.password,
+        );
+        if (!valid || !member || member.disabled)
+          fail(401, "Unable to sign in with these details.");
+        cookie(
+          res,
+          newSession({
+            user: member.id,
+            household: household.id,
+            role: "family",
+          }),
+        );
+        json(res, { ok: true });
+        return;
+      }
+      if (
+        await identityAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          body,
+          version,
+          json,
+          requireRole,
+        })
+      )
+        return;
+      if (
+        await familyAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          body,
+          version,
+          json,
+          env,
+        })
+      )
+        return;
+      const recover = path.match(/^\/api\/admin\/hosts\/([\w-]+)\/recover$/);
+      if (recover && method === "POST") {
+        requireRole("admin");
+        const input = await body(req),
+          admin = store.one(
+            "SELECT password FROM users WHERE id=?",
+            session.user,
+          ),
+          host = store.one(
+            "SELECT id,email,household FROM users WHERE id=? AND role='host'",
+            recover[1],
+          );
+        if (
+          !host ||
+          input.confirmEmail !== host.email ||
+          !(await checkPassword(input.adminPassword, admin?.password))
+        )
+          fail(403, "Unable to confirm account recovery.");
+        if (input.password !== input.confirmPassword)
+          fail(400, "The passwords must match.");
+        const password = await hashPassword(input.password),
+          owner =
+            store.one(
+              "SELECT owner FROM family_owners WHERE household=?",
+              host.household,
+            )?.owner || host.id;
+        store.transaction(() => {
+          store.run("UPDATE users SET password=? WHERE id=?", password, owner);
+          store.run(
+            "UPDATE family_members SET password=?,version=version+1 WHERE id=?",
+            password,
+            owner,
+          );
+          store.run("DELETE FROM sessions WHERE user=?", owner);
+        });
+        json(res, { ok: true });
+        return;
+      }
+      if (
+        await featureAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          requireRole,
+          body,
+          version,
+          json,
+          validateEvent: eventInput,
+          env,
+        })
+      )
+        return;
       if (path === "/api/session" && method === "GET") {
         json(
           res,
           session
             ? {
-                role: session.role,
+                role: ["host", "family"].includes(session.role)
+                  ? manager(familyMember(store, session))
+                    ? "host"
+                    : "family"
+                  : session.role,
+                householdRole: ["host", "family"].includes(session.role)
+                  ? familyMember(store, session).role
+                  : null,
                 household: session.household
-                  ? store.household(session.household)
+                  ? session.role === "guest"
+                    ? store.publicHousehold(
+                        guestBrandHousehold(store, session).slug,
+                      )
+                    : ["host", "family"].includes(session.role) &&
+                        !manager(familyMember(store, session))
+                      ? store.publicHousehold(
+                          store.household(session.household).slug,
+                        )
+                      : presentHousehold(store.household(session.household))
                   : null,
               }
             : { role: null },
@@ -328,10 +599,11 @@ export function createHandler({
         return;
       }
       if (path === "/api/register" && method === "POST") {
+        if (selected) fail(403, "Create host accounts on the main platform.");
         const input = await body(req);
         authLimit("register", String(input.email).toLowerCase());
         const account = await store.register(input);
-        cookie(res, store.newSession(account));
+        cookie(res, store.newSession(account, origin));
         json(res, { ok: true }, 201);
         return;
       }
@@ -341,10 +613,28 @@ export function createHandler({
         authLimit("login", address);
         const user = store.one("SELECT * FROM users WHERE email=?", address);
         const valid = await checkPassword(input.password, user?.password);
-        if (!valid || !user) fail(401, "Unable to sign in with these details.");
+        if (
+          !valid ||
+          !user ||
+          store.one(
+            "SELECT disabled FROM family_members WHERE id=?",
+            user?.id || "",
+          )?.disabled ||
+          (user.household &&
+            store.one(
+              "SELECT household FROM household_deletions WHERE household=?",
+              user.household,
+            ))
+        )
+          fail(401, "Unable to sign in with these details.");
+        if (
+          selected &&
+          (user.role !== "host" || user.household !== selected.id)
+        )
+          fail(401, "Unable to sign in with these details.");
         cookie(
           res,
-          store.newSession({
+          newSession({
             user: user.id,
             household: user.household,
             role: user.role,
@@ -360,55 +650,101 @@ export function createHandler({
         json(res, { ok: true });
         return;
       }
+      if (path === "/api/public/context" && method === "GET") {
+        json(res, {
+          household: selected
+            ? {
+                ...selected,
+                defaults: effectiveUI(store).design,
+                ui: effectiveUI(store, store.household(selected.id)),
+              }
+            : null,
+        });
+        return;
+      }
+      if (path === "/api/subdomains" && method === "GET") {
+        store.limit(`availability:${req.socket.remoteAddress}`, 120);
+        const fromName = url.searchParams.has("householdName");
+        const name = fromName
+          ? suggestLabel(
+              (url.searchParams.get("householdName") || "").slice(0, 100),
+            )
+          : url.searchParams.get("name");
+        json(res, {
+          available: store.domainAvailable(
+            name,
+            fromName
+              ? null
+              : session?.role === "host"
+                ? session.household
+                : null,
+          ),
+          ...(fromName ? { suggested: name, status: "pending" } : {}),
+        });
+        return;
+      }
       const publicMatch = path.match(
-        /^\/api\/public\/households\/([A-Za-z0-9_-]+)(\/login)?$/,
+        /^\/api\/public\/households\/([A-Za-z0-9_-]+)(\/(?:login|recognize|claim-code))?$/,
       );
       if (publicMatch) {
         const household = store.publicHousehold(publicMatch[1]);
+        if (selected && selected.id !== household.id)
+          fail(404, "This household address is unavailable.");
         if (method === "GET" && !publicMatch[2]) {
-          json(res, { ...household, defaults });
+          json(res, {
+            ...household,
+            defaults: effectiveUI(store).design,
+            ui: effectiveUI(store, store.household(household.id)),
+          });
           return;
         }
         if (method === "POST" && publicMatch[2]) {
-          const input = await body(req),
-            first = normalizeName(text(input.first, 80, true)),
-            last = normalizeName(text(input.last, 80, true)),
-            suffix = normalizeName(text(input.suffix ?? "", 30));
-          authLimit("guest", `${household.id}:${first}:${last}`);
-          const candidates = store
-            .list("guest", household.id)
-            .filter(
-              (g) =>
-                !g.parent &&
-                normalizeName(g.first) === first &&
-                normalizeName(g.last) === last &&
-                normalizeName(g.suffix) === suffix,
-            );
-          if (candidates.length !== 1)
+          const input = await body(req);
+          authLimit(
+            "guest",
+            household.id + ":" + String(input.first) + ":" + String(input.last),
+          );
+          if (publicMatch[2] === "/claim-code") {
+            claimPermanentCode(store, input, household.id);
+            json(res, { ok: true });
+            return;
+          }
+          const result = authenticateGuest(store, input);
+          if (publicMatch[2] === "/recognize") {
+            json(res, { suffixRequired: !!result?.suffixRequired });
+            return;
+          }
+          if (!result?.relation)
             fail(
               401,
-              "Unable to sign in with these details. Check with your host.",
+              "Unable to sign in with these details. Check your invite code with your host.",
             );
           cookie(
             res,
-            store.newSession({
-              household: household.id,
-              guest: candidates[0].id,
+            newSession({
+              household: result.relation.household,
+              guest: result.relation.guest,
               role: "guest",
+              identity: result.identity.id,
+              entryHousehold: household.id,
             }),
           );
           json(res, { ok: true });
           return;
         }
       }
+
       if (path.startsWith("/api/admin")) {
         requireRole("admin");
         if (path === "/api/admin" && method === "GET") {
           json(res, {
             approvals: store.all("SELECT email,created FROM approvals"),
             templates: store.list("template", "platform"),
+            deletions: store.all(
+              "SELECT household,email,label,phase,error FROM household_deletions",
+            ),
             hosts: store.all(
-              "SELECT email,household FROM users WHERE role='host'",
+              "SELECT id,email,household FROM users WHERE role='host'",
             ),
           });
           return;
@@ -434,61 +770,6 @@ export function createHandler({
           json(res, { ok: true });
           return;
         }
-        if (path === "/api/admin/templates" && method === "POST") {
-          const input = await body(req);
-          json(
-            res,
-            store.put("template", id(), "platform", {
-              name: text(input.name, 100, true),
-              image: image(input.image),
-            }),
-            201,
-          );
-          return;
-        }
-      }
-      const adminTemplate = path.match(
-        /^\/api\/admin\/templates\/([a-zA-Z0-9-]+)$/,
-      );
-      if (adminTemplate) {
-        requireRole("admin");
-        const existing = store.get("template", adminTemplate[1], "platform");
-        if (!existing) fail(404, "Template not found.");
-        if (method === "PUT") {
-          const input = await body(req);
-          json(
-            res,
-            store.put(
-              "template",
-              existing.id,
-              "platform",
-              {
-                name: text(input.name, 100, true),
-                image:
-                  input.image === undefined
-                    ? existing.image
-                    : image(input.image),
-              },
-              version(req),
-            ),
-          );
-          return;
-        }
-        if (method === "DELETE") {
-          if (
-            store.one(
-              "SELECT id FROM records WHERE kind='event' AND json_extract(body,'$.template')=? LIMIT 1",
-              existing.id,
-            )
-          )
-            fail(
-              409,
-              "This template is in use. Hosts must choose another template before removal.",
-            );
-          store.remove("template", existing.id, "platform", version(req));
-          json(res, { ok: true });
-          return;
-        }
       }
       if (path === "/api/templates" && method === "GET") {
         if (!session) fail(401, "Please sign in.");
@@ -500,40 +781,50 @@ export function createHandler({
         const household = session.household;
         if (path === "/api/host" && method === "GET") {
           json(res, {
-            household: store.household(household),
-            guests: store.list("guest", household),
+            household: presentHousehold(store.household(household)),
+            guests: store
+              .list("guest", household)
+              .map((g) => guestContact(store, g, household)),
+            savedMenu: store.list("menu-saved", household),
             addresses: store.list("address", household),
             events: store.list("event", household).map((e) => ({
               ...e,
               menu: store.menuView(e, household),
               totals: store.totals(e, household),
+              ui: effectiveUI(store, store.household(household), e),
             })),
             templates: store.list("template", "platform"),
-            defaults,
+            defaults: effectiveUI(store).design,
+            ui: effectiveUI(store, store.household(household)),
           });
           return;
         }
         if (path === "/api/host/household" && method === "PUT") {
-          const input = await body(req),
-            existing = store.household(household);
+          const input = await body(req);
           json(
             res,
-            store.put(
-              "household",
-              household,
-              household,
-              {
-                name: text(input.name, 100, true),
-                slug: existing.slug,
-                design: design(input.design),
-              },
-              version(req),
+            presentHousehold(
+              store.updateHousehold(
+                household,
+                {
+                  ...input,
+                  ui:
+                    input.ui === undefined
+                      ? store.household(household)?.ui || {}
+                      : hostUI(input.ui, store.household(household)?.ui),
+                },
+                version(req),
+              ),
             ),
           );
           return;
         }
         if (path === "/api/host/qr" && method === "GET") {
-          const link = `${origin}/h/${store.household(household).slug}`;
+          const link = householdLink(
+            store.household(household),
+            canonicalOrigin,
+            householdHosts,
+          );
           res.writeHead(200, {
             "Content-Type": "image/svg+xml",
             "Content-Disposition": 'inline; filename="household-qr.svg"',
@@ -584,19 +875,28 @@ export function createHandler({
                     ? {
                         label: text(input.label, 100, true),
                         lines: text(input.lines ?? "", 500),
+                        phone: contactPhone(
+                          input.phone ?? existing?.phone ?? "",
+                        ),
                       }
                     : eventInput(input, store, household, existing);
-            json(
-              res,
-              store.put(
+            const saved = store.transaction(() => {
+              const saved = store.put(
                 kind,
                 key || id(),
                 household,
                 record,
                 key ? version(req) : undefined,
-              ),
-              key ? 200 : 201,
-            );
+              );
+              if (kind === "guest") {
+                identityFor(store, saved, household);
+                if (input.matchTicket)
+                  requestGuestLink(store, household, saved, input.matchTicket);
+                return guestContact(store, saved, household);
+              }
+              return saved;
+            });
+            json(res, saved, key ? 200 : 201);
             return;
           }
           if (method === "DELETE" && key && !match[3]) {
@@ -626,6 +926,19 @@ export function createHandler({
               )
                 fail(409, "Unassign this address from guests first.");
               store.remove(kind, key, household, version(req));
+              if (kind === "guest")
+                store.run(
+                  "DELETE FROM guest_identity_history WHERE household=? AND guest=?",
+                  household,
+                  key,
+                );
+              if (kind === "guest")
+                store.run(
+                  "DELETE FROM guest_identity_links WHERE household=? AND guest=?",
+                  household,
+                  key,
+                );
+              if (kind === "event") cancelReminders(store, household, key);
               if (kind === "event")
                 for (const r of store
                   .list("response", household)
@@ -640,22 +953,20 @@ export function createHandler({
       if (path.startsWith("/api/guest")) {
         requireRole("guest");
         if (path === "/api/guest" && method === "GET") {
-          const guest = owned("guest", session.guest);
+          const view = invitationView(store, session),
+            guest = store.get("guest", session.guest, session.household),
+            entry = guestBrandHousehold(store, session).id;
           json(res, {
-            household: store.publicHousehold(
-              store.household(session.household).slug,
-            ),
+            household: store.publicHousehold(store.household(entry).slug),
             guest: {
               id: guest.id,
               first: guest.first,
               last: guest.last,
               suffix: guest.suffix,
             },
-            events: store
-              .list("event", session.household)
-              .filter((e) => e.invited.includes(session.guest))
-              .map((e) => store.guestEvent(e, session)),
-            defaults,
+            events: view.events,
+            defaults: effectiveUI(store).design,
+            ui: effectiveUI(store, store.household(entry)),
           });
           return;
         }
@@ -663,10 +974,25 @@ export function createHandler({
           /^\/api\/guest\/events\/([a-zA-Z0-9-]+)\/rsvp$/,
         );
         if (match && method === "PUT") {
-          const event = owned("event", match[1]);
-          if (!event.invited.includes(session.guest))
-            fail(404, "Event not found.");
-          json(res, store.saveResponse(event, session, await body(req)));
+          const input = await body(req),
+            view = invitationView(store, session),
+            relation = view.relations.find(
+              (link) =>
+                (!input.guestEntry || link.guest === input.guestEntry) &&
+                store
+                  .get("event", match[1], link.household)
+                  ?.invited.includes(link.guest),
+            );
+          if (!relation) fail(404, "Event not found.");
+          const event = store.get("event", match[1], relation.household);
+          json(
+            res,
+            store.saveResponse(
+              event,
+              { household: relation.household, guest: relation.guest },
+              input,
+            ),
+          );
           return;
         }
       }
@@ -674,7 +1000,19 @@ export function createHandler({
     } catch (error) {
       if (!(error instanceof Problem))
         logger.error("Request failed:", error.code || error.name); // Never log submitted names, passwords or bodies.
-      if (!res.headersSent)
+      if (
+        !res.headersSent &&
+        householdHostname &&
+        req.method === "GET" &&
+        !req.url.startsWith("/api/")
+      ) {
+        res.writeHead(error.status || 500, {
+          "Content-Type": "text/html; charset=utf-8",
+        });
+        res.end(
+          "<!doctype html><html lang=en><meta name=viewport content='width=device-width, initial-scale=1'><title>Household unavailable</title><h1>This household address is unavailable.</h1><p>Please check the link with your host.</p></html>",
+        );
+      } else if (!res.headersSent)
         json(
           res,
           {

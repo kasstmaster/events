@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "events-household-gateway",
+  "account_id": "e8cdf5b38fa02d2d1b7f30f2389888b7",
+  "main": "cloudflare/gateway.js",
+  "compatibility_date": "2026-10-30",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "send_metrics": false,
+  // No routes until approved and provisioned by scripts/prepare-household-routing.js.
+  "routes": [],
+  "vars": {
+    "EVENTS_ORIGIN": "",
+    "HOUSEHOLD_HOSTS": "",
+    "HOUSEHOLD_ROUTING_ENABLED": "false",
+  },
+}

@@ -10,20 +10,23 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "admin": "node server/admin.js",
-    "test": "node --test test/platform.test.js",
-    "test:mobile": "node test/mobile.cjs",
+    "test": "node --test test/platform.test.js test/domains.test.js test/provisioning.test.js test/features.test.js test/shared-guests.test.js test/family.test.js",
+    "test:mobile": "node test/mobile.cjs && node test/domains-mobile.js && node test/features-mobile.js && node test/family-mobile.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "dev:cloudflare": "wrangler dev --local",
     "deploy:cloudflare": "wrangler deploy",
     "cloudflare:bootstrap": "node scripts/cloudflare-admin.js",
-    "test:cloudflare": "node --test test/cloudflare.test.js"
+    "test:cloudflare": "node --test test/cloudflare.test.js",
+    "copy:catalog": "node scripts/build-copy-catalog.js"
   },
   "dependencies": {
     "qrcode": "1.5.4"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
     "jsonc-parser": "3.3.1",
+    "miniflare": "5.20261023.3-beta",
     "playwright": "1.58.2",
     "prettier": "3.8.1",
     "wrangler": "4.156.0"
