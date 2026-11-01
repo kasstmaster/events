@@ -603,6 +603,13 @@ export function familyTools(ctx) {
     },
     async submit(form, kind) {
       if (!kind.startsWith("family-")) return false;
+      if (
+        kind === "family-preferences" &&
+        form.dataset.preferenceReady === "false"
+      )
+        throw new Error(
+          C("Wait for the selected member’s preferences to load."),
+        );
       saving("Saving…");
       const fd = new FormData(form),
         value = Object.fromEntries(fd);
@@ -706,12 +713,23 @@ export function familyTools(ctx) {
         )
           return;
         const form = event.target.closest("form");
+        const selectedMember = event.target.value;
+        form.dataset.preferenceReady = "false";
+        const saveButton = form.querySelector("button:not([type=button])");
+        if (saveButton) saveButton.disabled = true;
         try {
           const p = await api(
             "/api/family/preferences?member=" +
               encodeURIComponent(event.target.value),
           );
+          if (
+            !form.isConnected ||
+            form.elements.member.value !== selectedMember
+          )
+            return;
           state.familyPreferenceEdit = p;
+          form.dataset.preferenceReady = "true";
+          if (saveButton) saveButton.disabled = false;
           form.elements.timezone.value = p.timezone || data().timezone || "UTC";
           form.elements.quietStart.value = p.quietStart || 0;
           form.elements.quietEnd.value = p.quietEnd || 0;

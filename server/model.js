@@ -805,17 +805,9 @@ export class Store {
         )
           fail(400, "Invalid menu quantity.");
       }
-      const deadlinePassed =
-        current.deadline &&
-        current.deadline < new Date().toISOString().slice(0, 10);
       for (const item of menu) {
         const desired = attending ? input.claims[item.id] || 0 : 0,
           old = previous?.claims[item.id] || 0;
-        if (deadlinePassed && desired > old)
-          fail(
-            409,
-            "The RSVP deadline has passed. You may reduce items or update attendance.",
-          );
         if (desired > old && item.claimed - old + desired > item.quantity)
           fail(
             409,
