@@ -1,6 +1,6 @@
 # Manual events deployment
 
-This manual-only workflow deploys release `5c024bf79727d79894a21184cdaa248e595f66b2` to the existing `events` Worker in account `37d068144865a0b725ee272bc7b2eb71`. It never deploys the gateway, changes automatic/preview build settings, creates credentials, sends messages or resets storage. The helper is checked out from the workflow commit separately from the approved application release, so new safety checks run without changing the approved application code.
+This manual-only workflow deploys release `da79421c3bd7ed12eb931fd4943d51011d801d82` to the existing `events` Worker in account `37d068144865a0b725ee272bc7b2eb71`. It never deploys the gateway, changes automatic/preview build settings, creates credentials, sends messages or resets storage. The helper is checked out from the workflow commit separately from the approved application release, so new safety checks run without changing the approved application code.
 
 Before running, production/preview builds must remain disabled. These controls were inspected while preparing this correction; production uses `feat/cloudflare-deployment`, Disable builds is checked and preview branch builds are off. Recheck them if settings have changed. The workflow does not enable them.
 
@@ -25,3 +25,11 @@ The gateway is not deployed by this release. The approved source records gateway
 After deployment, automatic verification checks a new active version, closed setup and preserved bindings/variables/runtime flags. Complete canonical and household sign-in, opaque links/QR, guest RSVP, existing content, editor inheritance and cards using existing authorized sessions. Do not delete real accounts or send live texts as tests. Post-deployment failure does not mean nothing changed; inspect the run and checkpoint before any recovery. No automatic rollback runs.
 
 Validation for this workflow correction uses synthetic API responses with `node --test scripts/manual-events-release.test.mjs`. It does not rerun application tests or claim to verify the live GitHub secret before the owner runs the workflow.
+
+## Visual defaults follow-up
+
+PR #8 adds the visual administrator defaults editor, complete shared household/event formatting controls, preserved existing appearance, unified Address book, and confirmed reset/event deletion. Its application release stays on `feat/household-subdomains` to preserve the routing foundation; `main` carries only the manual-release operations. The workflow checks out the exact reviewed PR #8 merge commit `da79421c3bd7ed12eb931fd4943d51011d801d82`. PR #8’s final GitHub validation run `41277844711` passed all application/API, browser and local Worker checks.
+
+The preceding successful manual run [41274014688](https://github.com/kasstmaster/events/actions/runs/41274014688) deployed the prior application to Worker version `816c1df6-4325-47b6-ac97-3c57df1b8158` and confirmed closed setup and preserved bindings/settings. That logged version is the reviewed preflight baseline, not a fresh live observation; preflight refuses to deploy if production has changed. Preserve the same namespace, migration and object, and upload a fresh timestamp recovery checkpoint before publishing. No database import/reset or gateway deploy is involved.
+
+Application validation is recorded in PR #8 and its release guide. After publication, existing authorized sessions are still needed for interactive sign-in, links/QR, RSVP, visual default editing, formatting isolation/copy/reset and card preview/export acceptance. Do not create fake live accounts, mutate guest responses for testing, delete real accounts or send messages. Direct managed-environment authentication may still fail independently of the working GitHub Actions secret; this workflow does not require exposing or copying that credential.
