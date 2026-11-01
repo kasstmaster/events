@@ -975,3 +975,58 @@ test("only a valid signed provider webhook can record an opt-out without a brows
     "+15551234567",
   );
 });
+
+test("legacy scoped wording/layout can round-trip unchanged without blocking private notes", async (t) => {
+  const f = await fixture(t),
+    h = await f.host("Legacy");
+  const current = f.store.household(h.household.id);
+  const legacy = f.store.put(
+    "household",
+    current.id,
+    current.id,
+    {
+      ...current,
+      ui: {
+        copy: { When: "Old scoped wording" },
+        layouts: {
+          eventButtons: [
+            "edit-event",
+            "invitation",
+            "delete-event",
+            "rsvp",
+            "uploads",
+          ],
+        },
+        design: {},
+      },
+    },
+    current.version,
+  );
+  const result = await f.request("/api/host/household", {
+    method: "PUT",
+    cookie: h.cookie,
+    version: legacy.version,
+    data: { ...legacy, notes: "Still private" },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(f.store.household(current.id).notes, "Still private");
+  assert.deepEqual(f.store.household(current.id).ui, legacy.ui);
+  assert.equal(
+    effectiveUI(f.store, f.store.household(current.id)).copy.When,
+    undefined,
+  );
+  assert.equal(
+    (
+      await f.request("/api/host/household", {
+        method: "PUT",
+        cookie: h.cookie,
+        version: result.body.version,
+        data: {
+          ...result.body,
+          ui: { copy: { When: "Changed scoped wording" } },
+        },
+      })
+    ).status,
+    403,
+  );
+});

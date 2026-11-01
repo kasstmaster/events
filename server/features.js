@@ -140,8 +140,20 @@ export function cardInput(input) {
 
 // Hosts may format their own records; wording and layout are administrator defaults only.
 export function hostUI(input = {}, existing = {}) {
-  const parsed = uiConfig(input);
-  if (Object.keys(parsed.copy).length || Object.keys(parsed.layouts).length)
-    fail(403, "Only the administrator may change page wording or layout.");
-  return { ...existing, design: parsed.design };
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    fail(400, "Invalid interface settings.");
+  for (const key of ["copy", "layouts"]) {
+    const value = input[key];
+    if (value === undefined) continue;
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      fail(400, "Invalid interface settings.");
+    // Permit an unchanged legacy record to round-trip (for example a notes save),
+    // without accepting new wording/layout or revalidating obsolete layout keys.
+    if (
+      Object.keys(value).length &&
+      JSON.stringify(value) !== JSON.stringify(existing[key] || {})
+    )
+      fail(403, "Only the administrator may change page wording or layout.");
+  }
+  return { ...existing, design: design(input.design) };
 }
