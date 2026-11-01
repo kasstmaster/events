@@ -770,10 +770,10 @@ h3 {
   font-weight: 600;
 }
 .toolbar .nav-control[aria-current="page"] {
-  background: color-mix(in srgb, var(--heading) 10%, transparent);
+  background: color-mix(in srgb, var(--toolbar-color) 10%, transparent);
 }
 .toolbar .nav-control:hover {
-  background: color-mix(in srgb, var(--heading) 7%, transparent);
+  background: color-mix(in srgb, var(--toolbar-color) 7%, transparent);
 }
 .event-deadline {
   display: grid;
@@ -1072,8 +1072,9 @@ textarea[name="eventNotes"] {
   font-size: var(--toolbar-size);
 }
 .page-example [data-default-role="status"],
-.totals,
-.totals strong {
+.toolbar .totals,
+.toolbar .totals strong,
+.toolbar .deadline {
   color: var(--status-color);
   font-family: var(--status-font);
   font-size: var(--status-size);

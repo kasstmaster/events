@@ -193,6 +193,7 @@ try {
     ["Button color", "#234567"],
     ["Button text color", "#ffffff"],
     ["Private notes color", "#567890"],
+    ["Attendance / needed information color", "#654321"],
   ])
     await h.page.getByLabel(label, { exact: true }).fill(value);
   await h.page
@@ -300,6 +301,12 @@ try {
     0,
   );
   stage("event formatting copy and delete confirmation");
+  assert.equal(
+    await h.page
+      .locator(".toolbar .totals")
+      .evaluate((el) => getComputedStyle(el).color),
+    "rgb(101, 67, 33)",
+  );
   assert.equal(await h.page.locator("[data-action=delete-event]").count(), 0);
   await click(h.page, "Edit event");
   await h.page.getByText("Event appearance", { exact: true }).click();
