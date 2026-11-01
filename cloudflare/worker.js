@@ -1,3 +1,5 @@
+import { runReminders } from "../server/reminders.js";
+import { runAccountCleanup } from "./account-cleanup.js";
 import { DurableObject } from "cloudflare:workers";
 import { Buffer } from "node:buffer";
 import { Store } from "../server/model.js";
@@ -75,8 +77,18 @@ export class EventsDatabase extends DurableObject {
     ctx.blockConcurrencyWhile(() => this.scheduleRouting());
   }
   async scheduleRouting() {
-    if (this.env.HOUSEHOLD_ROUTING_ENABLED !== "true") return;
-    const due = this.store.routingDue();
+    const tasks = [
+      this.env.HOUSEHOLD_ROUTING_ENABLED === "true"
+        ? this.store.routingDue()
+        : null,
+      this.env.ACCOUNT_CLEANUP_ENABLED === "false"
+        ? null
+        : this.store.one(
+            "SELECT min(next_attempt) AS due FROM household_deletions WHERE phase!='complete'",
+          )?.due,
+      this.env.SMS_ENABLED === "true" ? Date.now() + 60000 : null,
+    ].filter((value) => value !== null && value !== undefined);
+    const due = tasks.length ? Math.min(...tasks) : null;
     if (due === null || due === undefined) return;
     const next = Math.max(Date.now() + 1000, due);
     const current = await this.ctx.storage.getAlarm();
@@ -84,17 +96,24 @@ export class EventsDatabase extends DurableObject {
       await this.ctx.storage.setAlarm(next);
   }
   async alarm() {
-    if (this.env.HOUSEHOLD_ROUTING_ENABLED !== "true") {
-      await this.ctx.storage.deleteAlarm();
-      return;
-    }
-    // Set a recovery alarm first so process termination/exhausted platform retries
-    // cannot strand the transactional outbox. Only one alarm handler runs per DO.
     await this.ctx.storage.setAlarm(Date.now() + 60000);
     try {
-      await runProvisioning(this.store, this.env);
+      await runAccountCleanup(this.store, this.env);
+      await runReminders(this.store, this.env);
+      if (this.env.HOUSEHOLD_ROUTING_ENABLED === "true")
+        await runProvisioning(this.store, this.env);
     } finally {
-      if (this.store.routingDue() === null)
+      const remaining =
+        this.env.ACCOUNT_CLEANUP_ENABLED !== "false" &&
+        this.store.one(
+          "SELECT household FROM household_deletions WHERE phase!='complete' LIMIT 1",
+        );
+      if (
+        (this.env.HOUSEHOLD_ROUTING_ENABLED !== "true" ||
+          this.store.routingDue() === null) &&
+        !remaining &&
+        this.env.SMS_ENABLED !== "true"
+      )
         await this.ctx.storage.deleteAlarm();
       else await this.scheduleRouting();
     }
@@ -147,6 +166,13 @@ export class EventsDatabase extends DurableObject {
             "/app.js",
             "/household-address.js",
             "/style.css",
+            "/editor-tools.js",
+            "/ui-system.js",
+            "/ui-runtime.js",
+            "/ui-copy.js",
+            "/icons.js",
+            "/card-system.js",
+            "/reminder-time.js",
             "/api/public/context",
           ].includes(path))
       )
@@ -205,6 +231,7 @@ export class EventsDatabase extends DurableObject {
     }
     const response = await serve(request, {
       store,
+      env: this.env,
       setupSecret: this.env.ADMIN_SETUP_TOKEN || "",
       setupEmail: this.env.BOOTSTRAP_ADMIN_EMAIL || "",
       requireAdmin: true,
@@ -228,9 +255,8 @@ export class EventsDatabase extends DurableObject {
       },
     });
     if (
-      request.method === "POST" &&
-      path === "/api/register" &&
-      response.status === 201
+      ["POST", "PUT", "DELETE"].includes(request.method) &&
+      response.status < 400
     ) {
       // Claim + job already committed together; retry scheduling on the next wake
       // if storage scheduling itself fails, without pretending registration failed.
@@ -246,7 +272,6 @@ export class EventsDatabase extends DurableObject {
 }
 export default {
   async scheduled(event, env) {
-    if (env.HOUSEHOLD_ROUTING_ENABLED !== "true") return;
     const stub = env.EVENTS_DATABASE.get(
       env.EVENTS_DATABASE.idFromName("events-platform-v1"),
     );

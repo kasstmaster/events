@@ -713,3 +713,210 @@ dialog::backdrop {
 #household-address {
   overflow-wrap: anywhere;
 }
+/* Shared role formatting; content and layout data never inject CSS rules. */
+:root {
+  --description-color: #52675c;
+  --description-font: system-ui;
+  --description-size: 17px;
+  --button-color: #294d42;
+  --button-text: #fff;
+  --button-font: system-ui;
+  --button-size: 16px;
+}
+button,
+.button {
+  background: var(--button-color);
+  color: var(--button-text);
+  font-family: var(--button-font);
+  font-size: var(--button-size);
+}
+.muted,
+.description,
+.event-details {
+  color: var(--description-color);
+  font-family: var(--description-font);
+  font-size: var(--description-size);
+}
+label,
+input,
+select,
+textarea {
+  font-size: var(--text-size);
+}
+h2 {
+  font-size: calc(var(--title-size) * 0.8);
+}
+h3 {
+  font-size: calc(var(--title-size) * 0.65);
+}
+.toolbar {
+  gap: 14px;
+}
+.toolbar .nav-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 58px;
+  min-height: 58px;
+  padding: 6px 10px;
+  border: 0;
+  box-shadow: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--heading);
+  font-size: 12px;
+  font-weight: 600;
+}
+.toolbar .nav-control[aria-current="page"] {
+  background: color-mix(in srgb, var(--heading) 10%, transparent);
+}
+.toolbar .nav-control:hover {
+  background: color-mix(in srgb, var(--heading) 7%, transparent);
+}
+.event-deadline {
+  display: grid;
+  justify-content: center;
+  margin: 20px auto 0;
+}
+.event-deadline b {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.event-deadline span {
+  font-family: var(--body-font);
+}
+[data-block] {
+  min-width: 0;
+}
+.private-notes {
+  margin-top: 24px;
+}
+.copy-editor {
+  max-height: 50vh;
+  overflow: auto;
+}
+.copy-editor label[hidden] {
+  display: none;
+}
+.layout-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.layout-list li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 1px solid #d2dbd4;
+  border-radius: 12px;
+  padding: 8px;
+}
+.layout-list li span {
+  flex: 1;
+  min-width: 110px;
+}
+.layout-list li[draggable="true"] {
+  cursor: grab;
+}
+.card-workspace {
+  display: grid;
+  gap: 20px;
+}
+.card-workspace #card-canvas {
+  max-width: 600px;
+  width: 100%;
+  margin: auto;
+  background: #fff;
+  outline: 1px solid #d2dbd4;
+  touch-action: none;
+}
+.card-workspace #card-canvas svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.card-controls {
+  min-width: 0;
+}
+.print-frame {
+  position: fixed;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  border: 0;
+}
+.dialog-body {
+  padding-bottom: 30px;
+}
+dialog:has(.card-workspace) {
+  width: min(1100px, 100%);
+}
+@media (min-width: 850px) {
+  .card-workspace {
+    grid-template-columns: 1fr 360px;
+    align-items: start;
+  }
+  .card-workspace #card-canvas {
+    position: sticky;
+    top: 90px;
+  }
+  .card-controls {
+    max-height: 65vh;
+    overflow: auto;
+    padding: 4px 12px;
+  }
+}
+@media (max-width: 600px) {
+  .toolbar {
+    gap: 5px;
+  }
+  .toolbar .nav-control {
+    min-width: 50px;
+    padding: 6px;
+    min-height: 56px;
+  }
+  .toolbar .totals {
+    gap: 8px;
+  }
+  .toolbar .totals strong {
+    font-size: 17px;
+  }
+  .layout-list button {
+    font-size: 13px;
+  }
+  .event-deadline {
+    margin-top: 16px;
+  }
+}
+@media print {
+  .private-notes {
+    display: none !important;
+  }
+}
+.rsvp-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.rsvp-stack .registry-buttons {
+  margin: 0;
+}
+.registry-button.button {
+  background: var(--panel);
+  color: var(--heading);
+  font-family: var(--button-font);
+  font-size: var(--button-size);
+  border-color: currentColor;
+}
+[data-event-actions] {
+  justify-content: center;
+  margin-bottom: 24px;
+}
+.centered {
+  text-align: center;
+}

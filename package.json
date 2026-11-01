@@ -10,14 +10,15 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "admin": "node server/admin.js",
-    "test": "node --test test/platform.test.js test/domains.test.js test/provisioning.test.js",
-    "test:mobile": "node test/mobile.cjs && node test/domains-mobile.js",
+    "test": "node --test test/platform.test.js test/domains.test.js test/provisioning.test.js test/features.test.js",
+    "test:mobile": "node test/mobile.cjs && node test/domains-mobile.js && node test/features-mobile.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "dev:cloudflare": "wrangler dev --local",
     "deploy:cloudflare": "wrangler deploy",
     "cloudflare:bootstrap": "node scripts/cloudflare-admin.js",
-    "test:cloudflare": "node --test test/cloudflare.test.js"
+    "test:cloudflare": "node --test test/cloudflare.test.js",
+    "copy:catalog": "node scripts/build-copy-catalog.js"
   },
   "dependencies": {
     "qrcode": "1.5.4"

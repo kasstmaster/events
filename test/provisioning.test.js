@@ -145,7 +145,9 @@ function network(
           ? "suggestLabel"
           : url.pathname === "/household-address.js"
             ? "export function suggestLabel"
-            : "--background",
+            : url.pathname.endsWith(".js")
+              ? "export"
+              : "--background",
     );
   };
 }

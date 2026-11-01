@@ -1,3 +1,4 @@
+import { roleDefaults } from "../public/ui-system.js";
 import { Buffer } from "node:buffer";
 import {
   randomBytes,
@@ -60,18 +61,7 @@ export async function checkPassword(password, stored = dummyHash) {
   );
   return timingSafeEqual(actual, Buffer.from(expected, "hex"));
 }
-export const defaults = Object.freeze({
-  background: "#f3eee8",
-  backgroundImage: "",
-  container: "#fffdf9",
-  opacity: 96,
-  titleColor: "#294d42",
-  titleFont: "Georgia",
-  titleSize: 34,
-  textColor: "#263c35",
-  textFont: "system-ui",
-  textSize: 17,
-});
+export const defaults = Object.freeze(roleDefaults);
 export function image(value) {
   const source = text(value ?? "", 2_800_000);
   if (
@@ -91,7 +81,15 @@ export function design(value = {}) {
     if (!(key in defaults)) fail(400, "Unknown appearance setting.");
     if (key === "backgroundImage") result[key] = image(val);
     else if (
-      ["background", "container", "titleColor", "textColor"].includes(key)
+      [
+        "background",
+        "container",
+        "titleColor",
+        "textColor",
+        "descriptionColor",
+        "buttonColor",
+        "buttonText",
+      ].includes(key)
     ) {
       if (!/^#[0-9a-f]{6}$/i.test(val)) fail(400, "Choose a valid color.");
       result[key] = val;
@@ -127,6 +125,10 @@ export class Store {
     this.transactionDepth = 0;
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','host')), household TEXT);
+      CREATE TABLE IF NOT EXISTS household_deletions(household TEXT PRIMARY KEY,user TEXT NOT NULL,email TEXT NOT NULL,label TEXT NOT NULL,phase TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,next_attempt INTEGER NOT NULL DEFAULT 0,error TEXT);
+      CREATE TABLE IF NOT EXISTS reminder_deliveries(id TEXT PRIMARY KEY,household TEXT NOT NULL,event TEXT NOT NULL,reminder TEXT NOT NULL,guest TEXT NOT NULL,phone TEXT NOT NULL,status TEXT NOT NULL,provider_id TEXT,error TEXT,updated INTEGER NOT NULL);
+      CREATE UNIQUE INDEX IF NOT EXISTS reminder_guest_once ON reminder_deliveries(event,reminder,guest);
+      CREATE TABLE IF NOT EXISTS sms_optouts(phone TEXT PRIMARY KEY,created INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS setup_state(id INTEGER PRIMARY KEY CHECK(id=1), completed INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS approvals(email TEXT PRIMARY KEY, created TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL, id TEXT NOT NULL, household TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, body TEXT NOT NULL, PRIMARY KEY(kind,id));
@@ -306,13 +308,13 @@ export class Store {
   }
   nextRoutingJob(now) {
     return this.one(
-      "SELECT * FROM household_routing WHERE phase!='active' AND next_attempt<=? ORDER BY next_attempt,label LIMIT 1",
+      "SELECT * FROM household_routing WHERE phase NOT IN ('active','deleting') AND next_attempt<=? ORDER BY next_attempt,label LIMIT 1",
       now,
     );
   }
   routingDue() {
     return this.one(
-      "SELECT min(next_attempt) AS due FROM household_routing WHERE phase!='active'",
+      "SELECT min(next_attempt) AS due FROM household_routing WHERE phase NOT IN ('active','deleting')",
     )?.due;
   }
   routingReceipt(label, receipt) {
@@ -424,6 +426,8 @@ export class Store {
           name: text(input.name, 100, true),
           slug: existing.slug,
           design: design(input.design),
+          notes: text(input.notes ?? existing.notes ?? "", 20000),
+          ui: input.ui ?? existing.ui ?? {},
           ...(subdomain ? { subdomain } : {}),
         },
         version,
@@ -447,11 +451,19 @@ export class Store {
     );
     if (!row) fail(404, "Household not found.");
     const record = this.unpack(row);
+    if (
+      this.one(
+        "SELECT household FROM household_deletions WHERE household=?",
+        record.id,
+      )
+    )
+      fail(404, "Household not found.");
     return {
       id: record.id,
       slug: record.slug,
       name: record.name,
       design: record.design,
+      ui: record.ui || {},
     };
   }
   session(raw, origin, allowLegacy = true) {
@@ -462,6 +474,14 @@ export class Store {
       Date.now(),
     );
     if (!session) return null;
+    if (
+      session.household &&
+      this.one(
+        "SELECT household FROM household_deletions WHERE household=?",
+        session.household,
+      )
+    )
+      return null;
     if (origin) {
       const scope = this.one(
         "SELECT origin FROM session_origins WHERE token=?",
@@ -626,7 +646,7 @@ export class Store {
       `${event.id}:${guest.id}`,
       session.household,
     );
-    const { invited, ...safe } = event;
+    const { invited, notes, reminders, ...safe } = event;
     return {
       ...safe,
       totals: this.totals(event, session.household),

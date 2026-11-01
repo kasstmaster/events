@@ -153,6 +153,15 @@ export async function provisionHousehold(
   const paths = [
     ["probe", "/api/routing/probe"],
     ["root", "/"],
+    ...[
+      "editor-tools.js",
+      "ui-system.js",
+      "ui-runtime.js",
+      "ui-copy.js",
+      "icons.js",
+      "card-system.js",
+      "reminder-time.js",
+    ].map((file) => ["asset", "/" + file]),
     ["app", "/app.js"],
     ["normalizer", "/household-address.js"],
     ["style", "/style.css"],
@@ -200,6 +209,7 @@ export async function provisionHousehold(
         app: "suggestLabel",
         normalizer: "export function suggestLabel",
         style: "--",
+        asset: "export",
       }[stage];
       if (!content.includes(expected)) stop(`verification_${stage}_mismatch`);
     }

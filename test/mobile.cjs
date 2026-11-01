@@ -111,7 +111,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByRole("button", { name: "Save", exact: true })
       .click();
     await dialog(alpha.page).waitFor({ state: "hidden" });
-    await click(alpha.page, "✎ Household");
+    await click(alpha.page, "Edit household");
     await alpha.page
       .getByLabel("Background color", { exact: true })
       .fill("#e6edf7");
@@ -124,7 +124,9 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByRole("button", { name: "Create event", exact: true })
       .click();
     await alpha.page.getByLabel("Event title").fill("Summer around the table");
-    await alpha.page.getByLabel("Description").fill("A picnic for our people.");
+    await alpha.page
+      .getByLabel("Description", { exact: true })
+      .fill("A picnic for our people.");
     await alpha.page.getByLabel("Date", { exact: true }).fill("2028-06-12");
     await alpha.page
       .getByLabel("Time · numbers or words")
@@ -170,17 +172,18 @@ const { existsSync, mkdirSync } = require("node:fs");
       .waitFor();
     await noOverflow(alpha.page);
     await alpha.page
-      .getByRole("button", { name: "Edit event appearance", exact: true })
+      .getByRole("button", { name: "Edit event", exact: true })
       .click();
+    await alpha.page.getByText("Event appearance", { exact: true }).click();
     await alpha.page
       .getByLabel("Background color", { exact: true })
       .fill("#fff1eb");
     await alpha.page.getByLabel("Title color", { exact: true }).fill("#8f3829");
     await dialog(alpha.page)
-      .getByRole("button", { name: "Save", exact: true })
+      .getByRole("button", { name: "Save event", exact: true })
       .click();
     await dialog(alpha.page).waitFor({ state: "hidden" });
-    await click(alpha.page, "⌂ Home");
+    await click(alpha.page, "Home");
     await click(alpha.page, "Share household link");
     const link = await alpha.page.locator(".share-link").textContent();
     assert.ok(link.startsWith(origin + "/h/"));
@@ -205,6 +208,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByRole("heading", { name: "Summer around the table", exact: true })
       .waitFor();
     await click(guest.page, "View event");
+    await guest.page.locator(".event-hero").waitFor();
     assert.equal(
       await guest.page.evaluate(
         () => getComputedStyle(document.body).backgroundColor,
@@ -310,6 +314,17 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByRole("heading", { name: "The Alpha Family", exact: true })
       .waitFor();
     await click(guest.page, "View event");
+    await guest.page
+      .locator(".event-hero")
+      .waitFor({ timeout: 1000 })
+      .catch(async (e) => {
+        console.log(
+          "DEBUG",
+          await guest.page.locator("#notice").textContent(),
+          errors,
+        );
+        throw e;
+      });
     assert.equal(await guest.page.locator(".registry-buttons").count(), 0);
     await guest.page.getByText("Lemonade × 2", { exact: true }).waitFor();
     assert.equal(await beta.page.locator(".card").count(), 0);
