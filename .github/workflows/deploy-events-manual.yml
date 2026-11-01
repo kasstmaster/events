@@ -47,6 +47,11 @@ jobs:
               const result = { check, http: response.status, success: data.success === true, codes };
               if (check === "account_token_verify" && data.success === true) {
                 result.matches_expected_token = data.result?.id === expectedTokenId;
+                result.not_before = data.result?.not_before || null;
+                result.expires_on = data.result?.expires_on || null;
+                result.checked_at = new Date().toISOString();
+                result.starts_in_future = Date.parse(data.result?.not_before) > Date.now();
+                result.already_expired = Date.parse(data.result?.expires_on) <= Date.now();
                 if (["active", "disabled", "expired"].includes(data.result?.status)) result.token_status = data.result.status;
               }
               console.log(JSON.stringify(result));
