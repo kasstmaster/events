@@ -25,7 +25,9 @@ export function safeSettings(settings) {
   );
   requireValue(
     database?.type === "durable_object_namespace" &&
-      database.namespace_id === NAMESPACE,
+      database.namespace_id === NAMESPACE &&
+      database.class_name === "EventsDatabase" &&
+      (!database.script_name || database.script_name === "events"),
     "Existing EVENTS_DATABASE binding does not match the approved namespace.",
   );
   requireValue(
@@ -136,31 +138,21 @@ export async function run(
   }
   const settings = safeSettings(await api(`${SCRIPT}/settings`));
   const deployment = activeDeployment(await api(`${SCRIPT}/deployments`));
+  const version = await api(`${SCRIPT}/versions/${deployment.version_id}`);
+  requireValue(
+    version?.resources?.script_runtime?.migration_tag === "events-v1",
+    "The existing SQLite migration record changed; stop for review.",
+  );
   await setupClosed();
   if (mode === "preflight") {
     requireValue(
       deployment.version_id === EXPECTED_PREVIOUS_VERSION,
       "Production changed since this release was reviewed. Stop for a fresh release review.",
     );
-    // This is an existing SQLite namespace: never create, migrate, reset or replace it.
-    let namespace;
-    for (let page = 1; page <= 20; page++) {
-      const list = await api(
-        `/accounts/${ACCOUNT}/workers/durable_objects/namespaces?per_page=100&page=${page}`,
-      );
-      requireValue(
-        Array.isArray(list),
-        "Namespace inventory was not returned.",
-      );
-      namespace = list.find((item) => item.id === NAMESPACE);
-      if (namespace || list.length < 100) break;
-    }
-    requireValue(
-      namespace?.script === "events" &&
-        namespace.class === "EventsDatabase" &&
-        namespace.use_sqlite === true,
-      "Could not verify the existing SQLite namespace and its recovery support.",
-    );
+    // The reviewed production version and exact namespace above identify the
+    // previously verified SQLite object. Its events-v1 migration created
+    // EventsDatabase via new_sqlite_classes; storage type is immutable.
+    // Do not list account-wide namespaces or expand this per-Worker token.
     // The server's clock anchors timestamp-based whole-object PITR; no fabricated bookmark.
     const finalDeployment = activeDeployment(
       await api(`${SCRIPT}/deployments`),
@@ -179,6 +171,12 @@ export async function run(
       worker: "events",
       namespace_id: NAMESPACE,
       object_name: "events-platform-v1",
+      sqlite_evidence: {
+        reviewed_version: EXPECTED_PREVIOUS_VERSION,
+        migration_tag: "events-v1",
+        class_name: "EventsDatabase",
+        basis: "previously verified SQLite namespace; immutable storage backend",
+      },
       before: deployment,
       settings,
       recovery: {

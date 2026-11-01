@@ -72,3 +72,13 @@ jobs:
           }
           console.log("Read-only diagnosis complete. No deployments or configuration writes were attempted.");
           NODE
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test corrected preflight without deploying
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          mkdir -p recovery
+          node scripts/manual-events-release.mjs preflight
