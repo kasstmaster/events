@@ -89,3 +89,9 @@ The existing events DO now contains the durable routing service, driven by regis
 ## Shared editors and background jobs
 
 See [shared feature operations](shared-editors.md) for the additive `household_deletions`, `reminder_deliveries` and `sms_optouts` tables, the shared card/page editors, confirmed receipt-based account cleanup, and rollback pauses. The same object/alarm/cron owns these jobs; bindings, namespace and object names do not change. SMS remains off until separately approved provider setup. `HOUSEHOLD_DNS_TOKEN` remains server-only; deletion uses it solely for exact resources proven exclusively owned by receipts, never base/shared DNS or unrelated sites. No gateway redeployment is needed for this feature set.
+
+## Family workspace and guest-code release
+
+The additive family/member/shared-identity schema and rollout are documented in [family workspace operations](family-workspace.md). New private files remain in the existing SQLite Durable Object. Family scheduling reuses the existing alarm/cron; retain all current Worker configuration and `global_fetch_strictly_public`. No gateway deployment, extra storage binding, paid notification provider or external message is part of this release. Keep SMS and automatic/preview builds disabled.
+
+The reviewed source is the application merge on `feat/household-subdomains`; `main` has a separate manual release pin. Pin the actual reviewed merge only after validation, then use the existing events-only manual workflow with a fresh live version/recovery checkpoint. Never substitute the older main application tree or silently roll back to name-only authentication. Existing users must privately distribute permanent guest codes before guests can sign in again; no links, QR destinations or responses are replaced.

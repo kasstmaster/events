@@ -79,8 +79,14 @@ async function device(width) {
   page.setDefaultTimeout(10000);
   return { context, page };
 }
-const click = (page, name) =>
-  page.getByRole("button", { name, exact: true }).click();
+const click = async (page, name) => {
+  const scope = (await page.locator("#editor[open]").count())
+    ? page.getByRole("dialog")
+    : name === "RSVP"
+      ? page.locator("#main")
+      : page;
+  return scope.getByRole("button", { name, exact: true }).click();
+};
 const dialog = (page) => page.getByRole("dialog");
 async function login(page, email) {
   await page.goto(origin);
@@ -428,7 +434,7 @@ try {
     await admin.page.locator("main").innerText(),
     /Private household note|Private event note/,
   );
-  await click(admin.page, "Save my RSVP");
+  await click(admin.page, "RSVP");
   assert.equal(await admin.page.locator("#editor").isVisible(), false);
   assert.equal(store.list("response", host.household).length, 0);
   await click(admin.page, "Exit read-only preview");
@@ -438,6 +444,20 @@ try {
   await guest.page.goto(origin + "/h/" + household.slug);
   await guest.page.getByLabel("First name", { exact: true }).fill("Casey");
   await guest.page.getByLabel("Last name", { exact: true }).fill("Example");
+  const guestRecord = store.list("guest", host.household)[0];
+  await guest.page
+    .getByLabel("Invite Code", { exact: true })
+    .fill(
+      store.get(
+        "guest-identity",
+        store.one(
+          "SELECT identity FROM guest_identity_links WHERE guest=? AND household=?",
+          guestRecord.id,
+          host.household,
+        ).identity,
+        "platform",
+      ).code,
+    );
   await click(guest.page, "See my invitations");
   await click(guest.page, "View event");
   assert.ok(await guest.page.locator(".event-deadline").isVisible());

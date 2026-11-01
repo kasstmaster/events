@@ -146,14 +146,7 @@ export async function featureAPI({
       fail(403, "Administrators edit page defaults only.");
     const kind = editor[2],
       key = editor[3];
-    let household;
-    if (session.role === "host") household = session.household;
-    else if (kind === "household") household = key;
-    else
-      household = store.one(
-        "SELECT household FROM records WHERE kind='event' AND id=?",
-        key,
-      )?.household;
+    const household = session.household;
     if (!household) fail(404, "Record not found.");
     const record = owned(kind, key, household);
     if (method === "GET") {

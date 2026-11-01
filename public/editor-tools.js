@@ -163,7 +163,7 @@ export function featureTools(ctx) {
             text(
               {
                 invitation: "Preview invitation",
-                rsvp: "Save my RSVP",
+                rsvp: "RSVP",
                 uploads: "Upload Photos & Videos",
                 cards: "Cards & templates",
               }[id] ||

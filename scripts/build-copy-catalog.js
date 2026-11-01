@@ -48,6 +48,12 @@ function walk(node, parent, fn) {
 for (const file of [
   "public/app.js",
   "public/editor-tools.js",
+  "public/family-ui.js",
+  "server/family-api.js",
+  "server/family-permissions.js",
+  "server/family-tasks.js",
+  "server/guest-identities.js",
+  "server/recipe-import.js",
   "server/handler.js",
   "server/model.js",
   "server/features.js",
@@ -76,7 +82,7 @@ for (const file of [
           add(raw);
         if (["field", "select", "area", "modal"].includes(name) && index === 0)
           add(raw);
-        if (name === "button" && index === 1) add(raw);
+        if (["button", "action"].includes(name) && index === 1) add(raw);
         if (name === "fail" && index === 1) add(raw);
       }
       if (parent?.type === "ConditionalExpression" && /^[A-Z]|\s/.test(raw))

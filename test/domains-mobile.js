@@ -66,7 +66,13 @@ try {
       },
     });
     assert.equal(event.status, 201);
-    fixtures.push({ host, origin, background, event: event.body });
+    fixtures.push({
+      host,
+      origin,
+      background,
+      event: event.body,
+      inviteCode: guest.body.inviteCode,
+    });
   }
   browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || chromium.executablePath(),
@@ -140,6 +146,9 @@ try {
       await page.getByLabel("First name", { exact: true }).fill("Casey");
       await page.getByLabel("Last name", { exact: true }).fill("Synthetic");
       await page
+        .getByLabel("Invite Code", { exact: true })
+        .fill(fixture.inviteCode);
+      await page
         .getByRole("button", { name: "See my invitations", exact: true })
         .click();
       await page
@@ -155,15 +164,14 @@ try {
         "#102030",
       );
       await page
-        .getByRole("button", { name: /^(Save|Update) my RSVP$/ })
+        .locator("#main")
+        .getByRole("button", { name: "RSVP", exact: true })
         .click();
       const dialog = page.getByRole("dialog");
       await dialog
         .getByLabel("Casey Synthetic", { exact: true })
         .selectOption("yes");
-      await dialog
-        .getByRole("button", { name: "Save my RSVP", exact: true })
-        .click();
+      await dialog.getByRole("button", { name: "RSVP", exact: true }).click();
       await page
         .getByText("Your RSVP is saved. Thank you!", { exact: true })
         .waitFor();
