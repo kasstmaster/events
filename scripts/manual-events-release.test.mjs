@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   ACCOUNT,
   NAMESPACE,
+  RELEASE,
   safeSettings,
   activeDeployment,
   run,
@@ -73,7 +74,7 @@ test("unauthorized API response stops without exposing body", async () => {
 test("checkpoint then verify uses GET only and excludes private settings", async () => {
   const directory = await mkdtemp(join(tmpdir(), "events-release-"));
   const file = join(directory, "checkpoint.json");
-  let version = "c80d8337-d13c-4763-94d9-9aed825d83ef",
+  let version = "816c1df6-4325-47b6-ac97-3c57df1b8158",
     changed = false,
     badMigration = false;
   const fetcher = async (url, options = {}) => {
@@ -143,4 +144,19 @@ test("checkpoint then verify uses GET only and excludes private settings", async
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("manual workflow checks out the same exact release as its checkpoint helper", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/deploy-events-manual.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, new RegExp(`ref: ${RELEASE}`));
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /^\s+(push|pull_request|schedule):/m);
+  assert.match(
+    workflow,
+    /npx wrangler deploy --name events --config wrangler\.jsonc/,
+  );
+  assert.doesNotMatch(workflow, /wrangler\.gateway|deploy.*--name (?!events)/);
 });
