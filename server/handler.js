@@ -1,5 +1,11 @@
 import { featureAPI } from "./feature-api.js";
-import { uiConfig, effectiveUI, webURL, contactPhone } from "./features.js";
+import {
+  uiConfig,
+  hostUI,
+  effectiveUI,
+  webURL,
+  contactPhone,
+} from "./features.js";
 import {
   reminderInput,
   cancelReminders,
@@ -228,7 +234,10 @@ function eventInput(input, store, household, existing) {
     template,
     notes: text(input.notes ?? existing?.notes ?? "", 20000),
     uploadURL: webURL(input.uploadURL ?? existing?.uploadURL ?? ""),
-    ui: uiConfig(input.ui ?? existing?.ui ?? {}),
+    ui:
+      input.ui === undefined
+        ? existing?.ui || {}
+        : hostUI(input.ui, existing?.ui),
     reminders: reminderInput(input.reminders ?? existing?.reminders ?? []),
     registries: savedRegistries,
   };
@@ -640,9 +649,10 @@ export function createHandler({
                 household,
                 {
                   ...input,
-                  ui: uiConfig(
-                    input.ui ?? store.household(household)?.ui ?? {},
-                  ),
+                  ui:
+                    input.ui === undefined
+                      ? store.household(household)?.ui || {}
+                      : hostUI(input.ui, store.household(household)?.ui),
                 },
                 version(req),
               ),

@@ -92,7 +92,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       beta = await device(768, 1024);
     await register(alpha.page, "alpha@example.test", "The Alpha Family");
     await register(beta.page, "beta@example.test", "The Beta Family");
-    await click(alpha.page, "Guest list");
+    await click(alpha.page, "Address book");
     await click(alpha.page, "＋ Add adult or child");
     await alpha.page.getByLabel("First name", { exact: true }).fill("Casey");
     await alpha.page.getByLabel("Last name", { exact: true }).fill("Example");
@@ -100,7 +100,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByRole("button", { name: "Save", exact: true })
       .click();
     await dialog(alpha.page).waitFor({ state: "hidden" });
-    await click(alpha.page, "Guest list");
+    await click(alpha.page, "Address book");
     await click(alpha.page, "＋ Add adult or child");
     await alpha.page.getByLabel("First name", { exact: true }).fill("Robin");
     await alpha.page.getByLabel("Last name", { exact: true }).fill("Example");

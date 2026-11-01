@@ -1,5 +1,11 @@
 import { fail, text, id } from "./model.js";
-import { uiConfig, effectiveUI, cardInput, safeEvent } from "./features.js";
+import {
+  uiConfig,
+  hostUI,
+  effectiveUI,
+  cardInput,
+  safeEvent,
+} from "./features.js";
 import { resolveUI, layouts } from "../public/ui-system.js";
 import { reminderRecipients, reminderInput } from "./reminders.js";
 import { deletionSummary, requestDeletion } from "./account-deletion.js";
@@ -74,13 +80,25 @@ export async function featureAPI({
         const current = store.get("ui", "defaults", "platform");
         if ((current?.version || 0) !== expected)
           fail(409, "Defaults changed. Reload before saving.");
-        return store.put(
-          "ui",
-          "defaults",
-          "platform",
-          uiConfig(input),
-          current?.version,
-        );
+        const next = uiConfig(input);
+        if (
+          JSON.stringify(current?.design || {}) !== JSON.stringify(next.design)
+        ) {
+          for (const household of store.all(
+            "SELECT id,household FROM records WHERE kind='household'",
+          )) {
+            const existing = store.household(household.id);
+            const preserved = effectiveUI(store, existing).design;
+            store.put(
+              "household",
+              existing.id,
+              existing.id,
+              { ...existing, design: preserved },
+              existing.version,
+            );
+          }
+        }
+        return store.put("ui", "defaults", "platform", next, current?.version);
       });
       json(res, saved);
       return true;
@@ -123,7 +141,9 @@ export async function featureAPI({
     /^\/api\/(admin|host)\/interface\/(household|event)\/([a-zA-Z0-9-]+)$/,
   );
   if (editor) {
-    requireRole(editor[1]);
+    requireRole("host");
+    if (editor[1] !== "host")
+      fail(403, "Administrators edit page defaults only.");
     const kind = editor[2],
       key = editor[3];
     let household;
@@ -155,7 +175,7 @@ export async function featureAPI({
     }
     if (method === "PUT") {
       const input = await body(req);
-      let saved = { ...record, ui: uiConfig(input.ui) };
+      let saved = { ...record, ui: hostUI(input.ui, record.ui) };
       saved.design = input.resetDesign
         ? {}
         : { ...record.design, ...saved.ui.design };

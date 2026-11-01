@@ -34,9 +34,9 @@ export function uiConfig(input = {}) {
 export function effectiveUI(store, household, event) {
   return resolveUI(
     store.get("ui", "defaults", "platform"),
-    household?.ui,
+    { design: household?.ui?.design },
     { design: household?.design },
-    event?.ui,
+    { design: event?.ui?.design },
     { design: event?.design },
   );
 }
@@ -136,4 +136,12 @@ export function cardInput(input) {
     };
   });
   return card;
+}
+
+// Hosts may format their own records; wording and layout are administrator defaults only.
+export function hostUI(input = {}, existing = {}) {
+  const parsed = uiConfig(input);
+  if (Object.keys(parsed.copy).length || Object.keys(parsed.layouts).length)
+    fail(403, "Only the administrator may change page wording or layout.");
+  return { ...existing, design: parsed.design };
 }
