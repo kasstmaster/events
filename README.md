@@ -20,14 +20,16 @@ For this local Node development workflow, create the initial administrator with 
 1. The administrator signs in through **Host Login**, approves an email address, and personally shares the site link. Approvals can be removed until consumed by registration.
 2. An approved host chooses **Create your account**, sets a password and family household name, and signs in. Approval is consumed atomically; public/unapproved registration is rejected.
 3. Hosts use **Guest list** to add adults and children, and **Address book** to create optional shared addresses. Each child has one designated adult. Multiple adults can share one address without sharing a login or RSVP.
-4. **Household** previews and edits the household name, background/image, container color/opacity, title and text colors/fonts/sizes. The stable household login link and QR use these settings.
-5. The fixed **+** toolbar button creates an event. Add artwork, description, date, numeric or written time, address, RSVP deadline, individual adult/child invitations, and potluck/drink items with quantities. Copy menu items from any previous event in the same household. The pencil changes only that event’s appearance.
+4. **Edit household** previews and edits the household name, background/image, container color/opacity, title and text colors/fonts/sizes. The stable household login link and QR use these settings.
+5. **Create event** on the host home page creates an event. Add artwork, description, date, numeric or written time, address, RSVP deadline, individual adult/child invitations, and potluck/drink items with quantities. Copy menu items from any previous event in the same household. **Edit event** combines content and that event’s appearance.
 6. Optional **Gift registries** in the same event editor accept multiple custom titles and HTTP/HTTPS URLs. Add, edit, remove and move them up/down. Guest registry buttons appear directly below RSVP in the saved order and inherit event formatting. Events without registries display no registry section.
 7. **Share household link** displays a reusable QR, SVG download, copy/share actions, and the personalized guest login page. The link remains stable through event creation, household renaming, and design changes.
 8. Guests enter first/last name and their suffix if recorded. They see only their invitations, RSVP for themselves and their invited children, select available menu quantities, and see their own saved items on the event page. Each adult responds independently. Print includes event information and their items.
 9. Hosts open **RSVPs** for adult/child attendance, declines, no response, complete invited list, and menu requested/claimed/remaining totals and claimants.
 
-The administrator can upload, rename, replace or remove shared PNG/JPEG/WebP invitation artwork. Hosts select a template per event. **Preview invitation** combines its artwork with the event’s current information and household QR; print/save as PDF uses the same populated preview. A template in use cannot be removed. Template updates intentionally apply to events that reference it.
+The administrator manages shared invitation, thank-you and holiday templates; hosts use the same editor for private templates and saved cards. Cards snapshot their source design and use one renderer for preview, SVG/PNG download and print. Optional QR codes keep existing destinations. Native sharing and email composers never claim delivery. See [shared editors, cards, reminders and deletion](docs/shared-editors.md) for the inheritance model, copy catalog, supported layout controls, private notes, contacts and release instructions.
+
+Text reminders are implemented but **disabled until a separately approved Twilio sender, credentials, webhooks and billing are configured**. No real texts are sent by tests or this default configuration. Administrator account removal requires an explicit scope/email/domain confirmation and receipt-verified cleanup; it is never exercised against live accounts during testing.
 
 ### Synchronization and conflict handling
 
@@ -59,6 +61,10 @@ The test suite covers two hosts, role/tenant isolation, approvals/passwords, CSR
 - `server/handler.js`: shared HTTP request handling, role authorization, validation, CSRF and QR generation.
 - `server/app.js`: local Node HTTP/static-file adapter.
 - `cloudflare/worker.js`: Cloudflare Fetch/assets and SQLite-backed Durable Object adapters; one new Worker and database namespace, without touching the gatherings site.
+- `public/ui-system.js`, `public/ui-runtime.js`, `public/ui-copy.js`: shared formatting/layout schema and escaped editable copy catalog.
+- `public/card-system.js`, `public/editor-tools.js`: one card renderer and shared page/card/reminder editors.
+- `server/feature-api.js`, `server/features.js`, `server/reminders.js`, `server/account-deletion.js`: scoped customization, safe field validation, disabled-by-default provider adapter and confirmed deletion.
+- `cloudflare/account-cleanup.js`: receipt-based dedicated-resource cleanup.
 - `public/app.js`: shared views/forms for administrator, host and guest; one event editor/page, RSVP system and appearance editor.
 - `public/style.css`: touch-friendly shared design and fixed toolbar, responsive dialogs, print and safe-area rules.
 - `test/`: HTTP integration and multi-session mobile browser checks.

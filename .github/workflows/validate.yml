@@ -20,5 +20,21 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:mobile
-      - run: npm run test:cloudflare
+      - name: Original phone workflow
+        run: node test/mobile.cjs
+      - name: Household phone and desktop routing
+        run: node test/domains-mobile.js
+      - name: Shared editor browser checks
+        timeout-minutes: 3
+        run: node test/features-mobile.js
+      - name: Cloudflare runtime checks
+        if: ${{ !cancelled() }}
+        run: npm run test:cloudflare
+      - name: Browser failure screenshots
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-screenshots
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7

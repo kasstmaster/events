@@ -89,6 +89,13 @@ export async function domainRuntime({
                   "style.css",
                   "app.js",
                   "household-address.js",
+                  "editor-tools.js",
+                  "ui-system.js",
+                  "ui-runtime.js",
+                  "ui-copy.js",
+                  "icons.js",
+                  "card-system.js",
+                  "reminder-time.js",
                 ].includes(file)
               )
                 return new Response("Missing", { status: 404 });

@@ -1,3 +1,11 @@
+import { featureAPI } from "./feature-api.js";
+import { uiConfig, effectiveUI, webURL, contactPhone } from "./features.js";
+import {
+  reminderInput,
+  cancelReminders,
+  verifyTwilio,
+  processTwilio,
+} from "./reminders.js";
 import { suggestLabel } from "./household-domains.js";
 import { Buffer } from "node:buffer";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -23,6 +31,15 @@ const files = new Map([
   ],
   ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
   ["/style.css", ["style.css", "text/css; charset=utf-8"]],
+  ...[
+    "editor-tools.js",
+    "ui-system.js",
+    "ui-runtime.js",
+    "ui-copy.js",
+    "icons.js",
+    "card-system.js",
+    "reminder-time.js",
+  ].map((file) => ["/" + file, [file, "text/javascript; charset=utf-8"]]),
 ]);
 const date = (value) => {
   const result = text(value ?? "", 10);
@@ -87,6 +104,14 @@ function guestInput(input, store, household, existing) {
     fail(400, "Choose an address in your household.");
   return {
     first: text(input.first, 80, true),
+    phone: contactPhone(input.phone ?? existing?.phone ?? ""),
+    smsConsent:
+      input.smsConsent === true ||
+      (input.smsConsent === undefined && existing?.smsConsent === true),
+    consentRecorded:
+      input.smsConsent === true
+        ? new Date().toISOString()
+        : existing?.consentRecorded || null,
     last: text(input.last, 80, true),
     suffix: text(input.suffix ?? "", 30),
     parent,
@@ -201,6 +226,10 @@ function eventInput(input, store, household, existing) {
     invited: input.invited,
     menu,
     template,
+    notes: text(input.notes ?? existing?.notes ?? "", 20000),
+    uploadURL: webURL(input.uploadURL ?? existing?.uploadURL ?? ""),
+    ui: uiConfig(input.ui ?? existing?.ui ?? {}),
+    reminders: reminderInput(input.reminders ?? existing?.reminders ?? []),
     registries: savedRegistries,
   };
 }
@@ -213,6 +242,7 @@ export function createHandler({
   setupSecret = "",
   setupEmail = "",
   requireAdmin = false,
+  env = {},
   householdHostname = "",
   householdHosts = new Set(),
   canonicalOrigin = origin,
@@ -283,6 +313,29 @@ export function createHandler({
       }
       if (!["GET", "POST", "PUT", "DELETE"].includes(method))
         fail(405, "Method not allowed.");
+      if (path === "/api/messaging/twilio" && method === "POST") {
+        let size = 0,
+          parts = [];
+        for await (const part of req) {
+          size += part.length;
+          if (size > 64000) fail(413, "Webhook too large.");
+          parts.push(part);
+        }
+        const params = new URLSearchParams(Buffer.concat(parts).toString());
+        if (
+          !verifyTwilio(
+            origin + req.url,
+            params,
+            req.headers["x-twilio-signature"],
+            env.TWILIO_AUTH_TOKEN,
+          )
+        )
+          fail(403, "Invalid webhook signature.");
+        processTwilio(store, params);
+        res.writeHead(200, { "Content-Type": "text/xml" });
+        res.end("<Response/>");
+        return;
+      }
       if (method !== "GET" && req.headers.origin !== origin)
         fail(403, "Please use the application’s own page to submit changes.");
       if (path === "/api/setup") {
@@ -357,6 +410,23 @@ export function createHandler({
           10,
         );
       };
+      if (
+        await featureAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          requireRole,
+          body,
+          version,
+          json,
+          validateEvent: eventInput,
+          env,
+        })
+      )
+        return;
       if (path === "/api/session" && method === "GET") {
         json(
           res,
@@ -386,7 +456,16 @@ export function createHandler({
         authLimit("login", address);
         const user = store.one("SELECT * FROM users WHERE email=?", address);
         const valid = await checkPassword(input.password, user?.password);
-        if (!valid || !user) fail(401, "Unable to sign in with these details.");
+        if (
+          !valid ||
+          !user ||
+          (user.household &&
+            store.one(
+              "SELECT household FROM household_deletions WHERE household=?",
+              user.household,
+            ))
+        )
+          fail(401, "Unable to sign in with these details.");
         if (
           selected &&
           (user.role !== "host" || user.household !== selected.id)
@@ -411,7 +490,15 @@ export function createHandler({
         return;
       }
       if (path === "/api/public/context" && method === "GET") {
-        json(res, { household: selected ? { ...selected, defaults } : null });
+        json(res, {
+          household: selected
+            ? {
+                ...selected,
+                defaults: effectiveUI(store).design,
+                ui: effectiveUI(store, store.household(selected.id)),
+              }
+            : null,
+        });
         return;
       }
       if (path === "/api/subdomains" && method === "GET") {
@@ -443,7 +530,11 @@ export function createHandler({
         if (selected && selected.id !== household.id)
           fail(404, "This household address is unavailable.");
         if (method === "GET" && !publicMatch[2]) {
-          json(res, { ...household, defaults });
+          json(res, {
+            ...household,
+            defaults: effectiveUI(store).design,
+            ui: effectiveUI(store, store.household(household.id)),
+          });
           return;
         }
         if (method === "POST" && publicMatch[2]) {
@@ -484,8 +575,11 @@ export function createHandler({
           json(res, {
             approvals: store.all("SELECT email,created FROM approvals"),
             templates: store.list("template", "platform"),
+            deletions: store.all(
+              "SELECT household,email,label,phase,error FROM household_deletions",
+            ),
             hosts: store.all(
-              "SELECT email,household FROM users WHERE role='host'",
+              "SELECT id,email,household FROM users WHERE role='host'",
             ),
           });
           return;
@@ -511,61 +605,6 @@ export function createHandler({
           json(res, { ok: true });
           return;
         }
-        if (path === "/api/admin/templates" && method === "POST") {
-          const input = await body(req);
-          json(
-            res,
-            store.put("template", id(), "platform", {
-              name: text(input.name, 100, true),
-              image: image(input.image),
-            }),
-            201,
-          );
-          return;
-        }
-      }
-      const adminTemplate = path.match(
-        /^\/api\/admin\/templates\/([a-zA-Z0-9-]+)$/,
-      );
-      if (adminTemplate) {
-        requireRole("admin");
-        const existing = store.get("template", adminTemplate[1], "platform");
-        if (!existing) fail(404, "Template not found.");
-        if (method === "PUT") {
-          const input = await body(req);
-          json(
-            res,
-            store.put(
-              "template",
-              existing.id,
-              "platform",
-              {
-                name: text(input.name, 100, true),
-                image:
-                  input.image === undefined
-                    ? existing.image
-                    : image(input.image),
-              },
-              version(req),
-            ),
-          );
-          return;
-        }
-        if (method === "DELETE") {
-          if (
-            store.one(
-              "SELECT id FROM records WHERE kind='event' AND json_extract(body,'$.template')=? LIMIT 1",
-              existing.id,
-            )
-          )
-            fail(
-              409,
-              "This template is in use. Hosts must choose another template before removal.",
-            );
-          store.remove("template", existing.id, "platform", version(req));
-          json(res, { ok: true });
-          return;
-        }
       }
       if (path === "/api/templates" && method === "GET") {
         if (!session) fail(401, "Please sign in.");
@@ -584,9 +623,11 @@ export function createHandler({
               ...e,
               menu: store.menuView(e, household),
               totals: store.totals(e, household),
+              ui: effectiveUI(store, store.household(household), e),
             })),
             templates: store.list("template", "platform"),
-            defaults,
+            defaults: effectiveUI(store).design,
+            ui: effectiveUI(store, store.household(household)),
           });
           return;
         }
@@ -595,7 +636,16 @@ export function createHandler({
           json(
             res,
             presentHousehold(
-              store.updateHousehold(household, input, version(req)),
+              store.updateHousehold(
+                household,
+                {
+                  ...input,
+                  ui: uiConfig(
+                    input.ui ?? store.household(household)?.ui ?? {},
+                  ),
+                },
+                version(req),
+              ),
             ),
           );
           return;
@@ -656,6 +706,9 @@ export function createHandler({
                     ? {
                         label: text(input.label, 100, true),
                         lines: text(input.lines ?? "", 500),
+                        phone: contactPhone(
+                          input.phone ?? existing?.phone ?? "",
+                        ),
                       }
                     : eventInput(input, store, household, existing);
             json(
@@ -698,6 +751,7 @@ export function createHandler({
               )
                 fail(409, "Unassign this address from guests first.");
               store.remove(kind, key, household, version(req));
+              if (kind === "event") cancelReminders(store, household, key);
               if (kind === "event")
                 for (const r of store
                   .list("response", household)
@@ -726,8 +780,12 @@ export function createHandler({
             events: store
               .list("event", session.household)
               .filter((e) => e.invited.includes(session.guest))
-              .map((e) => store.guestEvent(e, session)),
-            defaults,
+              .map((e) => ({
+                ...store.guestEvent(e, session),
+                ui: effectiveUI(store, store.household(session.household), e),
+              })),
+            defaults: effectiveUI(store).design,
+            ui: effectiveUI(store, store.household(session.household)),
           });
           return;
         }

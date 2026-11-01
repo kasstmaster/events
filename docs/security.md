@@ -4,7 +4,7 @@ This is a new application in `kasstmaster/events`. It does not read, migrate, wr
 
 ## Trust boundaries
 
-- Administrators approve host email addresses and manage shared invitation artwork. They do not receive guest databases through the administration API. Browser administrator setup requires an owner-configured `ADMIN_SETUP_TOKEN` secret, never a default password or public first-user ownership claim. The optional bootstrap CLI remains available to operators.
+- Administrators approve host email addresses and manage shared templates and scoped public-page defaults. Read-only guest previews exclude private contacts, notes and responses; the deletion summary returns scoped counts and confirmation identifiers, not guest databases. Browser administrator setup requires an owner-configured `ADMIN_SETUP_TOKEN` secret, never a default password or public first-user ownership claim. The optional bootstrap CLI remains available to operators.
 - Hosts own one household each, with reusable guests, addresses and independent events. Record access includes both the record ID and the authenticated household. A record ID from another tenant produces no usable private data.
 - Guests receive only events inviting their adult ID, the invited children associated with that adult, their own response/claims, aggregate attendance counts and menu availability. Other names, household addresses and RSVP details are excluded.
 - Public household links return only household ID/slug, display name and login design. Treat those branding settings as public. A stable QR is a navigation link, not an authentication credential.
@@ -39,3 +39,9 @@ Registration availability is a rate-limited advisory read, not a reservation or 
 The provisioning verifier stores only fixed verification stage/failure codes (and numeric HTTP status), not transport exception text, URLs, request/response headers, body content, credentials or private probes. Both Worker configurations must retain `global_fetch_strictly_public` for the public Worker routing architecture. A configuration regression must not be hidden by separately hardcoded test-runtime flags; local network mocks still do not establish live cross-account success.
 
 Signed private status/context verification reads may emit fixed `events-routing-check` stage/outcome codes and numeric HTTP status for temporary real-time diagnosis. The reporter rejects unknown/free-form values, and never logs hostname, household, probe, headers, cookies, bodies or exception values. Tracing must not enable access or change pending/active state.
+
+## Editing, messaging and deletion boundaries
+
+See [shared feature security and operations](shared-editors.md). Edited interface wording is escaped text; layouts use a server-validated key schema. Template fields are allowlisted and escaped, and saved cards snapshot designs rather than tracking source updates. Notes and reminder configuration are never serialized by public or guest endpoints.
+
+SMS provider credentials stay server-side and delivery is disabled by default. Signed provider webhooks are the only browser-Origin exception and must pass Twilio signature verification on the exact canonical URL. Global opt-out suppressions and unique delivery claims prevent repeat attempts; uncertain outcomes remain unknown. Tenant deletion immediately revokes access, retains retired labels and only cleans exact resources verified against ownership receipts. Pending cleanup must not be bypassed by rollback. No provider setup, live messages or real account deletions occur in automated validation.
