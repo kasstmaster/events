@@ -1,6 +1,6 @@
 import { ui, M, C, H, configureCopy } from "/ui-runtime.js";
 import { featureTools } from "/editor-tools.js";
-import { resolveUI, order, designControls } from "/ui-system.js";
+import { resolveUI, order, designControls, roleDefaults } from "/ui-system.js";
 import { icon } from "/icons.js";
 import { suggestLabel } from "/household-address.js";
 const $ = (selector) => document.querySelector(selector);
@@ -53,7 +53,7 @@ const button = (action, label, extra = "", className = "secondary") =>
 const field = (label, name, value = "", type = "text", extra = "") =>
   ui`<label>${label}<input name="${name}" type="${type}" value="${escape(value)}" ${M(extra)}></label>`;
 const area = (label, name, value = "", extra = "") =>
-  ui`<label>${label}<textarea name="${name}" ${M(extra)}>${escape(value)}</textarea></label>`;
+  ui`<label>${label}<textarea aria-label="${label}" name="${name}" ${M(extra)}>${escape(value)}</textarea></label>`;
 const select = (label, name, options, value, extra = "") =>
   ui`<label>${label}<select aria-label="${label}" name="${name}" ${extra}>${options.map(([key, label]) => ui`<option value="${escape(key)}" ${key === value ? "selected" : ""}>${escape(label)}</option>`).join("")}</select></label>`;
 const dateLabel = (value) =>
@@ -65,6 +65,7 @@ const dateLabel = (value) =>
     : C("Date to come");
 function applyDesign(settings = {}) {
   const d = {
+    ...roleDefaults,
     ...state.data?.defaults,
     ...state.publicHousehold?.defaults,
     ...settings,
@@ -82,12 +83,35 @@ function applyDesign(settings = {}) {
   root.setProperty("--body-font", d.textFont);
   root.setProperty("--title-size", `${d.titleSize}px`);
   root.setProperty("--text-size", `${d.textSize}px`);
-  for (const role of ["description", "button"]) {
+  for (const role of [
+    "description",
+    "button",
+    "eyebrow",
+    "status",
+    "toolbar",
+    "notes",
+  ]) {
     root.setProperty(`--${role}-font`, d[role + "Font"]);
     root.setProperty(`--${role}-size`, d[role + "Size"] + "px");
     root.setProperty(`--${role}-color`, d[role + "Color"]);
   }
   root.setProperty("--button-text", d.buttonText);
+  for (const key of [
+    "borderColor",
+    "statusBackground",
+    "toolbarBackground",
+    "inputColor",
+    "inputBackground",
+    "linkColor",
+    "accentColor",
+    "dangerColor",
+    "dangerBackground",
+    "notesBackground",
+  ])
+    root.setProperty(
+      "--" + key.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase()),
+      d[key],
+    );
   root.setProperty(
     "--background-image",
     d.backgroundImage ? `url("${d.backgroundImage}")` : "none",
@@ -269,7 +293,7 @@ function eventCard(event) {
 }
 function eventPage(event) {
   const own = event.response;
-  return ui`<section class="event-hero">${event.icon ? ui`<img class="event-icon" src="${escape(event.icon)}" alt="Event artwork">` : ""}<p class="eyebrow">${escape(state.data.household.name)} invites you</p><h1>${escape(event.title)}</h1><p class="event-details">${escape(event.description)}</p><div class="event-meta"><div><b>When</b><span>${escape(dateLabel(event.date))}</span><span>${escape(event.time)}</span></div>${event.address ? ui`<div><b>Where</b><span class="event-details">${escape(event.address)}</span></div>` : ""}</div>${event.deadline ? ui`<div class="event-deadline"><b>RSVP By</b><span>${escape(dateLabel(event.deadline))}</span></div>` : ""}</section>${state.session.role === "host" ? ui`<div class="row no-print" data-event-actions>${button("edit-event", H("Edit event"))}${button("invitation", H("Preview invitation"))}${button("reminders", H("Text reminders"))}${button("cards", H("Cards"))}${button("host-ui", H("Page wording & layout"))}${button("delete-event", H("Delete event"), "", "danger")}</div>` : ui`<div class="row no-print" data-event-actions>${button("rsvp", own?.version ? C("Update my RSVP") : C("Save my RSVP"), "", "")}${(event.registries || []).length ? ui`<div class="registry-buttons" aria-label="Gift registries">${event.registries.map((r) => ui`<a class="button registry-button" href="${escape(r.url)}" target="_blank" rel="noopener noreferrer">${escape(r.title)}</a>`).join("")}</div>` : ""}${event.uploadURL ? ui`<a class="button secondary" href="${escape(event.uploadURL)}" target="_blank" rel="noopener noreferrer">Upload Photos & Videos</a>` : ""}</div>`}<div class="grid"><section class="panel"><p class="eyebrow">Something to share</p><h2>At the table</h2>${event.menu.length ? event.menu.map((item) => ui`<div class="menu-item"><div><strong>${escape(item.name)}</strong><div class="muted small">${item.kind === "drink" ? C("Drinks") : C("Potluck")}</div></div><span class="pill">${Math.max(0, item.quantity - (item.claimed || 0))} needed</span></div>`).join("") : M('<p class="muted">Just bring yourself. Your host hasn’t added any menu items yet.</p>')}</section>${
+  return ui`<section class="event-hero">${event.icon ? ui`<img class="event-icon" src="${escape(event.icon)}" alt="Event artwork">` : ""}<p class="eyebrow">${escape(state.data.household.name)} invites you</p><h1>${escape(event.title)}</h1><p class="event-details">${escape(event.description)}</p><div class="event-meta"><div><b>When</b><span>${escape(dateLabel(event.date))}</span><span>${escape(event.time)}</span></div>${event.address ? ui`<div><b>Where</b><span class="event-details">${escape(event.address)}</span></div>` : ""}</div>${event.deadline ? ui`<div class="event-deadline"><b>RSVP By</b><span>${escape(dateLabel(event.deadline))}</span></div>` : ""}</section>${state.session.role === "host" ? ui`<div class="row no-print" data-event-actions>${button("edit-event", H("Edit event"))}${button("invitation", H("Preview invitation"))}${button("reminders", H("Text reminders"))}${button("cards", H("Cards"))}</div>` : ui`<div class="row no-print" data-event-actions>${button("rsvp", own?.version ? C("Update my RSVP") : C("Save my RSVP"), "", "")}${(event.registries || []).length ? ui`<div class="registry-buttons" aria-label="Gift registries">${event.registries.map((r) => ui`<a class="button registry-button" href="${escape(r.url)}" target="_blank" rel="noopener noreferrer">${escape(r.title)}</a>`).join("")}</div>` : ""}${event.uploadURL ? ui`<a class="button secondary" href="${escape(event.uploadURL)}" target="_blank" rel="noopener noreferrer">Upload Photos & Videos</a>` : ""}</div>`}<div class="grid"><section class="panel"><p class="eyebrow">Something to share</p><h2>At the table</h2>${event.menu.length ? event.menu.map((item) => ui`<div class="menu-item"><div><strong>${escape(item.name)}</strong><div class="muted small">${item.kind === "drink" ? C("Drinks") : C("Potluck")}</div></div><span class="pill">${Math.max(0, item.quantity - (item.claimed || 0))} needed</span></div>`).join("") : M('<p class="muted">Just bring yourself. Your host hasn’t added any menu items yet.</p>')}</section>${
     own
       ? ui`<section class="panel"><p class="eyebrow">Your plans</p><h2>Your RSVP & items</h2>${
           own.version
@@ -322,7 +346,7 @@ function render() {
     if (event) content = eventPage(event);
     else {
       state.event = null;
-      content = ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : H("Welcome,") + " " + escape(state.data.guest.first)}</p><h1>${escape(state.data.household.name)}</h1><p class="muted">${role === "host" ? C("A familiar table. A new memory. Make room for your next gathering.") : C("Your invitations, all in one place.")}</p>${role === "host" ? ui`<div class="row">${button("household", H("Edit household"), "", "")}${button("new-event", H("Create event"), 'aria-label="Create event"', "")}${button("guests", H("Guest list"))}${button("addresses", H("Address book"))}${button("share", H("Share household link"))}${button("cards", H("Cards & templates"))}${button("host-ui", H("Page wording & layout"))}</div>` : ""}</section>${state.data.events.length ? ui`<section class="grid" aria-label="Events">${state.data.events.map(eventCard).join("")}</section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
+      content = ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : H("Welcome,") + " " + escape(state.data.guest.first)}</p><h1>${escape(state.data.household.name)}</h1><p class="muted">${role === "host" ? C("A familiar table. A new memory. Make room for your next gathering.") : C("Your invitations, all in one place.")}</p>${role === "host" ? ui`<div class="row">${button("household", H("Edit household"), "", "")}${button("new-event", H("Create event"), 'aria-label="Create event"', "")}${button("addresses", H("Address book"))}${button("share", H("Share household link"))}${button("cards", H("Cards & templates"))}</div>` : ""}</section>${state.data.events.length ? ui`<section class="grid" aria-label="Events">${state.data.events.map(eventCard).join("")}</section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
     }
   }
   $("#app").innerHTML =
@@ -346,11 +370,11 @@ const closeModal = () => {
 };
 const selectedEvent = () => state.data.events.find((e) => e.id === state.event);
 function appearanceFields(d) {
-  return ui`<div class="preview" id="design-preview"><p class="eyebrow">Appearance preview</p><h2>${escape(state.data.household.name)}</h2><p>Good company. Great memories.</p></div>${designControls(d, { field, select, label: H })}<label class="check"><input type="checkbox" name="removeBackground">Remove background image</label>`;
+  return ui`<div class="preview" id="design-preview"><p class="eyebrow">Appearance preview</p><h2>${escape(state.data.household.name)}</h2><p>Good company. Great memories.</p></div>${designControls(d, { field, select, label: H })}<div class="row">${select(H("Copy formatting from"), "copyFormatting", [["household", C("Household")], ...state.data.events.map((e) => [e.id, e.title])], "household")}${button("copy-formatting", H("Copy formatting"))}${button("reset-colors", H("Reset to default colors"))}</div><label class="check"><input type="checkbox" name="removeBackground">Remove background image</label>`;
 }
 function appearanceForm() {
   const household = state.data.household,
-    d = { ...state.data.defaults, ...household.design };
+    d = { ...roleDefaults, ...state.data.ui.design };
   state.editingDesign = d;
   modal(
     C("Household & login appearance"),
@@ -362,28 +386,15 @@ function appearanceForm() {
 function designFrom(form) {
   const data = new FormData(form),
     d = { ...state.editingDesign };
-  for (const key of [
-    "background",
-    "container",
-    "titleColor",
-    "textColor",
-    "titleFont",
-    "textFont",
-    "descriptionColor",
-    "descriptionFont",
-    "buttonColor",
-    "buttonText",
-    "buttonFont",
-  ])
-    d[key] = data.get(key);
-  for (const key of [
-    "opacity",
-    "titleSize",
-    "textSize",
-    "descriptionSize",
-    "buttonSize",
-  ])
-    d[key] = Number(data.get(key));
+  if (form.dataset.copiedBackground !== undefined)
+    d.backgroundImage = form.dataset.copiedBackground;
+  for (const key of Object.keys(roleDefaults)) {
+    if (key === "backgroundImage" || !data.has(key)) continue;
+    d[key] =
+      typeof roleDefaults[key] === "number"
+        ? Number(data.get(key))
+        : data.get(key);
+  }
   return d;
 }
 function updatePreview() {
@@ -407,16 +418,20 @@ function guestEditor(guest = {}) {
 }
 function guestList() {
   modal(
-    C("Your guest list"),
+    C("Address book"),
     ui`<p>Reusable people, independent invitations.</p>${button("add-guest", H("＋ Add adult or child"), "", "")}<ul class="guest-list">${state.data.guests.map((g) => ui`<li class="${g.parent ? "child" : ""}"><div class="row between"><div><strong>${escape(fullName(g))}</strong><div class="small muted">${g.parent ? H("Child of") + " " + escape(fullName(state.data.guests.find((a) => a.id === g.parent))) : C("Adult guest")}${g.address ? " · " + escape(state.data.addresses.find((a) => a.id === g.address)?.label) : ""}</div></div><div>${button("edit-guest", H("Edit"), `data-id="${g.id}"`, "quiet")}${button("delete-guest", H("Remove"), `data-id="${g.id}"`, "quiet")}</div></div></li>`).join("") || M('<li class="muted">Add your first guest to start inviting.</li>')}</ul>`,
   );
 }
 function addresses() {
-  modal(
-    C("Address book"),
-    ui`<p>Assign the same address to as many guests as you need.</p>${button("add-address", H("＋ Add address"), "", "")}<ul class="guest-list">${state.data.addresses.map((a) => ui`<li><strong>${escape(a.label)}</strong><p class="event-details">${escape(a.lines)}</p>${button("edit-address", H("Edit"), `data-id="${a.id}"`, "quiet")}${button("delete-address", H("Remove"), `data-id="${a.id}"`, "quiet")}</li>`).join("") || M('<li class="muted">Addresses are optional.</li>')}</ul>`,
-  );
+  guestList();
+  document
+    .querySelector("#editor .dialog-body")
+    .insertAdjacentHTML(
+      "beforeend",
+      ui`<h3>Shared addresses</h3>${button("add-address", H("＋ Add address"), "", "")}<ul class="guest-list">${state.data.addresses.map((a) => ui`<li><strong>${escape(a.label)}</strong><p class="event-details">${escape(a.lines)}</p>${button("edit-address", H("Edit"), `data-id="${a.id}"`, "quiet")}${button("delete-address", H("Remove"), `data-id="${a.id}"`, "quiet")}</li>`).join("")}</ul>`,
+    );
 }
+
 function addressEditor(address = {}) {
   state.editingAddress = address;
   modal(
@@ -448,13 +463,13 @@ function eventEditor(existing) {
   };
   const e = state.editingEvent;
   state.editingDesign = {
-    ...state.data.defaults,
-    ...state.data.household.design,
+    ...roleDefaults,
+    ...state.data.ui.design,
     ...e.design,
   };
   modal(
     existing ? C("Edit event") : C("A new reason to gather"),
-    ui`${field(H("Event title"), "title", e.title, "text", 'required maxlength="160" placeholder="Sunday around the table"')}${area(H("Description"), "description", e.description, 'maxlength="5000"')}<div class="form-grid">${field(H("Date"), "date", e.date, "date")}${field(H("Time · numbers or words"), "time", e.time, "text", 'maxlength="100" placeholder="Two O’Clock in the Afternoon"')}${field(H("RSVP deadline"), "deadline", e.deadline, "date")}</div>${area(H("Event address"), "eventAddress", e.address, 'maxlength="500"')}${field(H("Photo / video upload link (optional)"), "uploadURL", e.uploadURL || "", "url", 'maxlength="2048" placeholder="https://…"')}<p class="small muted">Use Dropbox File Requests, Google Drive, OneDrive, or another sharing service. Configure upload permissions at that destination. Clear the link to remove the guest upload button.</p>${area(H("Private event notes"), "eventNotes", e.notes || "", 'maxlength="20000"')}<details><summary>Event appearance</summary>${appearanceFields(state.editingDesign)}<label class="check"><input type="checkbox" name="resetDesign">Use household appearance defaults</label></details>${field(H("Event icon / image"), "iconUpload", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input type="checkbox" name="removeIcon">Remove current image</label>${select(H("Invitation template"), "template", [["", C("Simple invitation")], ...state.templates.map((t) => [t.id, t.name])], e.template || "")}<fieldset><legend>Gift registries · optional</legend><p class="small muted">Guest buttons appear directly below RSVP, in this order.</p><div id="registry-rows">${(e.registries || []).map(registryRow).join("")}</div>${button("add-registry", H("＋ Add registry"))}</fieldset><fieldset><legend>Who’s invited?</legend><p class="small muted">Choose each person. Children need their designated adult invited too.</p>${state.data.guests.map((g) => ui`<label class="check ${g.parent ? "child" : ""}"><input type="checkbox" name="invited" value="${g.id}" ${e.invited.includes(g.id) ? "checked" : ""}>${escape(fullName(g))}${g.parent ? C(" (child)") : ""}</label>`).join("") || M("<p>Add guests from Home → Guest list before inviting them.</p>")}</fieldset><fieldset><legend>Potluck & drinks</legend><div class="row">${select(H("Copy menu from"), "copyMenu", [["", C("Choose a past event")], ...state.data.events.filter((p) => p.id !== e.id).map((p) => [p.id, p.title])], "")}${button("copy-menu", H("Copy items"))}</div><div id="menu-rows">${e.menu.map(menuRow).join("")}</div>${button("add-menu", H("＋ Add item"))}</fieldset>`,
+    ui`${field(H("Event title"), "title", e.title, "text", 'required maxlength="160" placeholder="Sunday around the table"')}${area(H("Description"), "description", e.description, 'maxlength="5000"')}<div class="form-grid">${field(H("Date"), "date", e.date, "date")}${field(H("Time · numbers or words"), "time", e.time, "text", 'maxlength="100" placeholder="Two O’Clock in the Afternoon"')}${field(H("RSVP deadline"), "deadline", e.deadline, "date")}</div>${area(H("Event address"), "eventAddress", e.address, 'maxlength="500"')}${field(H("Photo / video upload link (optional)"), "uploadURL", e.uploadURL || "", "url", 'maxlength="2048" placeholder="https://…"')}<p class="small muted">Use Dropbox File Requests, Google Drive, OneDrive, or another sharing service. Configure upload permissions at that destination. Clear the link to remove the guest upload button.</p>${area(H("Private event notes"), "eventNotes", e.notes || "", 'maxlength="20000"')}<details><summary>Event appearance</summary>${appearanceFields(state.editingDesign)}</details>${field(H("Event icon / image"), "iconUpload", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input type="checkbox" name="removeIcon">Remove current image</label>${select(H("Invitation template"), "template", [["", C("Simple invitation")], ...state.templates.map((t) => [t.id, t.name])], e.template || "")}<fieldset><legend>Gift registries · optional</legend><p class="small muted">Guest buttons appear directly below RSVP, in this order.</p><div id="registry-rows">${(e.registries || []).map(registryRow).join("")}</div>${button("add-registry", H("＋ Add registry"))}</fieldset><fieldset><legend>Who’s invited?</legend><p class="small muted">Choose each person. Children need their designated adult invited too.</p>${state.data.guests.map((g) => ui`<label class="check ${g.parent ? "child" : ""}"><input type="checkbox" name="invited" value="${g.id}" ${e.invited.includes(g.id) ? "checked" : ""}>${escape(fullName(g))}${g.parent ? C(" (child)") : ""}</label>`).join("") || M("<p>Add guests from Home → Guest list before inviting them.</p>")}</fieldset><fieldset><legend>Potluck & drinks</legend><div class="row">${select(H("Copy menu from"), "copyMenu", [["", C("Choose a past event")], ...state.data.events.filter((p) => p.id !== e.id).map((p) => [p.id, p.title])], "")}${button("copy-menu", H("Copy items"))}</div><div id="menu-rows">${e.menu.map(menuRow).join("")}</div>${button("add-menu", H("＋ Add item"))}</fieldset>${existing ? ui`<hr>${button("delete-event", H("Delete event"), "", "danger")}` : ""}`,
     "event",
     existing ? C("Save event") : C("Create event"),
   );
@@ -557,8 +572,12 @@ async function fileData(input) {
   });
 }
 async function saved(message) {
-  closeModal();
+  const editor = $("#editor"),
+    contents = editor.firstElementChild,
+    wasOpen = editor.open;
   await load();
+  // An unrelated inline save must not close an editor opened while it refreshed.
+  if (wasOpen && editor.firstElementChild === contents) closeModal();
   notify(message);
 }
 async function submit(form) {
@@ -612,6 +631,7 @@ async function submit(form) {
         design: Object.fromEntries(
           Object.entries(d).filter(
             ([key, value]) =>
+              form.dataset.formattingCopied === "true" ||
               value !== state.editingDesign[key] ||
               key in (state.data.household.design || {}),
           ),
@@ -901,6 +921,46 @@ document.addEventListener("click", async (event) => {
       await load();
       return;
     }
+    if (action === "copy-formatting" || action === "reset-colors") {
+      const form = target.closest("form");
+      if (
+        action === "reset-colors" &&
+        !confirm(
+          String(
+            C(
+              "Reset colors to page defaults? Other formatting and content will be preserved.",
+            ),
+          ),
+        )
+      )
+        return;
+      const source = form.elements.copyFormatting.value;
+      const values =
+        action === "reset-colors"
+          ? state.data.defaults
+          : source === "household"
+            ? state.data.ui.design
+            : state.data.events.find((e) => e.id === source)?.ui.design;
+      if (action === "copy-formatting" && values) {
+        form.dataset.formattingCopied = "true";
+        form.dataset.copiedBackground = values.backgroundImage || "";
+      }
+      for (const [key, value] of Object.entries(values || {})) {
+        if (key === "backgroundImage") continue;
+        if (
+          action === "reset-colors" &&
+          !(
+            key.endsWith("Color") ||
+            key.endsWith("Background") ||
+            ["background", "container", "buttonText"].includes(key)
+          )
+        )
+          continue;
+        if (form.elements[key]) form.elements[key].value = value;
+      }
+      updatePreview();
+      return;
+    }
     if (action.startsWith("delete-")) {
       const kind = action.slice(7),
         record =
@@ -961,7 +1021,11 @@ async function eventDesign(form, event) {
   if (new FormData(form).has("removeBackground")) d.backgroundImage = "";
   const result = { ...event.design };
   for (const [key, value] of Object.entries(d))
-    if (value !== state.editingDesign[key] || key in result)
+    if (
+      form.dataset.formattingCopied === "true" ||
+      value !== state.editingDesign[key] ||
+      key in result
+    )
       result[key] = value;
   return result;
 }
@@ -977,10 +1041,42 @@ function applyLayoutDOM(event, role) {
       ))
         container.append(item.element);
     };
+  for (const intro of main.querySelectorAll(".hero,.auth,.auth .panel")) {
+    const children = [...intro.children];
+    const items = [
+      { id: "eyebrow", element: children.find((el) => el.matches(".eyebrow")) },
+      { id: "title", element: children.find((el) => el.matches("h1,h2")) },
+      {
+        id: "description",
+        element: children.find(
+          (el) => el.matches("p:not(.eyebrow)") && !el.querySelector("button"),
+        ),
+      },
+    ].filter((i) => i.element);
+    if (items.some((item) => item.id === "title" || item.id === "eyebrow")) {
+      const anchor = document.createComment("intro order");
+      intro.insertBefore(anchor, children[0]);
+      for (const item of order(items, config.layouts.introText || []))
+        anchor.before(item.element);
+      anchor.remove();
+    }
+  }
   if (event) {
     const info = main.querySelector(".event-hero"),
       actions = info?.nextElementSibling,
       grid = main.querySelector(".grid");
+    move(
+      info,
+      [
+        { id: "artwork", element: info?.querySelector(".event-icon") },
+        { id: "eyebrow", element: info?.querySelector(".eyebrow") },
+        { id: "title", element: info?.querySelector("h1") },
+        { id: "description", element: info?.querySelector("p.event-details") },
+        { id: "details", element: info?.querySelector(".event-meta") },
+        { id: "deadline", element: info?.querySelector(".event-deadline") },
+      ],
+      config.layouts.eventInformation,
+    );
     const sections = grid ? [...grid.children] : [];
     if (grid) grid.remove();
     move(

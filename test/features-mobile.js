@@ -93,21 +93,43 @@ try {
   stage("administrator defaults and layout");
   const admin = await device(1440);
   await login(admin.page, "admin@example.test");
-  await click(admin.page, "Edit global defaults");
-  await admin.page.getByLabel("Title color", { exact: true }).fill("#334455");
-  await admin.page
-    .locator("summary")
-    .filter({ hasText: /^Page wording$/ })
-    .click();
-  await admin.page.locator('[name="copy:When"]').fill("Gathering time");
-  await admin.page
-    .locator("summary")
-    .filter({ hasText: /^Container and button layout$/ })
-    .click();
-  const menu = admin.page.locator(
-    "[data-layout=event] [data-layout-item=menus]",
+  assert.equal(
+    await admin.page.locator("[data-action=scoped-editor]").count(),
+    0,
   );
-  await menu.getByRole("button", { name: "Move up", exact: true }).click();
+  await click(admin.page, "Edit global defaults");
+  assert.equal(
+    await admin.page.locator("#visual-inspector:visible").count(),
+    0,
+  );
+  await admin.page.locator("#page-example h1").dblclick();
+  await admin.page.getByLabel("Title color", { exact: true }).fill("#334455");
+  const aboveTitle = admin.page.locator(
+    "#page-example [data-layout=introText] > [data-layout-item=eyebrow]",
+  );
+  await aboveTitle.locator("p").dblclick();
+  await aboveTitle.dragTo(
+    admin.page.locator(
+      "#page-example [data-layout=introText] > [data-layout-item=description]",
+    ),
+  );
+  await admin.page.screenshot({
+    path: "test-results/features-visual-defaults.png",
+    fullPage: true,
+  });
+  await admin.page
+    .getByLabel("Example page", { exact: true })
+    .selectOption("event");
+  await admin.page
+    .locator('#page-example [data-default-copy="When"]')
+    .dblclick();
+  await admin.page
+    .getByLabel("Selected wording", { exact: true })
+    .fill("Gathering time");
+  await admin.page
+    .locator("#page-example [data-layout=event] > [data-layout-item=menus]")
+    .dblclick({ position: { x: 5, y: 5 } });
+  await click(admin.page, "Move up");
   await dialog(admin.page)
     .getByRole("button", { name: "Save", exact: true })
     .click();
@@ -116,6 +138,11 @@ try {
     store.get("ui", "defaults", "platform").copy.When,
     "Gathering time",
   );
+  assert.deepEqual(store.get("ui", "defaults", "platform").layouts.introText, [
+    "title",
+    "eyebrow",
+    "description",
+  ]);
   stage("host navigation, contacts and event editor");
   const h = await device(390);
   await login(h.page, "host@example.test");
@@ -140,11 +167,89 @@ try {
       .evaluate((el) => getComputedStyle(el).borderTopStyle),
     "none",
   );
+  assert.equal(
+    await h.page
+      .locator(".hero h1")
+      .evaluate((el) => getComputedStyle(el).color),
+    "rgb(41, 77, 66)",
+  );
+  assert.deepEqual(
+    await h.page
+      .locator(".hero")
+      .evaluate((el) => [...el.children].slice(0, 2).map((el) => el.tagName)),
+    ["H1", "P"],
+  );
+  stage("shared household formatting and confirmed reset");
+  assert.equal(
+    await h.page.locator("[data-action=host-ui],[data-action=guests]").count(),
+    0,
+  );
+  await click(h.page, "Edit household");
+  for (const [label, value] of [
+    ["Border color", "#123456"],
+    ["Text above title color", "#345678"],
+    ["Toolbar color", "#456789"],
+    ["Toolbar background", "#eeeeee"],
+    ["Button color", "#234567"],
+    ["Button text color", "#ffffff"],
+    ["Private notes color", "#567890"],
+  ])
+    await h.page.getByLabel(label, { exact: true }).fill(value);
+  await h.page
+    .getByLabel("Private notes font", { exact: true })
+    .selectOption("Georgia");
+  h.page.once("dialog", (d) => d.dismiss());
+  await click(h.page, "Reset to default colors");
+  assert.equal(
+    await h.page.getByLabel("Border color", { exact: true }).inputValue(),
+    "#123456",
+  );
+  await dialog(h.page)
+    .getByRole("button", { name: "Save", exact: true })
+    .click();
+  await dialog(h.page).waitFor({ state: "hidden" });
+  assert.equal(
+    await h.page
+      .locator(".hero .eyebrow")
+      .evaluate((el) => getComputedStyle(el).color),
+    "rgb(52, 86, 120)",
+  );
+  assert.equal(
+    await h.page
+      .locator(".private-notes textarea")
+      .evaluate((el) => getComputedStyle(el).color),
+    "rgb(86, 120, 144)",
+  );
+  assert.equal(
+    await h.page
+      .locator(".toolbar .nav-control")
+      .first()
+      .evaluate((el) => getComputedStyle(el).color),
+    "rgb(69, 103, 137)",
+  );
+  assert.equal(
+    await h.page
+      .locator("[data-action=addresses]")
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+    "rgb(35, 69, 103)",
+  );
+  await click(h.page, "Edit household");
+  h.page.once("dialog", (d) => d.accept());
+  await click(h.page, "Reset to default colors");
+  assert.equal(
+    await h.page.getByLabel("Border color", { exact: true }).inputValue(),
+    "#d2dbd4",
+  );
+  assert.equal(
+    await h.page.getByLabel("Private notes font", { exact: true }).inputValue(),
+    "Georgia",
+  );
+  await click(h.page, "Cancel");
   await h.page
     .getByLabel("Notes", { exact: true })
     .fill("Private household note");
   await click(h.page, "Save private notes");
-  await click(h.page, "Guest list");
+  await click(h.page, "Address book");
   await click(h.page, "＋ Add adult or child");
   await h.page.getByLabel("First name", { exact: true }).fill("Casey");
   await h.page.getByLabel("Last name", { exact: true }).fill("Example");
@@ -194,6 +299,23 @@ try {
       .count(),
     0,
   );
+  stage("event formatting copy and delete confirmation");
+  assert.equal(await h.page.locator("[data-action=delete-event]").count(), 0);
+  await click(h.page, "Edit event");
+  await h.page.getByText("Event appearance", { exact: true }).click();
+  await h.page
+    .getByLabel("Copy formatting from", { exact: true })
+    .selectOption("household");
+  await click(h.page, "Copy formatting");
+  assert.equal(
+    await h.page.getByLabel("Toolbar color", { exact: true }).inputValue(),
+    "#456789",
+  );
+  h.page.once("dialog", (d) => d.dismiss());
+  await click(h.page, "Delete event");
+  assert.equal(await dialog(h.page).isVisible(), true);
+  assert.equal(store.list("event", host.household).length, 1);
+  await click(h.page, "Cancel");
   await h.page.getByText("Gathering time", { exact: true }).waitFor();
   await h.page.screenshot({
     path: "test-results/features-host-mobile.png",

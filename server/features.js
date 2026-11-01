@@ -34,9 +34,9 @@ export function uiConfig(input = {}) {
 export function effectiveUI(store, household, event) {
   return resolveUI(
     store.get("ui", "defaults", "platform"),
-    household?.ui,
+    { design: household?.ui?.design },
     { design: household?.design },
-    event?.ui,
+    { design: event?.ui?.design },
     { design: event?.design },
   );
 }
@@ -136,4 +136,24 @@ export function cardInput(input) {
     };
   });
   return card;
+}
+
+// Hosts may format their own records; wording and layout are administrator defaults only.
+export function hostUI(input = {}, existing = {}) {
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    fail(400, "Invalid interface settings.");
+  for (const key of ["copy", "layouts"]) {
+    const value = input[key];
+    if (value === undefined) continue;
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      fail(400, "Invalid interface settings.");
+    // Permit an unchanged legacy record to round-trip (for example a notes save),
+    // without accepting new wording/layout or revalidating obsolete layout keys.
+    if (
+      Object.keys(value).length &&
+      JSON.stringify(value) !== JSON.stringify(existing[key] || {})
+    )
+      fail(403, "Only the administrator may change page wording or layout.");
+  }
+  return { ...existing, design: design(input.design) };
 }

@@ -621,7 +621,17 @@ test("household and event styles are independent, versioned and shared across br
     view.events.find((e) => e.id === first.id).design.background,
     "#112233",
   );
-  assert.deepEqual(view.events.find((e) => e.id === second.id).design, {});
+  assert.equal(
+    view.events.find((e) => e.id === second.id).ui.design.background,
+    defaults.background,
+  );
+  const next = await f.addEvent(a, []);
+  assert.equal(
+    (await f.request("/api/host", { cookie: a.cookie })).body.events.find(
+      (e) => e.id === next.id,
+    ).ui.design.background,
+    "#abcdef",
+  );
   assert.deepEqual(
     (await f.request("/api/host", { cookie: b.cookie })).body.household.design,
     {},

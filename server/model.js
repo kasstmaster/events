@@ -1,4 +1,4 @@
-import { roleDefaults } from "../public/ui-system.js";
+import { roleDefaults, resolveUI } from "../public/ui-system.js";
 import { Buffer } from "node:buffer";
 import {
   randomBytes,
@@ -81,15 +81,9 @@ export function design(value = {}) {
     if (!(key in defaults)) fail(400, "Unknown appearance setting.");
     if (key === "backgroundImage") result[key] = image(val);
     else if (
-      [
-        "background",
-        "container",
-        "titleColor",
-        "textColor",
-        "descriptionColor",
-        "buttonColor",
-        "buttonText",
-      ].includes(key)
+      key.endsWith("Color") ||
+      key.endsWith("Background") ||
+      ["background", "container", "buttonText"].includes(key)
     ) {
       if (!/^#[0-9a-f]{6}$/i.test(val)) fail(400, "Choose a valid color.");
       result[key] = val;
@@ -417,6 +411,33 @@ export class Store {
         input.subdomain !== existing.subdomain
       )
         fail(403, "Household web addresses cannot be changed.");
+      const nextDesign = design(input.design);
+      const before = resolveUI(
+        this.get("ui", "defaults", "platform"),
+        { design: existing.ui?.design },
+        { design: existing.design },
+      ).design;
+      const after = resolveUI(
+        this.get("ui", "defaults", "platform"),
+        { design: existing.ui?.design },
+        { design: nextDesign },
+      ).design;
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        for (const event of this.list("event", household)) {
+          const preserved = resolveUI(
+            { design: before },
+            { design: event.ui?.design },
+            { design: event.design },
+          ).design;
+          this.put(
+            "event",
+            event.id,
+            household,
+            { ...event, design: preserved },
+            event.version,
+          );
+        }
+      }
       const subdomain = existing.subdomain;
       return this.put(
         "household",
@@ -425,7 +446,7 @@ export class Store {
         {
           name: text(input.name, 100, true),
           slug: existing.slug,
-          design: design(input.design),
+          design: nextDesign,
           notes: text(input.notes ?? existing.notes ?? "", 20000),
           ui: input.ui ?? existing.ui ?? {},
           ...(subdomain ? { subdomain } : {}),

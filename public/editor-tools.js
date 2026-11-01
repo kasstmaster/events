@@ -16,7 +16,6 @@ import {
   populateField,
   cardFieldLabels,
 } from "./card-system.js";
-import { copyCatalog } from "./ui-copy.js";
 export function featureTools(ctx) {
   const {
     state,
@@ -54,29 +53,309 @@ export function featureTools(ctx) {
         ]);
   const designFields = (d) => designControls(d, { field, select, label: H });
   async function uiEditor(scope = "global", key = "") {
+    if (role() !== "admin" || scope !== "global")
+      throw new Error("Administrators edit page defaults only.");
     const path =
       scope === "global"
         ? "/api/admin/defaults"
         : `/api/${role()}/interface/${scope}/${key}`;
     const result = await api(path);
     editingUI = { path, ...result, scope, key };
-    const d = result.ui.design,
-      c = result.overrides.copy || {};
+    editingUI.draftCopy = { ...result.ui.copy };
+    editingUI.draftLayouts = structuredClone(result.ui.layouts);
     modal(
-      scope === "global"
-        ? C("Global page defaults")
-        : `${scope === "household" ? C("Household") : C("Event")} page settings`,
-      ui`${scope === "global" ? M("<p>Global defaults. Explicit household and event choices are preserved.</p>") : M("<p>Changes apply only to this ") + scope + ".</p>"}${result.record && scope === "household" ? field(H("Household title"), "contentName", result.record.name) : ""}${result.record && scope === "event" ? `${field(H("Event title"), "contentTitle", result.record.title)}${area(H("Event description"), "contentDescription", result.record.description)}` : ""}<details open><summary>Role formatting</summary>${designFields(d)}${scope !== "global" ? M('<label class="check"><input name="resetDesign" type="checkbox">Reset appearance to inherited defaults</label>') : ""}</details><details><summary>Page wording</summary>${field(H("Find interface text"), "copySearch", "", "search", "data-copy-search")}<p>Leave wording equal to its default to inherit. Saved words remain separate from formatting.</p><div class="copy-editor">${copyCatalog.map((key) => ui`<label data-copy-key="${escape(key)}">${escape(key)}<textarea aria-label="Default wording: ${escape(key)}" name="copy:${escape(key)}">${escape(c[key] ?? result.ui.copy[key] ?? key)}</textarea></label>`).join("")}</div></details><details><summary>Container and button layout</summary><p>Drag rows, or use Move up / Move down with a keyboard or touch.</p>${Object.entries(
-        result.ui.layouts,
-      )
-        .map(
-          ([view, items]) =>
-            ui`<fieldset data-layout="${view}"><legend>${H(viewLabels[view] || view)}</legend><ol class="layout-list">${items.map((item) => ui`<li draggable="true" data-layout-item="${item}"><span>${H(layoutLabels[item] || item)}</span>${button("layout-up", H("Move up"), "", "quiet")}${button("layout-down", H("Move down"), "", "quiet")}</li>`).join("")}</ol></fieldset>`,
-        )
-        .join("")}</details>`,
+      C("Page defaults · visual editor"),
+      ui`<p>Example pages only. Double-click text or a container to edit. Drag the selected item within its group, or use Move up / Move down. Wording and positions apply to every household. Existing household and event formatting is preserved when defaults change.</p>${select(
+        H("Example page"),
+        "examplePage",
+        Object.entries({
+          ...viewLabels,
+          hostLogin: "Host sign-in",
+          registration: "Host registration",
+        }).map(([id, label]) => [id, C(label)]),
+        "hostHome",
+      )}<div id="page-example" class="page-example"></div><section id="visual-inspector" hidden><h3>Selected element</h3><p id="selected-element"></p><div id="selected-wording"></div><div id="default-design-controls">${designFields(result.ui.design)}</div><div class="row">${button("visual-up", H("Move up"))}${button("visual-down", H("Move down"))}</div></section>`,
       "ui-settings",
     );
+    renderExample("hostHome");
   }
+  let visualSelection;
+  // Synthetic examples use the same classes, roles and structured order as live pages.
+  // They never request a household record or create an account/guest/RSVP.
+  function renderExample(view) {
+    visualSelection = null;
+    document.querySelector("#visual-inspector").hidden = true;
+    const copy = (key) => escape(editingUI.draftCopy[key] ?? key);
+    const text = (key, role = "text", tag = "p") =>
+      `<${tag} tabindex="0" data-default-role="${role}" data-default-copy="${escape(key)}" class="${role === "description" ? "muted" : role === "eyebrow" ? "eyebrow" : role === "status" ? "pill" : ""}">${copy(key)}</${tag}>`;
+    const sample = (label, role = "text", tag = "p") =>
+      `<${tag} tabindex="0" data-default-role="${role}">${escape(label)}</${tag}>`;
+    const group = (name, items, cls = "") =>
+      `<div class="${cls}" data-layout="${name}">${editingUI.draftLayouts[name]
+        .filter(
+          (id) =>
+            !(name === "homeButtons" && id === "guests") &&
+            !(name === "eventButtons" && id === "delete-event"),
+        )
+        .map(
+          (id) =>
+            `<div data-layout-item="${id}" data-default-role="container" tabindex="0">${items[id] || text(layoutLabels[id] || id)}</div>`,
+        )
+        .join("")}</div>`;
+    const intro = (mode = "host") =>
+      group(
+        "introText",
+        {
+          eyebrow: text(
+            mode === "guest"
+              ? "Welcome,"
+              : mode === "login"
+                ? "You’re in good company"
+                : ["hostLogin", "registration"].includes(mode)
+                  ? "A place for your people"
+                  : "Your gathering place",
+            "eyebrow",
+          ),
+          title:
+            mode === "hostLogin"
+              ? text("Good things begin together.", "title", "h1")
+              : mode === "registration"
+                ? text("Make yourself at home.", "title", "h1")
+                : sample("Example household", "title", "h1"),
+          description: text(
+            mode === "guest"
+              ? "Your invitations, all in one place."
+              : mode === "login"
+                ? "Welcome. Enter your name to see your invitations."
+                : "A familiar table. A new memory. Make room for your next gathering.",
+            "description",
+          ),
+        },
+        "hero",
+      );
+    const toolbar = () =>
+      group(
+        "toolbar",
+        Object.fromEntries(
+          layouts.toolbar.map((id) => [
+            id,
+            text(
+              {
+                home: "Home",
+                print: "Print",
+                rsvp: "RSVP",
+                dashboard: "RSVPs",
+                logout: "Sign out",
+              }[id],
+              "toolbar",
+              "span",
+            ),
+          ]),
+        ),
+        "example-toolbar",
+      );
+    const actions = (name) =>
+      group(
+        name,
+        Object.fromEntries(
+          layouts[name].map((id) => [
+            id,
+            text(
+              {
+                invitation: "Preview invitation",
+                rsvp: "Save my RSVP",
+                uploads: "Upload Photos & Videos",
+                cards: "Cards & templates",
+              }[id] ||
+                layoutLabels[id] ||
+                id,
+              "button",
+              "button",
+            ),
+          ]),
+        ),
+        "row",
+      );
+    const eventInfo = () =>
+      group(
+        "eventInformation",
+        {
+          artwork: sample("Event artwork", "description"),
+          eyebrow: text("Something to share", "eyebrow"),
+          title: sample("Example celebration", "title", "h1"),
+          description: sample("Good company. Great memories.", "description"),
+          details:
+            text("When", "status") + sample("June 12 · Two o’clock", "status"),
+          deadline: text("RSVP By", "status"),
+        },
+        "event-hero",
+      );
+    const eventCard = `<article class="card">${text("You’re invited to gather", "eyebrow")}${sample("Example celebration", "title", "h2")}${sample("A lovely afternoon", "description")}${text("Attending", "status")}${text("View event", "button", "button")}</article>`;
+    const event = () =>
+      group("event", {
+        information: eventInfo(),
+        actions: actions("eventButtons"),
+        menus: `<section class="panel">${text("Something to share", "eyebrow")}${text("At the table", "title", "h2")}${sample("Salad", "text")}${text("Needed", "status")}</section>`,
+        personal: `<section class="panel">${text("Your plans", "eyebrow")}${text("Your RSVP & items", "title", "h2")}${text("Attending", "status")}</section>`,
+      });
+    const login = () =>
+      group("login", {
+        intro: intro("login"),
+        form: `<section class="panel">${text("Guest sign-in", "title", "h2")}${text("First name", "text", "label")}<input data-default-role="input" value="Example" readonly>${text("Last name", "text", "label")}<input data-default-role="input" value="Guest" readonly>${text("Suffix, if applicable", "text", "label")}<input data-default-role="input" value="" readonly>${text("See my invitations", "button", "button")}</section>`,
+      });
+    const pages = {
+      hostHome: () =>
+        group("hostHome", {
+          intro: intro(),
+          actions: actions("homeButtons"),
+          notes: `<section class="panel private-notes">${text("Private household notes", "notes", "h2")}${sample("Example private note", "notes")}<textarea data-default-role="notes" readonly>Example note</textarea>${text("Save private notes", "button", "button")}</section>`,
+          events: eventCard,
+        }),
+      guestHome: () =>
+        group("guestHome", { intro: intro("guest"), events: eventCard }),
+      event,
+      login,
+      hostLogin: () =>
+        group("login", {
+          intro: intro("hostLogin"),
+          form: `<section class="panel">${text("Host Login", "title", "h2")}${text("Email address", "text", "label")}<input data-default-role="input" value="host@example.test" readonly>${text("Password", "text", "label")}<input data-default-role="input" value="Example password" readonly>${text("Sign in", "button", "button")}${text("Create your account", "button", "button")}</section>`,
+        }),
+      registration: () =>
+        group("login", {
+          intro: intro("registration"),
+          form: `<section class="panel">${text("Create your account", "title", "h2")}${text("Email address", "text", "label")}<input data-default-role="input" value="host@example.test" readonly>${text("Family household name", "text", "label")}<input data-default-role="input" value="Example household" readonly>${text("Password", "text", "label")}<input data-default-role="input" value="Example password" readonly>${text("Create account", "button", "button")}</section>`,
+        }),
+      introText: intro,
+      eventInformation: eventInfo,
+      toolbar,
+      eventButtons: () => actions("eventButtons"),
+      homeButtons: () => actions("homeButtons"),
+      admin: () =>
+        group(
+          "admin",
+          Object.fromEntries(
+            layouts.admin.map((id) => [
+              id,
+              `<section class="panel">${text(layoutLabels[id], "title", "h2")}${text("Save", "button", "button")}</section>`,
+            ]),
+          ),
+        ),
+    };
+    document.querySelector("#page-example").innerHTML =
+      (pages[view] || intro)() +
+      (view === "hostHome" || view === "guestHome" || view === "event"
+        ? toolbar()
+        : "");
+    styleExample();
+  }
+  function styleExample() {
+    const example = document.querySelector("#page-example");
+    if (!example) return;
+    const form = example.closest("form"),
+      d = readDesign(form, editingUI.ui.design);
+    example.style.backgroundImage = d.backgroundImage
+      ? `url("${d.backgroundImage}")`
+      : "none";
+    const props = {
+      background: "bg",
+      container: "panel",
+      titleColor: "heading",
+      textColor: "ink",
+      titleFont: "title-font",
+      textFont: "body-font",
+      titleSize: "title-size",
+      textSize: "text-size",
+    };
+    for (const [key, value] of Object.entries(d)) {
+      if (key === "backgroundImage") continue;
+      const css =
+        props[key] || key.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
+      example.style.setProperty(
+        "--" + css,
+        typeof value === "number" && key !== "opacity" ? value + "px" : value,
+      );
+    }
+    example.style.setProperty(
+      "--panel",
+      `color-mix(in srgb, ${d.container} ${d.opacity}%, transparent)`,
+    );
+  }
+  function selectVisual(element) {
+    const form = element.closest("form");
+    visualSelection = element;
+    window.getSelection()?.removeAllRanges();
+    for (const el of document.querySelectorAll(
+      "#page-example [data-default-role]",
+    )) {
+      el.classList.toggle("layout-selected", el === element);
+      el.draggable = el === element && el.hasAttribute("data-layout-item");
+    }
+    const selectedRow = element.closest("[data-layout-item]");
+    if (selectedRow) selectedRow.draggable = true;
+    const selectedRole = element.dataset.defaultRole;
+    document.querySelector("#visual-inspector").hidden = false;
+    document.querySelector("#selected-element").textContent =
+      selectedRole + " · " + element.textContent.trim().slice(0, 80);
+    const key = element.dataset.defaultCopy;
+    document.querySelector("#selected-wording").innerHTML = key
+      ? area(
+          H("Selected wording"),
+          "selectedWording",
+          editingUI.draftCopy[key] ?? key,
+        )
+      : "<p>Example content represents household data; only its default formatting is editable here.</p>";
+    const allowed =
+      selectedRole === "container"
+        ? [
+            "background",
+            "backgroundUpload",
+            "container",
+            "opacity",
+            "borderColor",
+            "accentColor",
+          ]
+        : selectedRole === "input"
+          ? [
+              "inputColor",
+              "inputBackground",
+              "textFont",
+              "textSize",
+              "borderColor",
+            ]
+          : selectedRole === "button"
+            ? [
+                "buttonColor",
+                "buttonText",
+                "buttonFont",
+                "buttonSize",
+                "borderColor",
+                "dangerColor",
+                "dangerBackground",
+              ]
+            : selectedRole === "text"
+              ? ["textColor", "textFont", "textSize", "linkColor"]
+              : [
+                  selectedRole + "Color",
+                  selectedRole + "Font",
+                  selectedRole + "Size",
+                  selectedRole + "Background",
+                ];
+    for (const control of form.querySelectorAll(
+      "#default-design-controls input,#default-design-controls select",
+    ))
+      control.closest("label").hidden = !allowed.includes(control.name);
+  }
+  function saveExampleLayout(element) {
+    const group = element.closest("[data-layout]");
+    if (group) {
+      const keys = [...group.children].map((el) => el.dataset.layoutItem);
+      editingUI.draftLayouts[group.dataset.layout] = [
+        ...keys,
+        ...layouts[group.dataset.layout].filter((key) => !keys.includes(key)),
+      ];
+    }
+  }
+
   function readDesign(form, base) {
     const fd = new FormData(form),
       d = { ...base };
@@ -458,15 +737,15 @@ export function featureTools(ctx) {
       );
     },
     adminPanel: () =>
-      ui`<section class="panel"><h2>Shared design & pages</h2><div class="row">${button("global-defaults", H("Edit global defaults"))}${button("scoped-editor", H("Edit household / event pages"))}${button("preview-guest", H("Preview guest experience"))}${button("cards", H("Cards & templates"))}</div><p>Content, formatting and layout are separate. Preview never submits guest data.</p>${(state.data.deletions || []).length ? ui`<h3>Account cleanup</h3><ul>${state.data.deletions.map((job) => ui`<li>${escape(job.email || job.label || "Deleted household")}: ${escape(job.phase)} ${job.error ? escape(job.error) : ""}</li>`).join("")}</ul>` : ""}</section>`,
+      ui`<section class="panel"><h2>Shared design & pages</h2><div class="row">${button("global-defaults", H("Edit global defaults"))}${button("preview-guest", H("Preview guest experience"))}${button("cards", H("Cards & templates"))}</div><p>Content, formatting and layout are separate. Preview never submits guest data.</p>${(state.data.deletions || []).length ? ui`<h3>Account cleanup</h3><ul>${state.data.deletions.map((job) => ui`<li>${escape(job.email || job.label || "Deleted household")}: ${escape(job.phase)} ${job.error ? escape(job.error) : ""}</li>`).join("")}</ul>` : ""}</section>`,
     async action(action, target) {
       const key = target.dataset.id;
       if (action === "global-defaults") {
         await uiEditor();
         return true;
       }
-      if (action === "scoped-editor" || action === "preview-guest") {
-        await chooseScope(action === "preview-guest");
+      if (action === "preview-guest") {
+        await chooseScope(true);
         return true;
       }
       if (action === "host-ui") {
@@ -583,6 +862,17 @@ export function featureTools(ctx) {
         notify(C("Email composer opened. No email was sent."));
         return true;
       }
+      if (action === "visual-up" || action === "visual-down") {
+        const row = visualSelection?.closest("[data-layout-item]");
+        if (row) {
+          if (action === "visual-up" && row.previousElementSibling)
+            row.previousElementSibling.before(row);
+          if (action === "visual-down" && row.nextElementSibling)
+            row.nextElementSibling.after(row);
+          saveExampleLayout(row);
+        }
+        return true;
+      }
       if (action === "layout-up" || action === "layout-down") {
         const row = target.closest("[data-layout-item]");
         if (action === "layout-up" && row.previousElementSibling)
@@ -628,12 +918,8 @@ export function featureTools(ctx) {
       const fd = new FormData(form);
       if (kind === "ui-settings") {
         const ui = { copy: {}, design: {}, layouts: {} };
-        for (const [key, val] of fd)
-          if (
-            key.startsWith("copy:") &&
-            val !== (editingUI.inherited?.copy?.[key.slice(5)] ?? key.slice(5))
-          )
-            ui.copy[key.slice(5)] = val;
+        for (const [key, value] of Object.entries(editingUI.draftCopy))
+          if (value !== key) ui.copy[key] = value;
         const d = readDesign(form, editingUI.ui.design),
           uploaded = await fileData(form.elements.backgroundUpload);
         if (uploaded) d.backgroundImage = uploaded;
@@ -643,19 +929,9 @@ export function featureTools(ctx) {
             key in (editingUI.overrides.design || {})
           )
             ui.design[key] = value;
-        for (const group of form.querySelectorAll("[data-layout]")) {
-          const layoutValue = [
-            ...group.querySelectorAll("[data-layout-item]"),
-          ].map((row) => row.dataset.layoutItem);
-          if (
-            JSON.stringify(layoutValue) !==
-            JSON.stringify(
-              editingUI.inherited?.layouts?.[group.dataset.layout] ||
-                layouts[group.dataset.layout],
-            )
-          )
-            ui.layouts[group.dataset.layout] = layoutValue;
-        }
+        for (const [key, value] of Object.entries(editingUI.draftLayouts))
+          if (JSON.stringify(value) !== JSON.stringify(layouts[key]))
+            ui.layouts[key] = value;
         const data =
           editingUI.scope === "global"
             ? ui
@@ -759,6 +1035,21 @@ export function featureTools(ctx) {
       return false;
     },
     input(event) {
+      if (event.target.name === "examplePage")
+        renderExample(event.target.value);
+      if (
+        event.target.name === "selectedWording" &&
+        visualSelection?.dataset.defaultCopy
+      ) {
+        const key = visualSelection.dataset.defaultCopy;
+        editingUI.draftCopy[key] = event.target.value;
+        for (const el of document.querySelectorAll(
+          "#page-example [data-default-copy]",
+        ))
+          if (el.dataset.defaultCopy === key)
+            el.textContent = event.target.value;
+      }
+      if (event.target.closest("#default-design-controls")) styleExample();
       if (event.target.name === "cardBackground") {
         fileData(event.target)
           .then((value) => {
@@ -782,9 +1073,34 @@ export function featureTools(ctx) {
       if (event.target.name === "previewHousehold") updateScopeEvents();
     },
     bind() {
+      document.addEventListener("dblclick", (event) => {
+        const element = event.target.closest(
+          "#page-example [data-default-role]",
+        );
+        if (element && role() === "admin") {
+          event.preventDefault();
+          selectVisual(element);
+        }
+      });
+      document.addEventListener("click", (event) => {
+        if (event.target.closest("#page-example")) event.preventDefault();
+      });
+      document.addEventListener("keydown", (event) => {
+        const element = event.target.closest(
+          "#page-example [data-default-role]",
+        );
+        if (
+          element &&
+          role() === "admin" &&
+          ["Enter", " "].includes(event.key)
+        ) {
+          event.preventDefault();
+          selectVisual(element);
+        }
+      });
       document.addEventListener("dragstart", (event) => {
         const row = event.target.closest("[data-layout-item]");
-        if (row) {
+        if (row && row.draggable && role() === "admin") {
           dragIndex = row;
           event.dataTransfer.setData("text/plain", row.dataset.layoutItem);
         }
@@ -797,6 +1113,7 @@ export function featureTools(ctx) {
         if (row && dragIndex && row.parentElement === dragIndex.parentElement) {
           event.preventDefault();
           row.before(dragIndex);
+          saveExampleLayout(row);
         }
         dragIndex = null;
       });

@@ -111,7 +111,7 @@ async function fixture(t, env = {}) {
   };
 }
 
-test("global copy/design/layout inheritance preserves explicit scoped overrides and permissions", async (t) => {
+test("global positions and wording apply to all pages while existing tenant formatting is preserved", async (t) => {
   const f = await fixture(t),
     h = await f.host("Alpha"),
     g = await f.guest(h),
@@ -162,8 +162,61 @@ test("global copy/design/layout inheritance preserves explicit scoped overrides 
     view = (await f.request("/api/guest", { cookie })).body;
   assert.equal(view.events[0].ui.design.titleColor, "#112233");
   assert.equal(view.events[0].ui.copy.When, "Gathering date");
-  assert.equal(view.events[0].ui.design.descriptionFont, "Georgia");
+  assert.equal(view.events[0].ui.design.descriptionFont, "system-ui");
   assert.deepEqual(view.events[0].ui.layouts.event, defaults.layouts.event);
+  for (const path of [
+    "/api/host/interface/event/" + event.id,
+    "/api/host/events/" + event.id,
+  ]) {
+    assert.equal(
+      (
+        await f.request(path, {
+          method: "PUT",
+          cookie: h.cookie,
+          version: event.version,
+          data: {
+            ...event,
+            ui: {
+              copy: { When: "Our date" },
+              design: { textColor: "#223344" },
+            },
+          },
+        })
+      ).status,
+      403,
+    );
+  }
+  assert.equal(
+    (
+      await f.request("/api/host/household", {
+        method: "PUT",
+        cookie: h.cookie,
+        version: 1,
+        data: {
+          name: "Alpha",
+          design: {},
+          ui: { layouts: { event: defaults.layouts.event } },
+        },
+      })
+    ).status,
+    403,
+  );
+  for (const method of ["GET", "PUT"]) {
+    assert.equal(
+      (
+        await f.request("/api/admin/interface/event/" + event.id, {
+          method,
+          cookie: f.admin,
+          version: event.version,
+          data:
+            method === "PUT"
+              ? { ui: { design: { titleColor: "#ffffff" } } }
+              : undefined,
+        })
+      ).status,
+      403,
+    );
+  }
   assert.equal(
     (
       await f.request("/api/host/interface/event/" + event.id, {
@@ -171,26 +224,76 @@ test("global copy/design/layout inheritance preserves explicit scoped overrides 
         cookie: h.cookie,
         version: event.version,
         data: {
-          ui: { copy: { When: "Our date" }, design: { textColor: "#223344" } },
+          ui: {
+            design: {
+              textColor: "#223344",
+              borderColor: "#abcdef",
+              toolbarColor: "#123456",
+              eyebrowColor: "#654321",
+              notesColor: "#222222",
+            },
+          },
         },
       })
     ).status,
     200,
   );
-  assert.equal(
-    effectiveUI(
-      f.store,
-      f.store.household(h.household.id),
-      f.store.get("event", event.id, h.household.id),
-    ).copy.When,
-    "Our date",
+  const formatted = effectiveUI(
+    f.store,
+    f.store.household(h.household.id),
+    f.store.get("event", event.id, h.household.id),
   );
+  assert.equal(formatted.copy.When, "Gathering date");
+  assert.equal(formatted.design.borderColor, "#abcdef");
+  assert.equal(formatted.design.textColor, "#223344");
+  assert.notEqual(
+    effectiveUI(f.store, f.store.household(h.household.id)).design.borderColor,
+    "#abcdef",
+  );
+  const newHost = await f.host("Beta");
+  assert.equal(
+    effectiveUI(f.store, f.store.household(newHost.household.id)).design
+      .descriptionFont,
+    "Georgia",
+  );
+  const prior = f.store.household(h.household.id);
   assert.equal(
     (
       await f.request("/api/admin/defaults", {
         method: "PUT",
         cookie: f.admin,
         version: 1,
+        data: {
+          ...defaults,
+          design: { ...defaults.design, textColor: "#999999" },
+          copy: { When: "New shared wording" },
+        },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    effectiveUI(f.store, f.store.household(h.household.id)).design.textColor,
+    prior.design.textColor,
+  );
+  assert.equal(
+    effectiveUI(
+      f.store,
+      f.store.household(h.household.id),
+      f.store.get("event", event.id, h.household.id),
+    ).design.textColor,
+    "#223344",
+  );
+  assert.equal(
+    effectiveUI(f.store, f.store.household(h.household.id)).copy.When,
+    "New shared wording",
+  );
+  assert.equal(
+    (
+      await f.request("/api/admin/defaults", {
+        method: "PUT",
+        cookie: f.admin,
+        version: 2,
         data: { ...defaults, layouts: { event: ["actions", "actions"] } },
       })
     ).status,
@@ -870,5 +973,60 @@ test("only a valid signed provider webhook can record an opt-out without a brows
   assert.equal(
     f.store.one("SELECT phone FROM sms_optouts").phone,
     "+15551234567",
+  );
+});
+
+test("legacy scoped wording/layout can round-trip unchanged without blocking private notes", async (t) => {
+  const f = await fixture(t),
+    h = await f.host("Legacy");
+  const current = f.store.household(h.household.id);
+  const legacy = f.store.put(
+    "household",
+    current.id,
+    current.id,
+    {
+      ...current,
+      ui: {
+        copy: { When: "Old scoped wording" },
+        layouts: {
+          eventButtons: [
+            "edit-event",
+            "invitation",
+            "delete-event",
+            "rsvp",
+            "uploads",
+          ],
+        },
+        design: {},
+      },
+    },
+    current.version,
+  );
+  const result = await f.request("/api/host/household", {
+    method: "PUT",
+    cookie: h.cookie,
+    version: legacy.version,
+    data: { ...legacy, notes: "Still private" },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(f.store.household(current.id).notes, "Still private");
+  assert.deepEqual(f.store.household(current.id).ui, legacy.ui);
+  assert.equal(
+    effectiveUI(f.store, f.store.household(current.id)).copy.When,
+    undefined,
+  );
+  assert.equal(
+    (
+      await f.request("/api/host/household", {
+        method: "PUT",
+        cookie: h.cookie,
+        version: result.body.version,
+        data: {
+          ...result.body,
+          ui: { copy: { When: "Changed scoped wording" } },
+        },
+      })
+    ).status,
+    403,
   );
 });

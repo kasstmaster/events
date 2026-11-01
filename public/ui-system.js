@@ -17,15 +17,54 @@ export const roleDefaults = {
   buttonText: "#ffffff",
   buttonFont: "system-ui",
   buttonSize: 16,
+  borderColor: "#d2dbd4",
+  eyebrowColor: "#64786a",
+  eyebrowFont: "system-ui",
+  eyebrowSize: 14,
+  statusColor: "#42594d",
+  statusFont: "system-ui",
+  statusSize: 14,
+  statusBackground: "#edf2e9",
+  toolbarColor: "#294d42",
+  toolbarFont: "system-ui",
+  toolbarSize: 14,
+  toolbarBackground: "#fffdf9",
+  inputColor: "#263c35",
+  inputBackground: "#ffffff",
+  linkColor: "#294d42",
+  accentColor: "#b7784c",
+  dangerColor: "#9a352b",
+  dangerBackground: "#fff5f3",
+  notesColor: "#263c35",
+  notesFont: "system-ui",
+  notesSize: 17,
+  notesBackground: "#fffdf9",
 };
 export const layouts = {
+  introText: ["eyebrow", "title", "description"],
+  eventInformation: [
+    "artwork",
+    "eyebrow",
+    "title",
+    "description",
+    "details",
+    "deadline",
+  ],
   hostHome: ["intro", "actions", "notes", "events"],
   guestHome: ["intro", "events"],
   event: ["information", "actions", "menus", "personal"],
   login: ["intro", "form"],
   admin: ["intro", "defaults", "approvals", "templates", "hosts"],
   toolbar: ["home", "print", "rsvp", "dashboard", "logout"],
-  eventButtons: ["edit-event", "invitation", "delete-event", "rsvp", "uploads"],
+  eventButtons: [
+    "edit-event",
+    "invitation",
+    "reminders",
+    "cards",
+    "delete-event",
+    "rsvp",
+    "uploads",
+  ],
   homeButtons: [
     "household",
     "new-event",
@@ -45,7 +84,13 @@ export function resolveUI(...layers) {
     if (!layer) continue;
     Object.assign(result.copy, layer.copy);
     Object.assign(result.design, layer.design);
-    Object.assign(result.layouts, layer.layouts);
+    for (const [name, keys] of Object.entries(layer.layouts || {})) {
+      if (!(name in layouts)) continue;
+      result.layouts[name] = [
+        ...keys.filter((key) => layouts[name].includes(key)),
+        ...layouts[name].filter((key) => !keys.includes(key)),
+      ];
+    }
   }
   return result;
 }
@@ -66,6 +111,12 @@ export function validLayout(name, value) {
   );
 }
 export const layoutLabels = {
+  eyebrow: "Text above title",
+  title: "Title",
+  description: "Description",
+  artwork: "Artwork",
+  details: "Date and address",
+  deadline: "RSVP deadline",
   intro: "Introduction",
   actions: "Actions",
   notes: "Private notes",
@@ -93,8 +144,11 @@ export const layoutLabels = {
   addresses: "Address book",
   share: "Share household link",
   cards: "Cards",
+  reminders: "Text reminders",
 };
 export const viewLabels = {
+  introText: "Introduction text (all pages)",
+  eventInformation: "Event information text and containers",
   hostHome: "Host home",
   guestHome: "Guest home",
   event: "Event page",
@@ -117,6 +171,10 @@ export function designControls(d, { field, select, label = (value) => value }) {
     ["description", "Description"],
     ["text", "Body text"],
     ["button", "Button"],
+    ["eyebrow", "Text above title"],
+    ["status", "Attendance / needed information"],
+    ["toolbar", "Toolbar"],
+    ["notes", "Private notes"],
   ];
   return (
     field(
@@ -161,6 +219,20 @@ export function designControls(d, { field, select, label = (value) => value }) {
       )
       .join("") +
     field(label("Button text color"), "buttonText", d.buttonText, "color") +
+    [
+      ["borderColor", "Border color"],
+      ["statusBackground", "Attendance / needed background"],
+      ["toolbarBackground", "Toolbar background"],
+      ["inputColor", "Input text color"],
+      ["inputBackground", "Input background"],
+      ["linkColor", "Link color"],
+      ["accentColor", "Accent / focus color"],
+      ["dangerColor", "Destructive action text color"],
+      ["dangerBackground", "Destructive action background"],
+      ["notesBackground", "Private notes background"],
+    ]
+      .map(([key, name]) => field(label(name), key, d[key], "color"))
+      .join("") +
     "</div>"
   );
 }
