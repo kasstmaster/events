@@ -2,12 +2,14 @@ name: Deploy events manually
 
 on:
   workflow_dispatch:
+  pull_request:
 
 permissions:
   contents: read
 
 jobs:
   diagnose:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
