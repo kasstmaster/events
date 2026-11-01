@@ -6,7 +6,11 @@ Before running, production/preview builds must remain disabled. These controls w
 
 Open **Actions → Deploy events manually → Run workflow**, selecting the branch containing this correction after review. The existing GitHub Actions secret `CLOUDFLARE_API_TOKEN` is used. No local Mac installation or OAuth is needed. Authentication is checked using read-only requests against the actual events account, rather than a user-token-only verification endpoint (which may reject account tokens). A missing/invalid secret or insufficient permission stops before deployment.
 
-The helper verifies the existing `EVENTS_DATABASE` namespace ID, SQLite storage, ASSETS, disabled SMS, runtime flags/date, closed setup and the reviewed previous production version. It saves only selected metadata and hashes of plain-text variable values, never raw settings, secrets or guest data. GitHub must successfully retain the checkpoint artifact before the deployment step can run. A failed upload stops the job.
+The helper verifies the existing `EVENTS_DATABASE` namespace ID, implementing class/script, ASSETS, disabled SMS, runtime flags/date, closed setup and the reviewed previous production version. It checks the live version's `events-v1` migration tag through the Worker-scoped version endpoint. The exact namespace and reviewed production version identify the previously verified SQLite backend created by that migration's `new_sqlite_classes` entry; storage type is immutable. This uses the reviewed SQLite baseline, not a fresh account-wide namespace inventory. The existing per-Worker token cannot list namespace inventory, so the workflow does not request broader permissions or call account-wide database endpoints. An unknown version, changed namespace/class/script or different migration tag stops the job.
+
+The helper saves only selected metadata and hashes of plain-text variable values, never raw settings, secrets or guest data. GitHub must successfully retain the checkpoint artifact before the deployment step can run. A failed upload stops the job.
+
+If an active token receives HTTP 401, verify its `not_before` and expiration times using Cloudflare's account-token verification endpoint before replacing it. An active token with a future start date still rejects Worker requests. The release token's initial start date was corrected from November 1 to October 31, 2026, with its expiration and per-Worker Editor scope unchanged. HTTP 403 on an account-wide namespace request is a scope mismatch, not proof of a bad token value.
 
 ## Timestamp recovery checkpoint
 
