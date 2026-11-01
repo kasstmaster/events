@@ -20,6 +20,7 @@ const settings = () => ({
       type: "durable_object_namespace",
       name: "EVENTS_DATABASE",
       namespace_id: NAMESPACE,
+      class_name: "EventsDatabase",
     },
     { type: "secret_text", name: "EVENTS_GATEWAY_SECRET" },
     { type: "plain_text", name: "HOUSEHOLD_ROUTING_ENABLED", text: "true" },
@@ -29,6 +30,12 @@ test("reject wrong database, missing assets and enabled SMS", () => {
   const wrong = settings();
   wrong.bindings[1].namespace_id = "other";
   assert.throws(() => safeSettings(wrong), /approved namespace/);
+  const wrongClass = settings();
+  wrongClass.bindings[1].class_name = "OtherDatabase";
+  assert.throws(() => safeSettings(wrongClass), /approved namespace/);
+  const wrongScript = settings();
+  wrongScript.bindings[1].script_name = "another-worker";
+  assert.throws(() => safeSettings(wrongScript), /approved namespace/);
   const missing = settings();
   missing.bindings.shift();
   assert.throws(() => safeSettings(missing), /ASSETS/);
@@ -68,7 +75,7 @@ test("checkpoint then verify uses GET only and excludes private settings", async
   const file = join(directory, "checkpoint.json");
   let version = "c80d8337-d13c-4763-94d9-9aed825d83ef",
     changed = false,
-    badNamespace = false;
+    badMigration = false;
   const fetcher = async (url, options = {}) => {
     assert.equal(options.method ?? "GET", "GET");
     if (url.endsWith("/api/setup"))
@@ -94,16 +101,15 @@ test("checkpoint then verify uses GET only and excludes private settings", async
     else {
       assert.match(
         url,
-        new RegExp(`/accounts/${ACCOUNT}/workers/durable_objects/namespaces`),
+        new RegExp(`/accounts/${ACCOUNT}/workers/scripts/events/versions/`),
       );
-      result = [
-        {
-          id: NAMESPACE,
-          script: "events",
-          class: "EventsDatabase",
-          use_sqlite: !badNamespace,
+      result = {
+        resources: {
+          script_runtime: {
+            migration_tag: badMigration ? "unknown" : "events-v1",
+          },
         },
-      ];
+      };
     }
     return Response.json(
       { success: true, result },
@@ -116,9 +122,9 @@ test("checkpoint then verify uses GET only and excludes private settings", async
     env: { CLOUDFLARE_API_TOKEN: "synthetic-token" },
   };
   try {
-    badNamespace = true;
-    await assert.rejects(run("preflight", options), /SQLite namespace/);
-    badNamespace = false;
+    badMigration = true;
+    await assert.rejects(run("preflight", options), /SQLite migration/);
+    badMigration = false;
     await run("preflight", options);
     const text = await readFile(file, "utf8");
     assert.ok(
