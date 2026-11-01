@@ -175,7 +175,8 @@ export async function run(
         reviewed_version: EXPECTED_PREVIOUS_VERSION,
         migration_tag: "events-v1",
         class_name: "EventsDatabase",
-        basis: "previously verified SQLite namespace; immutable storage backend",
+        basis:
+          "previously verified SQLite namespace; immutable storage backend",
       },
       before: deployment,
       settings,
