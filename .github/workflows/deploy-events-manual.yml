@@ -32,7 +32,8 @@ jobs:
             ["account_token_verify", "/accounts/" + account + "/tokens/verify"],
             ["worker_settings", "/accounts/" + account + "/workers/scripts/events/settings"],
             ["worker_deployments", "/accounts/" + account + "/workers/scripts/events/deployments"],
-            ["sqlite_namespace_inventory", "/accounts/" + account + "/workers/durable_objects/namespaces?per_page=100"]
+            ["sqlite_namespace_inventory", "/accounts/" + account + "/workers/durable_objects/namespaces?per_page=100"],
+            ["existing_namespace_objects", "/accounts/" + account + "/workers/durable_objects/namespaces/8203f4cd7fde45d2ab49de62e239d744/objects?limit=1"]
           ];
           for (const [check, path] of checks) {
             try {
