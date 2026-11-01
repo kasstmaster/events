@@ -2,7 +2,7 @@
 
 ## Reviewed scope
 
-Branch: `feat/shared-editors-cards-reminders`, based on the latest recorded `feat/household-subdomains` commit `1ea6290b5d7dc9ae4e89c1237c17c4f2a160d0af`. PR #3's routing foundation is already in this branch; avoid replacing it with the older `main` tree. This release changes only `kasstmaster/events` and its existing application resources.
+Published branch: [`feat/shared-editors-cards-reminders`](https://github.com/kasstmaster/events/tree/feat/shared-editors-cards-reminders), implementation commit `6ee0c94`. Based on the latest recorded `feat/household-subdomains` commit `1ea6290b5d7dc9ae4e89c1237c17c4f2a160d0af`. PR #3's routing foundation is already in this branch; avoid replacing it with the older `main` tree. This release changes only `kasstmaster/events` and its existing application resources.
 
 The requested implementation includes borderless icon navigation, combined event editing, upload links/deadline placement, scoped defaults/copy/roles/layout and read-only preview, one card/template renderer/editor with exports, phone contacts and private notes, disabled-by-default SMS scheduling and confirmed receipt-based account cleanup. See [operations and rollback](shared-editors.md).
 
@@ -20,7 +20,7 @@ No separate lint/typecheck/frontend-build script exists; Node/browser execution,
 
 ## Access blocked in this execution environment
 
-On 2026-11-01, `gh pr view 3 --repo kasstmaster/events --json state,headRefName,baseRefName` failed with `Post "https://api.github.com/graphql": Forbidden`. The enforced managed network policy does not include `api.github.com` or Cloudflare API/dashboard domains. Environment observations report no Cloudflare identity, runtime secrets or deployment variables; `npx wrangler whoami` reports unauthenticated. A desired environment draft is not a ready credential.
+On 2026-11-01, `gh pr view 3 --repo kasstmaster/events --json state,headRefName,baseRefName` failed with `Post "https://api.github.com/graphql": Forbidden`. The requested `gh pr create` failed with the same GraphQL `Forbidden` response; no PR was created or merged and nothing was deployed. The enforced managed network policy does not include `api.github.com` or Cloudflare API/dashboard domains. Environment observations report no Cloudflare identity, runtime secrets or deployment variables; `npx wrangler whoami` reports unauthenticated. A desired environment draft is not a ready credential.
 
 The latest repository deployment inspection records production branch `feat/cloudflare-deployment`, Disable builds ON, previews OFF and validation-only GitHub Actions. This task explicitly authorizes publication, merge after required checks and deployment; it does not provide API access. Recheck live build controls and versions from the signed-in deployment environment before release. Do not enable automatic/preview builds as a workaround.
 
