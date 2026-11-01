@@ -32,6 +32,7 @@ jobs:
           const expectedTokenId = "30d134b4258b956756af20aa2b3621bb";
           const checks = [
             ["account_token_verify", "/accounts/" + account + "/tokens/verify"],
+            ["worker_version", "/accounts/" + account + "/workers/scripts/events/versions/c80d8337-d13c-4763-94d9-9aed825d83ef"],
             ["worker_settings", "/accounts/" + account + "/workers/scripts/events/settings"],
             ["worker_deployments", "/accounts/" + account + "/workers/scripts/events/deployments"],
             ["sqlite_namespace_inventory", "/accounts/" + account + "/workers/durable_objects/namespaces?per_page=100"],
@@ -48,6 +49,13 @@ jobs:
               const codes = Array.isArray(data.errors)
                 ? data.errors.map(e => e.code).filter(Number.isFinite) : [];
               const result = { check, http: response.status, success: data.success === true, codes };
+              if (check === "worker_version" && data.success === true) {
+                const runtime = data.result?.resources?.script_runtime;
+                result.sqlite_export = runtime?.exports?.EventsDatabase?.storage === "sqlite";
+                result.class_export = runtime?.exports?.EventsDatabase?.type === "durable-object";
+                result.expected_migration_tag = runtime?.migration_tag === "events-v1";
+                result.has_exports = Boolean(runtime?.exports);
+              }
               if (check === "account_token_verify" && data.success === true) {
                 result.matches_expected_token = data.result?.id === expectedTokenId;
                 result.not_before = data.result?.not_before || null;
