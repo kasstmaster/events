@@ -1,0 +1,29 @@
+name: Validate manual release safeguards
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/deploy-events-manual.yml
+      - .github/workflows/validate-manual-release.yml
+      - scripts/manual-events-release*.mjs
+      - docs/manual-events-release.md
+
+permissions:
+  contents: read
+
+jobs:
+  safety:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node --test scripts/manual-events-release.test.mjs
+      - name: Check formatting and show corrections
+        run: |
+          npx --no-install prettier --write scripts/manual-events-release*.mjs .github/workflows/deploy-events-manual.yml .github/workflows/validate-manual-release.yml docs/manual-events-release.md
+          git diff --exit-code
