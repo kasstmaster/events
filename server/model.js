@@ -122,11 +122,18 @@ export class Store {
       CREATE TABLE IF NOT EXISTS household_deletions(household TEXT PRIMARY KEY,user TEXT NOT NULL,email TEXT NOT NULL,label TEXT NOT NULL,phase TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,next_attempt INTEGER NOT NULL DEFAULT 0,error TEXT);
       CREATE TABLE IF NOT EXISTS reminder_deliveries(id TEXT PRIMARY KEY,household TEXT NOT NULL,event TEXT NOT NULL,reminder TEXT NOT NULL,guest TEXT NOT NULL,phone TEXT NOT NULL,status TEXT NOT NULL,provider_id TEXT,error TEXT,updated INTEGER NOT NULL);
       CREATE UNIQUE INDEX IF NOT EXISTS reminder_guest_once ON reminder_deliveries(event,reminder,guest);
+      CREATE TABLE IF NOT EXISTS guest_identity_links(household TEXT NOT NULL,guest TEXT NOT NULL,identity TEXT NOT NULL,linked INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(household,guest));
+      CREATE INDEX IF NOT EXISTS identity_guests ON guest_identity_links(identity);
+      CREATE TABLE IF NOT EXISTS guest_identity_history(household TEXT NOT NULL,guest TEXT NOT NULL,position INTEGER NOT NULL,identity TEXT NOT NULL,linked INTEGER NOT NULL,PRIMARY KEY(household,guest,position));
+      CREATE TABLE IF NOT EXISTS guest_identity_sessions(token TEXT PRIMARY KEY,identity TEXT NOT NULL,entry_household TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS family_members(id TEXT PRIMARY KEY,household TEXT NOT NULL,login TEXT NOT NULL COLLATE NOCASE,name TEXT NOT NULL,password TEXT NOT NULL,role TEXT NOT NULL,disabled INTEGER NOT NULL DEFAULT 0,version INTEGER NOT NULL DEFAULT 1,UNIQUE(household,login));
+      CREATE TABLE IF NOT EXISTS family_owners(household TEXT PRIMARY KEY,owner TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sms_optouts(phone TEXT PRIMARY KEY,created INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS setup_state(id INTEGER PRIMARY KEY CHECK(id=1), completed INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS approvals(email TEXT PRIMARY KEY, created TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL, id TEXT NOT NULL, household TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, body TEXT NOT NULL, PRIMARY KEY(kind,id));
       CREATE INDEX IF NOT EXISTS tenant_records ON records(household,kind);
+      CREATE UNIQUE INDEX IF NOT EXISTS guest_code_hash ON records(json_extract(body,'$.codeHash')) WHERE kind='guest-identity';
       CREATE UNIQUE INDEX IF NOT EXISTS household_slugs ON records(json_extract(body,'$.slug')) WHERE kind='household';
       CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user TEXT, household TEXT, guest TEXT, role TEXT NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS session_origins(token TEXT PRIMARY KEY, origin TEXT NOT NULL);
@@ -205,6 +212,17 @@ export class Store {
             $chunked: true,
             ...(kind === "household" ? { slug: body.slug } : {}),
             ...(kind === "event" ? { template: body.template } : {}),
+            ...(kind === "family-record"
+              ? { type: body.type, cancelled: body.cancelled || false }
+              : {}),
+            ...(kind === "family-file"
+              ? {
+                  size: body.size,
+                  record: body.record,
+                  name: body.name,
+                  mime: body.mime,
+                }
+              : {}),
           })
         : serialized;
       if (version === undefined)
@@ -411,6 +429,12 @@ export class Store {
         input.subdomain !== existing.subdomain
       )
         fail(403, "Household web addresses cannot be changed.");
+      const timezone = text(input.timezone ?? existing.timezone ?? "UTC", 100);
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: timezone });
+      } catch {
+        fail(400, "Choose a valid household IANA timezone.");
+      }
       const nextDesign = design(input.design);
       const before = resolveUI(
         this.get("ui", "defaults", "platform"),
@@ -446,6 +470,8 @@ export class Store {
         {
           name: text(input.name, 100, true),
           slug: existing.slug,
+          logo: image(input.logo ?? existing.logo ?? ""),
+          timezone,
           design: nextDesign,
           notes: text(input.notes ?? existing.notes ?? "", 20000),
           ui: input.ui ?? existing.ui ?? {},
@@ -484,6 +510,7 @@ export class Store {
       slug: record.slug,
       name: record.name,
       design: record.design,
+      logo: record.logo || "",
       ui: record.ui || {},
     };
   }
@@ -512,14 +539,49 @@ export class Store {
     }
     if (session.guest) {
       const guest = this.get("guest", session.guest, session.household);
-      if (!guest || guest.parent) return null;
+      if (
+        !guest ||
+        guest.parent ||
+        !this.one(
+          "SELECT identity FROM guest_identity_sessions WHERE token=?",
+          session.token,
+        )
+      )
+        return null;
+    }
+    if (
+      session.role === "host" &&
+      this.one("SELECT disabled FROM family_members WHERE id=?", session.user)
+        ?.disabled
+    )
+      return null;
+    if (session.role === "family") {
+      const member = this.one(
+        "SELECT disabled FROM family_members WHERE id=? AND household=?",
+        session.user,
+        session.household,
+      );
+      if (!member || member.disabled) return null;
     }
     return session;
   }
-  newSession({ user = null, household = null, guest = null, role }, origin) {
+  newSession(
+    {
+      user = null,
+      household = null,
+      guest = null,
+      role,
+      identity = null,
+      entryHousehold = household,
+    },
+    origin,
+  ) {
     const token = randomBytes(32).toString("base64url");
     const seconds = role === "guest" ? 7 * 86400 : 8 * 3600;
     this.run("DELETE FROM sessions WHERE expires<?", Date.now());
+    this.run(
+      "DELETE FROM guest_identity_sessions WHERE token NOT IN (SELECT token FROM sessions)",
+    );
     this.run(
       "DELETE FROM session_origins WHERE token NOT IN (SELECT token FROM sessions)",
     );
@@ -537,6 +599,13 @@ export class Store {
         "INSERT INTO session_origins VALUES(?,?)",
         createHash("sha256").update(token).digest("hex"),
         origin,
+      );
+    if (identity)
+      this.run(
+        "INSERT INTO guest_identity_sessions VALUES(?,?,?)",
+        createHash("sha256").update(token).digest("hex"),
+        identity,
+        entryHousehold,
       );
     return { token, seconds };
   }
@@ -693,6 +762,11 @@ export class Store {
         previous = this.get("response", key, session.household);
       if ((previous?.version || 0) !== input.version)
         fail(409, "Your RSVP changed on another device. Reload before saving.");
+      if (
+        current.deadline &&
+        current.deadline < new Date().toISOString().slice(0, 10)
+      )
+        fail(409, "The RSVP deadline has passed. Responses are closed.");
       const members = this.guestEvent(current, session).members,
         allowed = new Set(members.map((m) => m.id));
       if (
@@ -749,6 +823,41 @@ export class Store {
           );
         if (desired) claims[item.id] = desired;
       }
+      let customItems = input.customItems ?? previous?.customItems ?? [];
+      if (!Array.isArray(customItems) || customItems.length > 20)
+        fail(400, "Use up to 20 custom menu items.");
+      if (!current.customItemsEnabled) {
+        const previousItems = previous?.customItems || [];
+        if (
+          customItems.length &&
+          JSON.stringify(customItems) !== JSON.stringify(previousItems)
+        )
+          fail(400, "Custom menu items are not enabled.");
+        customItems = previousItems;
+      }
+      const custom = attending
+        ? customItems.map((item) => {
+            const name = text(item.name, 160, true),
+              quantity = Number(item.quantity ?? 1);
+            if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10000)
+              fail(400, "Choose a valid custom item quantity.");
+            return { name, quantity };
+          })
+        : [];
+      if (current.saveCustomItems)
+        for (const item of custom) {
+          const normalized = normalizeName(item.name);
+          if (
+            !this.list("menu-saved", session.household).some(
+              (saved) => normalizeName(saved.name) === normalized,
+            )
+          )
+            this.put("menu-saved", id(), session.household, {
+              name: item.name,
+              quantity: 1,
+              kind: "potluck",
+            });
+        }
       this.put(
         "response",
         key,
@@ -758,6 +867,7 @@ export class Store {
           guest: session.guest,
           attendance,
           claims,
+          customItems: custom,
           updated: new Date().toISOString(),
         },
         previous?.version,

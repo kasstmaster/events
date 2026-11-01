@@ -11,12 +11,21 @@ export function deletionSummary(store, userId) {
   return {
     revision: createHash("sha256")
       .update(
-        JSON.stringify(
-          store.all(
+        JSON.stringify({
+          records: store.all(
             "SELECT kind,id,version FROM records WHERE household=? ORDER BY kind,id",
             user.household,
           ),
-        ),
+          members: store.all(
+            "SELECT id,role,disabled,version FROM family_members WHERE household=? ORDER BY id",
+            user.household,
+          ),
+          owner:
+            store.one(
+              "SELECT owner FROM family_owners WHERE household=?",
+              user.household,
+            )?.owner || user.id,
+        }),
       )
       .digest("hex"),
     userId: user.id,
@@ -24,14 +33,25 @@ export function deletionSummary(store, userId) {
     household: user.household,
     name: household?.name || "",
     domain: household?.subdomain ? household.subdomain + ".ilymmd.com" : "",
+    familyMemberCount: store.one(
+      "SELECT count(*) AS count FROM family_members WHERE household=?",
+      user.household,
+    ).count,
     counts: Object.fromEntries(
-      ["guest", "address", "event", "card", "private-template"].map((kind) => [
-        kind,
-        store.list(kind, user.household).length,
-      ]),
+      [
+        "guest",
+        "address",
+        "event",
+        "card",
+        "private-template",
+        "family-record",
+        "family-file",
+        "family-item",
+        "family-occurrence",
+      ].map((kind) => [kind, store.list(kind, user.household).length]),
     ),
     scope:
-      "Permanently removes this host, their household, contacts, events, responses, notes, cards and reminders. Only verified exclusively owned routing resources are removed. Shared infrastructure and all other households remain. Retired address reservations and global SMS opt-out suppressions are retained for safety.",
+      "Permanently removes this host, their household, contacts, events, responses, notes, cards, family members, household records, private documents, lists, task history and reminders. Shared guest identities and other hosts’ relationships remain. Only verified exclusively owned routing resources are removed. Shared infrastructure and all other households remain. Retired address reservations and global SMS opt-out suppressions are retained for safety.",
   };
 }
 export function requestDeletion(store, userId, input) {
@@ -82,6 +102,25 @@ export function finalizeDeletion(store, job) {
     store.run("DELETE FROM approvals WHERE email=?", job.email);
     store.run("DELETE FROM record_chunks WHERE household=?", job.household);
     store.run("DELETE FROM records WHERE household=?", job.household);
+    store.run(
+      "DELETE FROM guest_identity_links WHERE household=?",
+      job.household,
+    );
+    store.run(
+      "DELETE FROM guest_identity_history WHERE household=?",
+      job.household,
+    );
+    store.run("DELETE FROM family_members WHERE household=?", job.household);
+    store.run("DELETE FROM family_owners WHERE household=?", job.household);
+    for (const request of store
+      .list("guest-link-request", "platform")
+      .filter((r) => r.household === job.household))
+      store.remove(
+        "guest-link-request",
+        request.id,
+        "platform",
+        request.version,
+      );
     store.run(
       "DELETE FROM reminder_deliveries WHERE household=?",
       job.household,

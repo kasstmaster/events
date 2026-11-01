@@ -47,7 +47,12 @@ const { existsSync, mkdirSync } = require("node:fs");
     return { context, page };
   }
   async function click(page, label) {
-    await page
+    const scope = (await page.locator("#editor[open]").count())
+      ? page.getByRole("dialog")
+      : label === "RSVP"
+        ? page.locator("#main")
+        : page;
+    await scope
       .getByRole("button", {
         name: label === "✕" ? "Close editor" : label,
         exact: true,
@@ -203,6 +208,17 @@ const { existsSync, mkdirSync } = require("node:fs");
     );
     await guest.page.getByLabel("First name", { exact: true }).fill("Casey");
     await guest.page.getByLabel("Last name", { exact: true }).fill("Example");
+    await guest.page
+      .getByLabel("Invite Code", { exact: true })
+      .fill(
+        store.get(
+          "guest-identity",
+          store.one(
+            "SELECT identity FROM guest_identity_links WHERE guest IN (SELECT id FROM records WHERE kind='guest' AND json_extract(body,'$.first')='Casey') LIMIT 1",
+          ).identity,
+          "platform",
+        ).code,
+      );
     await click(guest.page, "See my invitations");
     await guest.page
       .getByRole("heading", { name: "Summer around the table", exact: true })
@@ -241,7 +257,7 @@ const { existsSync, mkdirSync } = require("node:fs");
     );
     assert.ok((await registry.boundingBox()).height >= 44);
     await noOverflow(guest.page);
-    await click(guest.page, "Save my RSVP");
+    await click(guest.page, "RSVP");
     await guest.page
       .getByLabel("Casey Example", { exact: true })
       .selectOption("yes");
@@ -250,7 +266,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       .selectOption("yes");
     await guest.page.getByLabel("Quantity for Lemonade").fill("2");
     await dialog(guest.page)
-      .getByRole("button", { name: "Save my RSVP", exact: true })
+      .getByRole("button", { name: "RSVP", exact: true })
       .click();
     await dialog(guest.page).waitFor({ state: "hidden" });
     await guest.page.getByText("Lemonade × 2", { exact: true }).waitFor();
@@ -261,6 +277,17 @@ const { existsSync, mkdirSync } = require("node:fs");
     await secondDevice.page
       .getByLabel("Last name", { exact: true })
       .fill("Example");
+    await secondDevice.page
+      .getByLabel("Invite Code", { exact: true })
+      .fill(
+        store.get(
+          "guest-identity",
+          store.one(
+            "SELECT identity FROM guest_identity_links WHERE guest IN (SELECT id FROM records WHERE kind='guest' AND json_extract(body,'$.first')='Casey') LIMIT 1",
+          ).identity,
+          "platform",
+        ).code,
+      );
     await click(secondDevice.page, "See my invitations");
     await click(secondDevice.page, "View event");
     await secondDevice.page

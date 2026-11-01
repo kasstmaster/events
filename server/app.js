@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { Store } from "./node-store.js";
+import { nodeRecipeTransport } from "./node-recipe-transport.js";
 import { createHandler } from "./handler.js";
 export function createApp({ store = new Store(), ...options } = {}) {
   return createServer(
@@ -9,6 +10,10 @@ export function createApp({ store = new Store(), ...options } = {}) {
       readAsset: (file) =>
         readFile(new URL(`../public/${file}`, import.meta.url)),
       ...options,
+      env: {
+        ...options.env,
+        recipeTransport: options.env?.recipeTransport || nodeRecipeTransport,
+      },
     }),
   );
 }

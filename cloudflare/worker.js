@@ -1,3 +1,4 @@
+import { runFamilyReminders } from "../server/family-tasks.js";
 import { runReminders } from "../server/reminders.js";
 import { runAccountCleanup } from "./account-cleanup.js";
 import { DurableObject } from "cloudflare:workers";
@@ -78,6 +79,11 @@ export class EventsDatabase extends DurableObject {
   }
   async scheduleRouting() {
     const tasks = [
+      this.store.one(
+        "SELECT id FROM records WHERE kind='family-record' AND json_extract(body,'$.type')='chore' AND coalesce(json_extract(body,'$.cancelled'),0)=0 LIMIT 1",
+      )
+        ? Date.now() + 60000
+        : null,
       this.env.HOUSEHOLD_ROUTING_ENABLED === "true"
         ? this.store.routingDue()
         : null,
@@ -100,6 +106,7 @@ export class EventsDatabase extends DurableObject {
     try {
       await runAccountCleanup(this.store, this.env);
       await runReminders(this.store, this.env);
+      runFamilyReminders(this.store);
       if (this.env.HOUSEHOLD_ROUTING_ENABLED === "true")
         await runProvisioning(this.store, this.env);
     } finally {
@@ -112,7 +119,10 @@ export class EventsDatabase extends DurableObject {
         (this.env.HOUSEHOLD_ROUTING_ENABLED !== "true" ||
           this.store.routingDue() === null) &&
         !remaining &&
-        this.env.SMS_ENABLED !== "true"
+        this.env.SMS_ENABLED !== "true" &&
+        !this.store.one(
+          "SELECT id FROM records WHERE kind='family-record' AND json_extract(body,'$.type')='chore' AND coalesce(json_extract(body,'$.cancelled'),0)=0 LIMIT 1",
+        )
       )
         await this.ctx.storage.deleteAlarm();
       else await this.scheduleRouting();
@@ -173,6 +183,7 @@ export class EventsDatabase extends DurableObject {
             "/icons.js",
             "/card-system.js",
             "/reminder-time.js",
+            "/family-ui.js",
             "/api/public/context",
           ].includes(path))
       )
@@ -231,7 +242,14 @@ export class EventsDatabase extends DurableObject {
     }
     const response = await serve(request, {
       store,
-      env: this.env,
+      env: {
+        ...this.env,
+        recipeTransport: (url) =>
+          fetch(url, {
+            redirect: "manual",
+            signal: AbortSignal.timeout(10000),
+          }),
+      },
       setupSecret: this.env.ADMIN_SETUP_TOKEN || "",
       setupEmail: this.env.BOOTSTRAP_ADMIN_EMAIL || "",
       requireAdmin: true,

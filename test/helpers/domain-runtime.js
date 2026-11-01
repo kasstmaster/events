@@ -96,6 +96,7 @@ export async function domainRuntime({
                   "icons.js",
                   "card-system.js",
                   "reminder-time.js",
+                  "family-ui.js",
                 ].includes(file)
               )
                 return new Response("Missing", { status: 404 });

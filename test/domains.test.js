@@ -411,7 +411,15 @@ test(
       assert.equal(event.status, 201);
       const guestLogin = await request(
         `/api/public/households/${host.slug}/login`,
-        { origin, method: "POST", data: { first: "Casey", last: "Synthetic" } },
+        {
+          origin,
+          method: "POST",
+          data: {
+            first: "Casey",
+            last: "Synthetic",
+            inviteCode: guest.body.inviteCode,
+          },
+        },
       );
       assert.equal(guestLogin.status, 200);
       const view = await request("/api/guest", {

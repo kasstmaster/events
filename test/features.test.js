@@ -96,7 +96,12 @@ async function fixture(t, env = {}) {
     (
       await request(`/api/public/households/${h.household.slug}/login`, {
         method: "POST",
-        data: { first: g.first, last: g.last, suffix: g.suffix },
+        data: {
+          first: g.first,
+          last: g.last,
+          suffix: g.suffix,
+          inviteCode: g.inviteCode,
+        },
       })
     ).cookie;
   return {

@@ -1113,3 +1113,74 @@ dialog:has(form[data-form="ui-settings"]) {
   width: min(1100px, calc(100vw - 24px));
   max-width: none;
 }
+
+/* Family tools share the application roles and responsive form controls. */
+.family-logo-preview {
+  width: 100px;
+  height: 100px;
+  object-fit: contain;
+}
+.preserve-lines {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.family-items {
+  list-style: none;
+  padding: 0;
+}
+.family-items li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.family-item-title {
+  flex: 1;
+  min-width: 100px;
+  overflow-wrap: anywhere;
+  touch-action: manipulation;
+}
+.family-items .completed .family-item-title {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+.family-items .check {
+  margin: 0;
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+}
+.family-items button {
+  min-width: 44px;
+}
+.task-row {
+  border-bottom: 1px solid var(--border-color);
+  padding: 14px 0;
+}
+#guest-matches {
+  padding: 12px 0;
+}
+#guest-matches p,
+code {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .family-items li > .row {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .family-items li > .row button {
+    flex: 1;
+  }
+  .task-row h3 {
+    font-size: var(--text-size);
+  }
+}
+.card .family-logo {
+  width: 100px;
+  height: 100px;
+  object-fit: contain;
+  border-radius: 12px;
+}

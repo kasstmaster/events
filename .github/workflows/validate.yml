@@ -27,6 +27,9 @@ jobs:
       - name: Shared editor browser checks
         timeout-minutes: 3
         run: node test/features-mobile.js
+      - name: Family workspace and invite-code browser checks
+        timeout-minutes: 3
+        run: node test/family-mobile.js
       - name: Cloudflare runtime checks
         if: ${{ !cancelled() }}
         run: npm run test:cloudflare
