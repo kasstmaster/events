@@ -20,7 +20,7 @@ No separate lint/typecheck/frontend-build script exists; Node/browser execution,
 
 ## Access blocked in this execution environment
 
-On 2026-11-01, `gh pr view 3 --repo kasstmaster/events --json state,headRefName,baseRefName` failed with `Post "https://api.github.com/graphql": Forbidden`. The requested `gh pr create` failed with the same GraphQL `Forbidden` response; no PR was created or merged and nothing was deployed. The enforced managed network policy does not include `api.github.com` or Cloudflare API/dashboard domains. Environment observations report no Cloudflare identity, runtime secrets or deployment variables; `npx wrangler whoami` reports unauthenticated. A desired environment draft is not a ready credential.
+On 2026-11-01, `gh pr view 3 --repo kasstmaster/events --json state,headRefName,baseRefName` failed with `Post "https://api.github.com/graphql": Forbidden`. PR creation from this environment failed with the same GraphQL `Forbidden` response. The owner subsequently created [PR #4](https://github.com/kasstmaster/events/pull/4) from the signed-in environment; it remains unmerged/undeployed. The enforced managed network policy does not include `api.github.com` or Cloudflare API/dashboard domains. Environment observations report no Cloudflare identity, runtime secrets or deployment variables; `npx wrangler whoami` reports unauthenticated. A desired environment draft is not a ready credential.
 
 The latest repository deployment inspection records production branch `feat/cloudflare-deployment`, Disable builds ON, previews OFF and validation-only GitHub Actions. This task explicitly authorizes publication, merge after required checks and deployment; it does not provide API access. Recheck live build controls and versions from the signed-in deployment environment before release. Do not enable automatic/preview builds as a workaround.
 
@@ -33,3 +33,9 @@ The latest repository deployment inspection records production branch `feat/clou
 5. Keep SMS disabled. The Twilio sender/billing, encrypted credentials and signed webhook setup listed in the operations guide are a separate owner-approved provider task.
 
 Never paste credentials into chat. No Node installation or server on the owner's Mac is required; use the existing remote deployment process. Do not label the feature deployed until the live verification above succeeds.
+
+## PR #4 browser stall follow-up
+
+The owner reported run `41257064511` timed out during the combined browser step after the original and household-routing suites passed; Cloudflare runtime was skipped. Direct CI log access here still returns GitHub API `Forbidden`, so the exact last CI operation cannot be independently established. The shared editor suite called native `window.print()` on its generated iframe, a blocking browser operation whose behavior differs across Chromium builds. Its test now intercepts that API in every frame and asserts one print invocation plus the two generated card copies. Application printing code is unchanged.
+
+The browser suite now logs each stage, has a 150-second process watchdog including cleanup, and prints the failure stage before teardown. CI gives the three browser suites separate named steps; runtime checks still run after an ordinary earlier failure, and failed runs upload synthetic screenshots. The ten-minute job limit has not been increased. Locally the updated editor suite completes successfully using system Chromium. Installing Playwright's pinned Chromium here failed with `403 Domain forbidden` from `cdn.playwright.dev`; the matching CI-browser result must come from the new GitHub run. Do not claim this run passed until checked in GitHub.

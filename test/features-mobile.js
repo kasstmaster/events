@@ -6,6 +6,20 @@ import { chromium } from "playwright";
 import { existsSync } from "node:fs";
 import { Store } from "../server/node-store.js";
 import { createApp } from "../server/app.js";
+let phase = "startup";
+const stage = (name) => {
+  phase = name;
+  console.log(`Shared editor browser check: ${name}`);
+};
+// Locator deadlines do not cover a blocked native dialog or browser shutdown.
+// Fail the process with its current stage before CI's whole-job deadline.
+const watchdog = setTimeout(() => {
+  console.error(
+    `Shared editor browser check exceeded 150 seconds during: ${phase}`,
+  );
+  process.exit(1);
+}, 150000);
+watchdog.unref();
 const store = new Store(),
   password = "Synthetic-editor-password",
   origin = "http://127.0.0.1:3159";
@@ -40,6 +54,14 @@ async function device(width) {
     hasTouch: width < 600,
     acceptDownloads: true,
   });
+  // Playwright runs this in every new frame, including the print iframe.
+  // Test our print document/call, not the platform's native print dialog.
+  await context.addInitScript(() => {
+    window.__printCalls = 0;
+    window.print = () => {
+      window.__printCalls++;
+    };
+  });
   await context.route("**/*", (route) => {
     if (
       !route
@@ -68,6 +90,7 @@ async function login(page, email) {
 }
 try {
   await mkdir("test-results", { recursive: true });
+  stage("administrator defaults and layout");
   const admin = await device(1440);
   await login(admin.page, "admin@example.test");
   await click(admin.page, "Edit global defaults");
@@ -93,6 +116,7 @@ try {
     store.get("ui", "defaults", "platform").copy.When,
     "Gathering time",
   );
+  stage("host navigation, contacts and event editor");
   const h = await device(390);
   await login(h.page, "host@example.test");
   await h.page.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
@@ -175,6 +199,7 @@ try {
     path: "test-results/features-host-mobile.png",
     fullPage: true,
   });
+  stage("reminder scheduling and recipient preview");
   await click(h.page, "Text reminders");
   await h.page
     .getByText("Messaging is not enabled.", { exact: false })
@@ -195,6 +220,7 @@ try {
     .getByRole("button", { name: "Save", exact: true })
     .click();
   await dialog(h.page).waitFor({ state: "hidden" });
+  stage("card editor and SVG/PNG downloads");
   await click(h.page, "Cards");
   await click(h.page, "Create card / template");
   await h.page
@@ -224,6 +250,7 @@ try {
   await click(h.page, "Download PNG");
   const png = await pngPending;
   assert.ok((await readFile(await png.path())).length > 100);
+  stage("quantity printing without a native dialog");
   await h.page.getByLabel("Print quantity", { exact: true }).fill("2");
   await click(h.page, "Print cards");
   assert.equal(
@@ -233,6 +260,15 @@ try {
       .locator(".copy")
       .count(),
     2,
+  );
+  assert.equal(
+    await h.page
+      .locator("iframe.print-frame")
+      .contentFrame()
+      .locator("body")
+      .evaluate(() => window.__printCalls),
+    1,
+    "the real print action invokes the frame's print API exactly once",
   );
   await dialog(h.page)
     .getByRole("button", { name: "Save card", exact: true })
@@ -244,6 +280,7 @@ try {
     store.list("card", host.household)[0].context.recipient.name,
     "Casey Example",
   );
+  stage("read-only administrator preview");
   await click(admin.page, "Preview guest experience");
   await admin.page
     .getByLabel("Household", { exact: true })
@@ -266,6 +303,7 @@ try {
   assert.equal(await admin.page.locator("#editor").isVisible(), false);
   assert.equal(store.list("response", host.household).length, 0);
   await click(admin.page, "Exit read-only preview");
+  stage("guest privacy and conditional uploads");
   const guest = await device(390),
     household = store.household(host.household);
   await guest.page.goto(origin + "/h/" + household.slug);
@@ -301,6 +339,7 @@ try {
       () => document.documentElement.scrollWidth <= innerWidth + 1,
     ),
   );
+  stage("phone and desktop screenshots");
   for (const [name, page, width] of [
     ["admin-mobile", admin.page, 390],
     ["guest-desktop", guest.page, 1440],
@@ -323,8 +362,13 @@ try {
   console.log(
     "PASS: global wording/role/layout editing, phone navigation, combined event editor, notes privacy, upload link, consent/reminder preview, card SVG/PNG/quantity export, and read-only guest preview.",
   );
+} catch (error) {
+  console.error(`Shared editor browser check failed during: ${phase}`, error);
+  throw error;
 } finally {
+  stage("browser and server cleanup");
   await browser.close();
   await new Promise((r) => server.close(r));
   store.db.close();
+  clearTimeout(watchdog);
 }
