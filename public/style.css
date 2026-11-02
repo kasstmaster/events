@@ -2060,3 +2060,77 @@ html {
   scroll-margin-top: calc(var(--top-height, 100px) + 12px);
   scroll-margin-bottom: calc(var(--bottom-height, 100px) + 12px);
 }
+
+/* Event chooser: details stay left; event-specific host actions stack right. */
+.host-event-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+.event-overview {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.event-home-actions {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  margin: 0;
+  width: clamp(96px, 28vw, 144px);
+}
+.event-home-actions button {
+  width: 100%;
+  padding: 10px 8px;
+  overflow-wrap: anywhere;
+}
+body :is(#app, #editor) .event-overview > p.muted {
+  color: var(--description-color);
+  font-family: var(--description-font);
+  font-size: var(--description-size);
+  font-style: var(--description-style);
+  font-weight: var(--description-weight);
+}
+/* One fixed row for brand, summary, options and Print. Small screens scroll
+   only the summary, retaining readable labels and access to the edge actions. */
+.event-toolbar .top-primary {
+  flex-wrap: nowrap;
+}
+.event-toolbar #top-navigation {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+.event-toolbar .browse-heading {
+  display: none;
+}
+.top-shell .event-summary {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 4px 0;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+.event-summary .totals {
+  width: max-content;
+  min-width: 100%;
+  flex-wrap: nowrap;
+  justify-content: space-evenly;
+  gap: 12px;
+}
+.event-summary .totals div {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.event-summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+#sync-status:empty {
+  display: none;
+}

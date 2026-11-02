@@ -34,8 +34,8 @@ export async function clickNavigation(page, label) {
         "Edit global defaults": "Defaults",
         "Create event": "Create Event",
         "Edit event": "Edit Event",
-        "Text reminders": "Text Reminders",
-        "Preview invitation": "Preview Invitation",
+        "Text reminders": "Reminders",
+        "Preview invitation": "Invitation",
         "All household tools": "Home",
         "Create home record": "Create record",
         "Create chore / routine": "Create chore",
@@ -101,9 +101,9 @@ export async function clickNavigation(page, label) {
     !menuOnly.includes(name) &&
     ![
       "RSVPs",
-      "Text Reminders",
+      "Reminders",
       "Cards",
-      "Preview Invitation",
+      "Invitation",
       "Cards & templates",
     ].includes(name)
   ) {
@@ -125,9 +125,7 @@ export async function clickNavigation(page, label) {
       await page.locator(".hero h1").waitFor();
     }
     if (
-      ["RSVPs", "Text Reminders", "Cards", "Preview Invitation"].includes(
-        name,
-      ) &&
+      ["RSVPs", "Reminders", "Cards", "Invitation"].includes(name) &&
       (await page.locator(".event-hero").count())
     ) {
       await page.getByRole("button", { name: "Home", exact: true }).click();

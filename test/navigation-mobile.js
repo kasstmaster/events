@@ -285,17 +285,15 @@ try {
     assert.deepEqual(await card.getByRole("button").allTextContents(), [
       "View Event",
       "RSVPs",
-      "Text Reminders",
+      "Reminders",
       "Cards",
-      "Preview Invitation",
+      "Invitation",
     ]);
     await card.getByRole("button", { name: "RSVPs", exact: true }).click();
     await p.getByRole("dialog").getByText(title, { exact: true }).waitFor();
     assert.ok(requests.includes(`/api/host/events/${event.id}/dashboard`));
     await click(p, "Close editor");
-    await card
-      .getByRole("button", { name: "Text Reminders", exact: true })
-      .click();
+    await card.getByRole("button", { name: "Reminders", exact: true }).click();
     await p.getByRole("dialog").waitFor();
     await p
       .getByRole("dialog")
@@ -310,15 +308,46 @@ try {
       .waitFor();
     assert.equal(await p.locator('[name="cardEvent"]').inputValue(), event.id);
     await click(p, "Close editor");
-    await card
-      .getByRole("button", { name: "Preview Invitation", exact: true })
-      .click();
+    await card.getByRole("button", { name: "Invitation", exact: true }).click();
     await p
       .getByRole("heading", { name: "Edit your card", exact: true })
       .waitFor();
     assert.equal(await p.locator('[name="cardEvent"]').inputValue(), event.id);
     await click(p, "Close editor");
   }
+  for (const width of [390, 1440]) {
+    await p.setViewportSize({ width, height: 900 });
+    for (const choice of await p.locator(".host-event-choice").all()) {
+      const overview = await choice.locator(".event-overview").boundingBox();
+      const actions = await choice.locator(".event-home-actions").boundingBox();
+      assert.ok(
+        overview.x + overview.width <= actions.x + 1,
+        "Details remain left of event actions",
+      );
+      const buttons = await choice.locator(".event-home-actions button").all();
+      let bottom = 0;
+      for (const button of buttons) {
+        const box = await button.boundingBox();
+        assert.ok(box.y >= bottom);
+        assert.ok(Math.abs(box.x - actions.x) < 1);
+        bottom = box.y + box.height;
+      }
+    }
+    assert.ok(
+      await p.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    );
+    assert.doesNotMatch(
+      await p.locator("#main").innerText(),
+      /Updated .*syncs automatically|A familiar table\. A new memory\. Make room for your next gathering\./,
+    );
+    await p.screenshot({
+      path: `test-results/event-chooser-${width}.png`,
+      fullPage: true,
+    });
+  }
+  await p.setViewportSize({ width: 1440, height: 900 });
   await p.evaluate(() => {
     Object.defineProperty(navigator, "share", {
       configurable: true,
@@ -567,6 +596,37 @@ try {
     "Settings",
   ]);
   assert.equal(await p.locator(".event-summary").count(), 1);
+  for (const width of [390, 1440]) {
+    await p.setViewportSize({ width, height: 900 });
+    const aligned = await p.locator(".top-primary").evaluate((el) => {
+      const nodes = [
+        el.querySelector(".brand"),
+        el.querySelector(".event-summary"),
+        el.querySelector('summary[aria-label="Sorting and options"]'),
+        el.querySelector("[data-action=print]"),
+      ];
+      const centers = nodes.map((node) => {
+        const r = node.getBoundingClientRect();
+        return r.y + r.height / 2;
+      });
+      return Math.max(...centers) - Math.min(...centers) < 3;
+    });
+    assert.ok(
+      aligned,
+      "Gather, counts, options and Print share one toolbar row",
+    );
+    assert.ok(
+      await p.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    );
+    await p.screenshot({
+      path: `test-results/event-summary-row-${width}.png`,
+      fullPage: true,
+    });
+  }
+  await p.setViewportSize({ width: 390, height: 900 });
+
   assert.equal(
     await p
       .locator(

@@ -402,28 +402,28 @@ function eventSummary(event) {
           "Your items",
         ],
       ];
-  return `<div class="event-summary no-print" aria-label="${H("Event summary")}"><div class="totals">${items.map(([value, label]) => `<div><strong>${value}</strong><span>${H(label)}</span></div>`).join("")}</div></div>`;
+  return `<div class="event-summary no-print" role="group" tabindex="0" aria-label="${H("Event summary")}"><div class="totals">${items.map(([value, label]) => `<div><strong>${value}</strong><span>${H(label)}</span></div>`).join("")}</div></div>`;
 }
 
 function eventCard(event) {
   const logo = event.invitingHousehold
     ? event.invitingHousehold.logo
     : state.data.household.logo;
-  return ui`<article class="card">${logo ? ui`<img class="family-logo" src="${escape(logo)}" alt="Family logo">` : M('<span class="eyebrow">You’re invited to gather</span>')}${event.invitingHousehold ? ui`<p class="eyebrow">${escape(event.invitingHousehold.name)}</p>` : ""}<p class="muted small">${escape(dateLabel(event.date))}</p><h2>${escape(event.title)}</h2><p class="muted">${escape(event.description.slice(0, 120))}</p><div class="row"><span class="pill">${event.totals.attending} attending</span>${event.response?.version ? M('<span class="pill">RSVP saved</span>') : ""}</div>${button("open-event", H("View Event"), `data-id="${event.invitationKey || event.id}"`)}${
-    state.session.role === "host"
-      ? ui`<div class="event-home-actions">${[
-          ["dashboard", "RSVPs"],
-          ["reminders", "Text Reminders"],
-          ["cards", "Cards"],
-          ["invitation", "Preview Invitation"],
-        ]
-          .map(([action, label]) =>
-            button("event-action-" + action, H(label), `data-id="${event.id}"`),
-          )
-          .join("")}</div>`
-      : ""
-  }</article>`;
+  const content = ui`${logo ? ui`<img class="family-logo" src="${escape(logo)}" alt="Family logo">` : M('<span class="eyebrow">You’re invited to gather</span>')}${event.invitingHousehold ? ui`<p class="eyebrow">${escape(event.invitingHousehold.name)}</p>` : ""}<p class="muted small">${escape(dateLabel(event.date))}</p><h2>${escape(event.title)}</h2><p class="muted">${escape(event.description.slice(0, 120))}</p><div class="row"><span class="pill">${event.totals.attending} attending</span>${event.response?.version ? M('<span class="pill">RSVP saved</span>') : ""}</div>${button("open-event", H("View Event"), `data-id="${event.invitationKey || event.id}"`)}`;
+  if (state.session.role !== "host")
+    return ui`<article class="card">${content}</article>`;
+  return ui`<article class="card host-event-choice"><div class="event-overview">${content}</div><div class="event-home-actions" role="group" aria-label="${H("Event actions")}">${[
+    ["dashboard", "RSVPs"],
+    ["reminders", "Reminders"],
+    ["cards", "Cards"],
+    ["invitation", "Invitation"],
+  ]
+    .map(([action, label]) =>
+      button("event-action-" + action, H(label), `data-id="${event.id}"`),
+    )
+    .join("")}</div></article>`;
 }
+
 function eventPage(event) {
   const own = event.response;
   return ui`<section class="event-hero">${event.icon ? ui`<img class="event-icon" src="${escape(event.icon)}" alt="Event artwork">` : ""}<p class="eyebrow">${escape(event.invitingHousehold?.name || state.data.household.name)} invites you</p><h1>${escape(event.title)}</h1><p class="event-details">${escape(event.description)}</p><div class="event-meta"><div><b>When</b><span>${escape(dateLabel(event.date))}</span><span>${escape(event.time)}</span></div>${event.address ? ui`<div><b>Where</b><span class="event-details">${escape(event.address)}</span></div>` : ""}</div>${event.deadline ? ui`<div class="event-deadline"><b>RSVP By</b><span>${escape(dateLabel(event.deadline))}</span></div>` : ""}</section>${state.session.role === "host" ? ui`<div data-event-actions hidden></div>` : ui`<div class="row no-print" data-event-actions>${button("rsvp", C("RSVP"), "", "")}${(event.registries || []).length ? ui`<div class="registry-buttons" aria-label="Gift registries">${event.registries.map((r) => ui`<a class="button registry-button" href="${escape(r.url)}" target="_blank" rel="noopener noreferrer">${escape(r.title)}</a>`).join("")}</div>` : ""}${event.uploadURL ? ui`<a class="button secondary" href="${escape(event.uploadURL)}" target="_blank" rel="noopener noreferrer">Upload Photos & Videos</a>` : ""}</div>`}<div class="grid"><section class="panel" data-event-section="menus"><p class="eyebrow">Something to share</p><h2>At the table</h2>${event.menu.length ? event.menu.map((item) => ui`<div class="menu-item"><div><strong>${escape(item.name)}</strong><div class="muted small">${item.kind === "drink" ? C("Drinks") : C("Potluck")}</div></div><span class="pill">${Math.max(0, item.quantity - (item.claimed || 0))} needed</span></div>`).join("") : M('<p class="muted">Just bring yourself. Your host hasn’t added any menu items yet.</p>')}</section>${
@@ -522,10 +522,10 @@ function render(target = $("#app"), example = false) {
               ],
             })
           : "") +
-        ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : H("Welcome,") + " " + escape(state.data.guest.first)}</p><h1>${escape(state.data.household.name)}</h1><p class="muted">${role === "host" ? C("A familiar table. A new memory. Make room for your next gathering.") : C("Your invitations, all in one place.")}</p></section>${role === "guest" ? button("guest-link-requests", H("Review shared guest links")) : ""}${state.data.events.length ? ui`<section class="grid" aria-label="Events">${state.data.events.map(eventCard).join("")}</section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
+        ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : H("Welcome,") + " " + escape(state.data.guest.first)}</p><h1>${escape(state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? button("guest-link-requests", H("Review shared guest links")) : ""}${state.data.events.length ? ui`<section class="grid" aria-label="Events">${state.data.events.map(eventCard).join("")}</section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
     }
   }
-  target.innerHTML = ui`<header class="top-shell no-print"><div class="top-primary"><a class="brand" href="/" data-action="home">gather<span>＊</span></a><div id="top-navigation">${topActions(event)}</div></div>${event ? eventSummary(event) : ""}<div id="appearance-toolbar"></div></header><main id="main">${content}${role && state.view !== "card-editor" ? ui`<p id="sync-status" class="connection">Updated ${state.lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · syncs automatically</p>` : ""}</main>${(state.view !== "card-editor" || role === "admin") && (role || state.preview) ? toolbar(event) : ""}`;
+  target.innerHTML = ui`<header class="top-shell no-print ${event ? "event-toolbar" : ""}"><div class="top-primary"><a class="brand" href="/" data-action="home">gather<span>＊</span></a>${event ? eventSummary(event) : ""}<div id="top-navigation">${topActions(event)}</div></div><div id="appearance-toolbar"></div></header><main id="main">${content}${role && state.view !== "card-editor" ? '<p id="sync-status" class="connection" role="status" aria-live="polite"></p>' : ""}</main>${(state.view !== "card-editor" || role === "admin") && (role || state.preview) ? toolbar(event) : ""}`;
   if (keepGuest)
     target
       .querySelector(
