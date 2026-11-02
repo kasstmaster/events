@@ -1,3 +1,4 @@
+import { clickNavigation } from "./helpers/navigation.js";
 // Synthetic loopback-only families and guest codes. No real accounts, messages or documents.
 import assert from "node:assert/strict";
 import { once } from "node:events";
@@ -29,20 +30,6 @@ const host = await store.register({
 const server = createApp({
   store,
   origin,
-  env: {
-    recipeTransport: async () =>
-      new Response(
-        '<script type="application/ld+json">' +
-          JSON.stringify({
-            "@type": "Recipe",
-            name: "Imported soup",
-            recipeIngredient: ["Water", "Vegetables"],
-            recipeInstructions: [{ text: "Simmer gently." }],
-          }) +
-          "</script>",
-        { headers: { "content-type": "text/html" } },
-      ),
-  },
 });
 server.listen(3167, "127.0.0.1");
 await once(server, "listening");
@@ -81,14 +68,7 @@ async function device(width = 390) {
   return { context, page };
 }
 const dialog = (page) => page.getByRole("dialog");
-async function click(page, name) {
-  const scope = (await page.locator("#editor[open]").count())
-    ? dialog(page)
-    : name === "RSVP"
-      ? page.locator("#main")
-      : page;
-  await scope.getByRole("button", { name, exact: true }).click();
-}
+const click = clickNavigation;
 async function save(page) {
   await click(page, "Save");
   await dialog(page).waitFor({ state: "hidden" });
@@ -118,12 +98,13 @@ try {
     .fill("owner@example.test");
   await owner.page.getByLabel("Password", { exact: true }).fill(password);
   await click(owner.page, "Sign in");
-  await click(owner.page, "Family workspace");
+  await click(owner.page, "Family Workspace");
   await owner.page
-    .getByRole("heading", { name: "Your household tools", exact: true })
+    .getByRole("heading", { name: "Family Workspace", exact: true })
     .waitFor();
   assert.equal(store.list("family-record", host.household).length, 0);
-  await click(owner.page, "Family members");
+  await click(owner.page, "Settings");
+  await click(owner.page, "Family Members");
   await click(owner.page, "Create family member");
   await owner.page.getByLabel("Name", { exact: true }).fill("Child");
   await owner.page
@@ -141,6 +122,7 @@ try {
     host.household,
   );
   stage("shared lists, child access and independent device updates");
+  await click(owner.page, "Home");
   await click(owner.page, "Create list");
   await owner.page.getByLabel("Title", { exact: true }).fill("Groceries");
   await owner.page
@@ -148,6 +130,7 @@ try {
     .fill("Produce\nOther");
   await owner.page.getByLabel("Child", { exact: true }).check();
   await save(owner.page);
+  await click(owner.page, "Add Item");
   await owner.page.getByLabel("New item", { exact: true }).fill("Apples");
   await owner.page
     .getByLabel("Category", { exact: true })
@@ -164,11 +147,13 @@ try {
   await kid.page.getByLabel("Sign-in name", { exact: true }).fill("child");
   await kid.page.getByLabel("Password", { exact: true }).fill(password);
   await click(kid.page, "Sign in");
-  await click(kid.page, "Open");
+  await click(kid.page, "Lists");
+  await click(kid.page, "Groceries");
   assert.equal(
     await kid.page.getByRole("button", { name: "Delete", exact: true }).count(),
     0,
   );
+  await click(kid.page, "Add Item");
   await kid.page.getByLabel("New item", { exact: true }).fill("Bread");
   await click(kid.page, "Add item");
   await owner.page
@@ -189,9 +174,11 @@ try {
     2,
   );
   await click(kid.page, "Hide Completed");
+  await kid.page.getByLabel("Sorting and options", { exact: true }).click();
   await kid.page
-    .getByRole("button", { name: "Show All", exact: true })
+    .getByRole("menuitem", { name: "Show All", exact: true })
     .waitFor();
+  await kid.page.getByLabel("Sorting and options", { exact: true }).click();
   assert.equal(
     await kid.page
       .locator(".family-item-title")
@@ -205,9 +192,11 @@ try {
     .getByText("Bread", { exact: true })
     .waitFor();
   await click(owner.page, "Sort alphabetically within categories");
+  await owner.page.getByLabel("Sorting and options", { exact: true }).click();
   await owner.page
-    .getByRole("button", { name: "Return to manual ordering", exact: true })
+    .getByRole("menuitemradio", { name: "Manual ordering", exact: true })
     .waitFor();
+  await owner.page.getByLabel("Sorting and options", { exact: true }).click();
   assert.equal(
     await owner.page
       .getByRole("button", { name: "Move up", exact: true })
@@ -263,23 +252,7 @@ try {
         .querySelector("#sync-status")
         .textContent.includes("Connection paused"),
   );
-  stage("reviewed recipe import and private home documents");
-  await click(owner.page, "All household tools");
-  await click(owner.page, "Import recipe URL");
-  await owner.page
-    .getByLabel("Public recipe URL", { exact: true })
-    .fill("https://recipes.example.com/soup");
-  await click(owner.page, "Save");
-  await owner.page.getByLabel("Ingredients", { exact: true }).waitFor();
-  assert.equal(
-    await owner.page.getByLabel("Ingredients", { exact: true }).inputValue(),
-    "Water\nVegetables",
-  );
-  await owner.page.getByLabel("Title", { exact: true }).fill("Our soup");
-  await owner.page
-    .getByLabel("Categories · one per line", { exact: true })
-    .fill("Dinner");
-  await save(owner.page);
+  stage("private home documents");
   await click(owner.page, "All household tools");
   await click(owner.page, "Create home record");
   await owner.page.getByLabel("Title", { exact: true }).fill("Private washer");
@@ -320,9 +293,9 @@ try {
   await owner.page.getByLabel("Repeat", { exact: true }).selectOption("daily");
   await save(owner.page);
   await click(kid.page, "All household tools");
+  await click(kid.page, "Chores");
   await kid.page
-    .getByRole("heading", { name: "Check washer", exact: true })
-    .first()
+    .getByRole("button", { name: "Check washer", exact: true })
     .waitFor();
   assert.equal(
     await kid.page
@@ -383,7 +356,9 @@ try {
     menu: [],
     deadline: "2000-01-01",
   });
-  await click(owner.page, "Address book");
+  await click(owner.page, "Settings");
+  await click(owner.page, "Back to household home");
+  await click(owner.page, "Contacts");
   await click(owner.page, "＋ Add adult or child");
   await owner.page.getByLabel("First name", { exact: true }).fill("Casey");
   await owner.page.getByLabel("Last name", { exact: true }).fill("Example");
@@ -420,7 +395,7 @@ try {
     }),
   });
   assert.equal(await card.locator("img").getAttribute("src"), logo);
-  await card.getByRole("button", { name: "View event", exact: true }).click();
+  await card.getByRole("button", { name: "View Event", exact: true }).click();
   assert.equal(
     await guest.page
       .getByRole("heading", { name: "At the table", exact: true })
@@ -464,7 +439,7 @@ try {
         exact: true,
       }),
     })
-    .getByRole("button", { name: "View event", exact: true })
+    .getByRole("button", { name: "View Event", exact: true })
     .click();
   await click(guest.page, "RSVP");
   await guest.page
@@ -482,7 +457,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(external, []);
   console.log(
-    "PASS: family accounts, scoped children, live list collaboration, safe completion gestures, sorting, recipe review, authenticated files, chore assignments, guest codes/suffixes, images, custom items and deadline lock.",
+    "PASS: family accounts, scoped children, live list collaboration, safe completion gestures, sorting, authenticated files, chore assignments, guest codes/suffixes, images, custom items and deadline lock.",
   );
 } catch (error) {
   console.error("Family browser check failed during " + phase, error);

@@ -1,8 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { application, password } from "./helpers/application.js";
-import { importRecipe, publicRecipeURL } from "../server/recipe-import.js";
-import { isPublicAddress } from "../server/node-recipe-transport.js";
 import { runFamilyReminders } from "../server/family-tasks.js";
 
 test("family roles never grant platform or cross-household administration", async (t) => {
@@ -204,64 +202,57 @@ test("independent list item versions preserve competing additions, reject stale 
     true,
   );
 });
-test("recipe import uses supported structured data, does not invent missing fields, and rejects unsafe targets and redirects", async () => {
-  for (const url of [
-    "http://example.com/",
-    "https://127.0.0.1/",
-    "https://[::1]/",
-    "https://example.local/",
-    "https://user:pass@example.com/",
-  ])
-    assert.throws(() => publicRecipeURL(url));
-  for (const ip of [
-    "127.0.0.1",
-    "10.1.2.3",
-    "169.254.169.254",
-    "192.168.1.1",
-    "::1",
-    "::ffff:127.0.0.1",
-    "fc00::1",
-  ])
-    assert.equal(isPublicAddress(ip), false);
-  assert.equal(isPublicAddress("8.8.8.8"), true);
-  const result = await importRecipe(
-    "https://recipes.example.com/test",
-    async () =>
-      new Response(
-        '<script type="application/ld+json">' +
-          JSON.stringify({
-            "@type": "Recipe",
-            name: "Soup",
-            recipeIngredient: ["Water", "Salt"],
-            recipeInstructions: [{ "@type": "HowToStep", text: "Combine." }],
-          }) +
-          "</script>",
-        { headers: { "content-type": "text/html" } },
-      ),
-  );
-  assert.equal(result.title, "Soup");
-  assert.equal(result.ingredients, "Water\nSalt");
-  assert.equal(result.instructions, "Combine.");
-  await assert.rejects(
-    importRecipe(
-      "https://recipes.example.com/",
-      async () =>
-        new Response("", {
-          status: 302,
-          headers: { location: "https://127.0.0.1/" },
-        }),
+test("unsupported legacy records remain stored but cannot be read, searched, imported or mutated", async (t) => {
+  const f = await application(t),
+    a = await f.host("Alpha");
+  const old = f.store.put("family-record", "legacy-recipe", a.household.id, {
+    type: "recipe",
+    title: "Preserved old recipe",
+    ingredients: "Private legacy content",
+  });
+  assert.equal(
+    (await f.request("/api/family", { cookie: a.cookie })).body.records.some(
+      (r) => r.id === old.id,
     ),
+    false,
   );
-  await assert.rejects(
-    importRecipe(
-      "https://recipes.example.com/",
-      async () =>
-        new Response("<p>No data</p>", {
-          headers: { "content-type": "text/html" },
-        }),
-    ),
-    /manual entry/,
+  assert.equal(
+    (await f.request("/api/family/records/" + old.id, { cookie: a.cookie }))
+      .status,
+    404,
   );
+  assert.equal(
+    (
+      await f.request("/api/family/records/" + old.id, {
+        cookie: a.cookie,
+        method: "DELETE",
+        version: old.version,
+        data: {},
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await f.request("/api/family/import-recipe", {
+        cookie: a.cookie,
+        method: "POST",
+        data: { url: "https://example.invalid" },
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await f.request("/api/family/records", {
+        cookie: a.cookie,
+        method: "POST",
+        data: { type: "recipe", title: "Removed feature" },
+      })
+    ).status,
+    400,
+  );
+  assert.deepEqual(f.store.get("family-record", old.id, a.household.id), old);
 });
 test("task assignments, recurring occurrences and in-app reminders retain history and stop after completion or revocation", async (t) => {
   const f = await application(t),

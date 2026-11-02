@@ -81,11 +81,11 @@ export function featureTools(ctx) {
           guestEventUnanswered: "Guest event · no RSVP yet",
           guestLoginSuffix: "Guest sign-in · suffix revealed",
           familyLogin: "Family member sign-in",
+          contacts: "Contacts",
           familyHome: "Family workspace · owner",
           familyKidHome: "Family workspace · kid",
           familyList: "Family list",
           familyKidList: "Family list · kid",
-          familyRecipe: "Family recipe",
           familyRecord: "Private home record",
           familyChore: "Family chore",
           familyTasks: "My Tasks · adult",
@@ -140,7 +140,7 @@ export function featureTools(ctx) {
       if (view === "guestLoginSuffix")
         doc.querySelector("#guest-suffix")?.removeAttribute("hidden");
       doc.addEventListener("click", (event) => {
-        event.preventDefault();
+        if (!event.target.closest?.("summary")) event.preventDefault();
       });
       doc.addEventListener("submit", (event) => {
         event.preventDefault();
@@ -476,7 +476,7 @@ export function featureTools(ctx) {
         ["holiday", C("Holiday")],
       ],
       card.kind,
-    )}${role() === "host" ? `${select(H("Populate from event"), "cardEvent", options(), card.event || state.event || "")}${select(H("Recipient"), "cardRecipient", [["", C("No recipient")], ...cardOptions()], card.recipient || "")}` : ""}${field(H("Background artwork"), "cardBackground", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input name="removeCardBackground" type="checkbox">Remove background artwork</label>${field(H("Card background color"), "cardColor", card.color, "color")}<div class="form-grid">${field(H("Canvas width"), "cardWidth", card.width, "number", 'min="300" max="2400"')}${field(H("Canvas height"), "cardHeight", card.height, "number", 'min="300" max="2400"')}</div><label class="check"><input name="includeQR" type="checkbox" ${card.includeQR ? "checked" : ""}>Include QR code</label>${role() === "host" ? M('<label class="check"><input name="savePrivateTemplate" type="checkbox">Save as a reusable private template</label>') : ""}<div id="card-fields">${card.elements
+    )}${role() === "host" ? `${select(H("Populate from event"), "cardEvent", options(), card.event || selectedEvent()?.id || "")}${select(H("Recipient"), "cardRecipient", [["", C("No recipient")], ...cardOptions()], card.recipient || "")}` : ""}${field(H("Background artwork"), "cardBackground", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input name="removeCardBackground" type="checkbox">Remove background artwork</label>${field(H("Card background color"), "cardColor", card.color, "color")}<div class="form-grid">${field(H("Canvas width"), "cardWidth", card.width, "number", 'min="300" max="2400"')}${field(H("Canvas height"), "cardHeight", card.height, "number", 'min="300" max="2400"')}</div><label class="check"><input name="includeQR" type="checkbox" ${card.includeQR ? "checked" : ""}>Include QR code</label>${role() === "host" ? M('<label class="check"><input name="savePrivateTemplate" type="checkbox">Save as a reusable private template</label>') : ""}<div id="card-fields">${card.elements
       .map(
         (e, index) =>
           ui`<fieldset data-card-index="${index}" ${index === selectedCardField ? "" : "hidden"}><legend>Field ${index + 1}</legend>${select(
@@ -864,6 +864,7 @@ export function featureTools(ctx) {
       }
       if (action === "card-editor-back") {
         state.view = state.cardReturnView || "home";
+        state.actionEvent = null;
         render();
         return true;
       }

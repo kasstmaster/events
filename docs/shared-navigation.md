@@ -1,0 +1,31 @@
+# Shared navigation and workspace
+
+Family Workspace and Contacts use `public/browse-ui.js` for their actual topbar, bottom navigation, menus, compact rows, search and sorting. Colors, type and borders resolve through existing household formatting roles; the reference screenshots do not supply a fixed theme. Safe-area padding keeps the last row clear of the fixed footer. Event content retains its previous layout and artwork.
+
+## Navigation
+
+Workspace opens Lists, Tasks, Records and Chores, in that order. Create menus adapt to the section. Existing mixed folders remain discoverable without rewriting their records. Search includes every permitted supported record across the four sections; server permissions still govern feeds, files and direct operations. Lists retain categories, versioned item saves, checkbox/double-click completion, hide/show completed, alphabetical/manual order, drag and accessible move actions. Tasks and chores retain assignments, due dates, recurrence, retained occurrence history and in-app reminders. Records retain their details and private attachments.
+
+Workspace bottom navigation is Home, Settings, Sign Out. Settings contains notification preferences, password changes and authorized family management. Moving these actions grants no additional role permissions. Hosts reach the workspace from their household home.
+
+Host home and Contacts bottom navigation is Home, Contacts, Edit House, Share, Sign Out. Home's Plus menu contains Create Event and Cards & Templates. Contacts browses the existing guest/address/identity records, with scoped search and versioned manual/alphabetical ordering. It does not create another database. Shared-address selection/editing remains inline in Add/Edit contact. Sharing uses the guest-facing household URL, handles native cancellation quietly, and confirms successful copying or displays a selectable link.
+
+Each event's home card has View Event, RSVPs, Text Reminders, Cards and Preview Invitation, scoped to its ID. Host event bottom navigation is Home, Edit Event, Print; full host summary counts move to the top. Guest event bottom navigation is Home, Print. Only potluck events show a guest top summary, containing safe remaining/own-item information; invitation/decline/unanswered counts are host-only. Guest RSVP, registries, invitation destinations and potluck participation remain in their original content locations.
+
+Recipes and their importers/endpoints are removed from supported use. Existing stored recipe records are retained and excluded from feeds, search, reads and edits. This release does not purge data or add meal planning. The four requested explanatory messages are removed from visible UI.
+
+## Validation and release
+
+Use Node.js 24 and `npm ci`. Run `npm test`, `npm run test:mobile` (five bounded suites), `npm run test:cloudflare`, `npm run format:check`, both existing Worker dry-run bundles and the production dependency audit. Browser fixtures are isolated and synthetic; native print/share boundaries are intercepted. Inspect phone/desktop screenshots, role-specific menus, per-event action targets, footer clearance, household theme inheritance and guest privacy.
+
+Follow the [family release safeguards](family-workspace.md#release-and-recovery) and [manual release workflow](manual-events-release.md) on main. Release only the reviewed application merge; main's application tree is older. Record current events version, disabled build controls, binding/settings fingerprints and SQLite recovery checkpoint before deployment. Keep SMS/builds/previews disabled and preserve all existing bindings, namespace/class/object, secrets, variables, routes and cron. No gateway deployment is part of this change. Live setup/sign-in/link/QR/RSVP/editor verification still requires authorized existing sessions; local tests cannot substitute for that evidence.
+
+## Local release evidence (2026-11-02)
+
+Application/API tests: 82 passed. Actual local Cloudflare Worker/SQLite suite passed. Worker and unchanged gateway bundles passed in dry-run mode only. Formatting/whitespace passed and the production dependency audit reported zero findings. Browser verification uses system Chromium in this environment (`CHROMIUM_PATH=/usr/bin/chromium`); CI installs its pinned Playwright Chromium. No real account, guest response, message or deletion was used.
+
+The latest successful manual production run observed before this release is [41392127841](https://github.com/kasstmaster/events/actions/runs/41392127841), deploying the preceding reviewed application `d10ea2f6a46a35574beffc735671e5eabf1822b2` as Worker version `d52520c8-2858-49ad-9160-e54307a130f6`. Its preflight and postflight passed, with recovery artifact `events-recovery-41392127841-1`. This is historical production evidence, not deployment of this change. The next manual workflow must pin the new reviewed merge and reject an unexpected previous version.
+
+Direct managed-environment authentication remains blocked: the binding is observed ready for api.cloudflare.com, the selected account matches and HTTPS proxy is configured, but both account-token and user-token verification and account access return HTTP 400 with codes 6003/6111. The builds read returns 9106. Those malformed-header responses do not establish token permission failure and do not invalidate the separate working GitHub Actions secret. Do not expose raw diagnostics, bypass the proxy or replace that GitHub secret based on this environment's result. Fresh build-control inventory and interactive production acceptance remain unverified here.
+
+All five browser suites passed locally, covering phone/tablet/desktop, real default examples, household routing/QR destinations, address-code sign-in, skipped RSVPs, card preview/export, family collaboration/files, four-section navigation, per-event management/card/preview targets, native-share cancellation/copy fallback and guest-safe potluck toolbars. The combined run completed the first four suites; its fifth suite hit an initial page-load timeout and passed on an isolated rerun without increased timeouts. Screenshots were inspected and footer clearance is asserted at phone/desktop widths. Required GitHub validation remains the merge gate.

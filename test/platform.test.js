@@ -397,12 +397,8 @@ test("children, shared addresses, exact invitations and adult/child totals", asy
     },
   });
   assert.equal(result.status, 200);
-  assert.deepEqual(result.body.totals, {
-    invited: 3,
-    attending: 2,
-    declined: 0,
-    noResponse: 1,
-  });
+  assert.deepEqual(result.body.totals, { attending: 2 });
+  assert.equal(result.body.totals.invited, undefined);
   const dash = (
     await f.request(`/api/host/events/${event.id}/dashboard`, {
       cookie: h.cookie,

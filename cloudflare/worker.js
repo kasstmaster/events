@@ -80,7 +80,7 @@ export class EventsDatabase extends DurableObject {
   async scheduleRouting() {
     const tasks = [
       this.store.one(
-        "SELECT id FROM records WHERE kind='family-record' AND json_extract(body,'$.type')='chore' AND coalesce(json_extract(body,'$.cancelled'),0)=0 LIMIT 1",
+        "SELECT id FROM records WHERE kind='family-record' AND json_extract(body,'$.type') IN ('chore','task') AND coalesce(json_extract(body,'$.cancelled'),0)=0 LIMIT 1",
       )
         ? Date.now() + 60000
         : null,
@@ -121,7 +121,7 @@ export class EventsDatabase extends DurableObject {
         !remaining &&
         this.env.SMS_ENABLED !== "true" &&
         !this.store.one(
-          "SELECT id FROM records WHERE kind='family-record' AND json_extract(body,'$.type')='chore' AND coalesce(json_extract(body,'$.cancelled'),0)=0 LIMIT 1",
+          "SELECT id FROM records WHERE kind='family-record' AND json_extract(body,'$.type') IN ('chore','task') AND coalesce(json_extract(body,'$.cancelled'),0)=0 LIMIT 1",
         )
       )
         await this.ctx.storage.deleteAlarm();
@@ -186,6 +186,7 @@ export class EventsDatabase extends DurableObject {
             "/family-ui.js",
             "/default-examples.js",
             "/address-picker.js",
+            "/browse-ui.js",
             "/api/public/context",
           ].includes(path))
       )
@@ -244,14 +245,7 @@ export class EventsDatabase extends DurableObject {
     }
     const response = await serve(request, {
       store,
-      env: {
-        ...this.env,
-        recipeTransport: (url) =>
-          fetch(url, {
-            redirect: "manual",
-            signal: AbortSignal.timeout(10000),
-          }),
-      },
+      env: this.env,
       setupSecret: this.env.ADMIN_SETUP_TOKEN || "",
       setupEmail: this.env.BOOTSTRAP_ADMIN_EMAIL || "",
       requireAdmin: true,

@@ -32,10 +32,17 @@ export function requireManager(member) {
     fail(403, "A household owner or administrator is required.");
 }
 export function canRead(store, member, record, seen = new Set()) {
-  if (!record || (record.household && record.household !== member.household))
+  if (
+    !record ||
+    !["folder", "list", "task", "record", "chore"].includes(record.type) ||
+    (record.household && record.household !== member.household)
+  )
     return false;
   if (member.role !== "kid") return true;
-  if (record.type === "chore" && record.assignees?.includes(member.id))
+  if (
+    ["task", "chore"].includes(record.type) &&
+    record.assignees?.includes(member.id)
+  )
     return true;
   if (!record.childAccess?.includes(member.id)) return false;
   if (record.folder) {
