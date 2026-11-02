@@ -110,6 +110,10 @@ export function finalizeDeletion(store, job) {
       "DELETE FROM guest_identity_history WHERE household=?",
       job.household,
     );
+    store.run(
+      "DELETE FROM guest_access_links WHERE household=?",
+      job.household,
+    );
     store.run("DELETE FROM family_members WHERE household=?", job.household);
     store.run("DELETE FROM family_owners WHERE household=?", job.household);
     for (const request of store

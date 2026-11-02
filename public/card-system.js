@@ -12,6 +12,7 @@ export const cardFields = [
   "recipient.first",
   "recipient.last",
   "recipient.address",
+  "recipient.inviteCode",
   "qr",
 ];
 export const cardFonts = [
@@ -48,7 +49,7 @@ export function renderCard(card, context = {}, qr = "") {
     .map((e) => {
       if (e.field === "qr")
         return qr
-          ? `<svg x="${e.x}" y="${e.y}" width="${e.width}" height="${e.height}" viewBox="0 0 120 120"><rect width="120" height="120" fill="#fff"/><image href="${escapeCard(qr)}" x="6" y="6" width="108" height="108"/></svg>`
+          ? `<svg data-card-element="${card.elements.indexOf(e)}" x="${e.x}" y="${e.y}" width="${e.width}" height="${e.height}" viewBox="0 0 120 120"><rect width="120" height="120" fill="#fff"/><image href="${escapeCard(qr)}" x="6" y="6" width="108" height="108"/></svg>`
           : "";
       const words = cardTextLines(
         populateField(e, context),
@@ -62,7 +63,7 @@ export function renderCard(card, context = {}, qr = "") {
             ? e.x - e.width
             : e.x;
       const clip = "field-" + card.elements.indexOf(e);
-      return `<defs><clipPath id="${clip}"><rect x="${left}" y="${e.y}" width="${e.width}" height="${e.height}"/></clipPath></defs><text clip-path="url(#${clip})" x="${e.x}" y="${e.y + e.fontSize}" fill="${e.color}" font-family="${escapeCard(e.font)}" font-size="${e.fontSize}" font-weight="${e.bold ? "700" : "400"}" text-anchor="${e.align === "center" ? "middle" : e.align === "right" ? "end" : "start"}">${words.map((line, index) => `<tspan x="${e.x}" dy="${index ? "1.3em" : 0}">${escapeCard(line)}</tspan>`).join("")}</text>`;
+      return `<g data-card-element="${card.elements.indexOf(e)}"><defs><clipPath id="${clip}"><rect x="${left}" y="${e.y}" width="${e.width}" height="${e.height}"/></clipPath></defs><text clip-path="url(#${clip})" x="${e.x}" y="${e.y + e.fontSize}" fill="${e.color}" font-family="${escapeCard(e.font)}" font-size="${e.fontSize}" font-weight="${e.bold ? "700" : "400"}" text-anchor="${e.align === "center" ? "middle" : e.align === "right" ? "end" : "start"}">${words.map((line, index) => `<tspan x="${e.x}" dy="${index ? "1.3em" : 0}">${escapeCard(line)}</tspan>`).join("")}</text></g>`;
     })
     .join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${card.width}" height="${card.height}" viewBox="0 0 ${card.width} ${card.height}" role="img" aria-label="${escapeCard(card.name)}"><rect width="100%" height="100%" fill="${card.color}"/>${background}${fields}</svg>`;
@@ -163,5 +164,44 @@ export const cardFieldLabels = {
   "recipient.first": "Recipient first name",
   "recipient.last": "Recipient last name",
   "recipient.address": "Recipient address",
+  "recipient.inviteCode": "Address invite code",
   qr: "QR code",
 };
+
+export function cardBounds(element) {
+  const offset =
+    element.field === "qr"
+      ? 0
+      : element.align === "center"
+        ? element.width / 2
+        : element.align === "right"
+          ? element.width
+          : 0;
+  return {
+    left: element.x - offset,
+    top: element.y,
+    width: element.width,
+    height: element.height,
+    offset,
+  };
+}
+export function snapCardElement(element, canvas, tolerance = 12) {
+  const bounds = cardBounds(element),
+    guides = {};
+  const snap = (value, size, total, axis) => {
+    const candidates = [0, (total - size) / 2, total - size];
+    const nearest = candidates.reduce((a, b) =>
+      Math.abs(b - value) < Math.abs(a - value) ? b : a,
+    );
+    if (Math.abs(nearest - value) <= tolerance) {
+      value = nearest;
+      guides[axis] =
+        nearest === 0 ? 0 : nearest === total - size ? total : total / 2;
+    }
+    return Math.max(0, Math.min(Math.max(0, total - size), value));
+  };
+  element.x =
+    snap(bounds.left, bounds.width, canvas.width, "x") + bounds.offset;
+  element.y = snap(bounds.top, bounds.height, canvas.height, "y");
+  return guides;
+}

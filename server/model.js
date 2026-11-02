@@ -125,6 +125,8 @@ export class Store {
       CREATE TABLE IF NOT EXISTS guest_identity_links(household TEXT NOT NULL,guest TEXT NOT NULL,identity TEXT NOT NULL,linked INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(household,guest));
       CREATE INDEX IF NOT EXISTS identity_guests ON guest_identity_links(identity);
       CREATE TABLE IF NOT EXISTS guest_identity_history(household TEXT NOT NULL,guest TEXT NOT NULL,position INTEGER NOT NULL,identity TEXT NOT NULL,linked INTEGER NOT NULL,PRIMARY KEY(household,guest,position));
+      CREATE TABLE IF NOT EXISTS guest_access_links(household TEXT NOT NULL,guest TEXT NOT NULL,address TEXT NOT NULL,credential TEXT NOT NULL,legacy_hash TEXT,PRIMARY KEY(household,guest));
+      CREATE INDEX IF NOT EXISTS guest_access_credential ON guest_access_links(credential);
       CREATE TABLE IF NOT EXISTS guest_identity_sessions(token TEXT PRIMARY KEY,identity TEXT NOT NULL,entry_household TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS family_members(id TEXT PRIMARY KEY,household TEXT NOT NULL,login TEXT NOT NULL COLLATE NOCASE,name TEXT NOT NULL,password TEXT NOT NULL,role TEXT NOT NULL,disabled INTEGER NOT NULL DEFAULT 0,version INTEGER NOT NULL DEFAULT 1,UNIQUE(household,login));
       CREATE TABLE IF NOT EXISTS family_owners(household TEXT PRIMARY KEY,owner TEXT NOT NULL);
@@ -133,6 +135,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS approvals(email TEXT PRIMARY KEY, created TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL, id TEXT NOT NULL, household TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, body TEXT NOT NULL, PRIMARY KEY(kind,id));
       CREATE INDEX IF NOT EXISTS tenant_records ON records(household,kind);
+      CREATE UNIQUE INDEX IF NOT EXISTS guest_address_code ON records(json_extract(body,'$.code')) WHERE kind='guest-access-code';
       CREATE UNIQUE INDEX IF NOT EXISTS guest_code_hash ON records(json_extract(body,'$.codeHash')) WHERE kind='guest-identity';
       CREATE UNIQUE INDEX IF NOT EXISTS household_slugs ON records(json_extract(body,'$.slug')) WHERE kind='household';
       CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user TEXT, household TEXT, guest TEXT, role TEXT NOT NULL, expires INTEGER NOT NULL);
@@ -753,7 +756,7 @@ export class Store {
       response: response || { version: 0, attendance: {}, claims: {} },
     };
   }
-  saveResponse(event, session, input) {
+  saveResponse(event, session, input, { partial = false } = {}) {
     return this.transaction(() => {
       const current = this.get("event", event.id, session.household);
       if (!current?.invited.includes(session.guest))
@@ -778,12 +781,19 @@ export class Store {
         fail(400, "Invalid RSVP members.");
       const attendance = {};
       for (const member of members) {
-        if (!["yes", "no"].includes(input.attendance[member.id]))
+        const choice =
+          partial &&
+          (input.attendance[member.id] === undefined ||
+            input.attendance[member.id] === "")
+            ? previous?.attendance[member.id]
+            : input.attendance[member.id];
+        if (partial && choice === undefined) continue;
+        if (!["yes", "no"].includes(choice))
           fail(400, "Choose attendance for each invited person.");
-        attendance[member.id] = input.attendance[member.id];
+        attendance[member.id] = choice;
       }
       if (
-        attendance[session.guest] === "no" &&
+        attendance[session.guest] !== "yes" &&
         members.some((m) => m.parent && attendance[m.id] === "yes")
       )
         fail(400, "Children must attend with their designated adult.");

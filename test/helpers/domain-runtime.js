@@ -97,6 +97,8 @@ export async function domainRuntime({
                   "card-system.js",
                   "reminder-time.js",
                   "family-ui.js",
+                  "default-examples.js",
+                  "address-picker.js",
                 ].includes(file)
               )
                 return new Response("Missing", { status: 404 });

@@ -1,3 +1,5 @@
+import { addressPicker } from "/address-picker.js";
+import { exampleState, annotateExample } from "/default-examples.js";
 import { familyTools } from "/family-ui.js";
 import { ui, M, C, H, configureCopy } from "/ui-runtime.js";
 import { featureTools } from "/editor-tools.js";
@@ -64,7 +66,7 @@ const dateLabel = (value) =>
         timeZone: "UTC",
       }).format(new Date(value + "T12:00:00Z"))
     : C("Date to come");
-function applyDesign(settings = {}) {
+function applyDesign(settings = {}, target = document.documentElement) {
   const d = {
     ...roleDefaults,
     ...state.data?.defaults,
@@ -72,7 +74,7 @@ function applyDesign(settings = {}) {
     ...settings,
   };
   if (!d.background) return;
-  const root = document.documentElement.style;
+  const root = target.style;
   root.setProperty("--bg", d.background);
   root.setProperty(
     "--panel",
@@ -120,7 +122,9 @@ function applyDesign(settings = {}) {
 }
 let loadGeneration = 0;
 const isEditing = () =>
-  $("#editor").open || document.activeElement?.matches("input,select,textarea");
+  state.view === "card-editor" ||
+  $("#editor").open ||
+  document.activeElement?.matches("input,select,textarea");
 async function load({ background = false } = {}) {
   if (background && isEditing()) return;
   const generation = ++loadGeneration;
@@ -253,19 +257,19 @@ async function checkAddress(form) {
 const householdShareUrl = () =>
   state.data.household.shareUrl ||
   location.origin + "/h/" + state.data.household.slug;
-function authPage() {
+function authPage(designTarget) {
   if (
     state.setup?.required ||
     (location.pathname === "/setup" && state.view !== "login")
   )
     return setupPage();
   const household = state.publicHousehold;
-  if (household) applyDesign(household.design);
+  if (household) applyDesign(household.design, designTarget);
   if (
     household &&
     !["login", "register", "family-login"].includes(state.view)
   ) {
-    return ui`<section class="auth"><div class="panel"><p class="eyebrow">You’re in good company</p><h1>${escape(household.name)}</h1><p>Welcome. Enter your name to see your invitations.</p><form data-form="guest-login" class="stack">${field(H("First name"), "first", "", "text", 'required autocomplete="given-name" maxlength="80"')}${field(H("Last name"), "last", "", "text", 'required autocomplete="family-name" maxlength="80"')}${field(H("Invite Code"), "inviteCode", "", "password", 'required autocomplete="off" maxlength="100"')}<div id="guest-suffix" hidden>${field(H("Suffix, if applicable"), "suffix", "", "text", 'autocomplete="honorific-suffix" maxlength="30" placeholder="Jr., Sr., III…"')}</div><p class="form-error" role="alert"></p><button>See my invitations</button></form><p class="small muted">Use the name your host has on file. If you share an identical name, ask your host for help.</p></div><p class="small centered">${button("host-login", H("Host Login"), "", "quiet")}${button("family-login", H("Family member sign-in"))}${button("guest-code-claim", H("Use my existing permanent code"))}</p></section>`;
+    return ui`<section class="auth"><div class="panel"><p class="eyebrow">You’re in good company</p><h1>${escape(household.name)}</h1><p>Welcome. Enter your name to see your invitations.</p><form data-form="guest-login" class="stack">${field(H("First name"), "first", "", "text", 'required autocomplete="given-name" maxlength="80"')}${field(H("Last name"), "last", "", "text", 'required autocomplete="family-name" maxlength="80"')}${field(H("Invite Code"), "inviteCode", "", "password", 'required autocomplete="off" inputmode="numeric" placeholder="4-digit code" maxlength="100"')}<div id="guest-suffix" hidden>${field(H("Suffix, if applicable"), "suffix", "", "text", 'autocomplete="honorific-suffix" maxlength="30" placeholder="Jr., Sr., III…"')}</div><p class="form-error" role="alert"></p><button>See my invitations</button></form><p class="small muted">Use the name your host has on file. If you share an identical name, ask your host for help.</p></div><p class="small centered">${button("host-login", H("Host Login"), "", "quiet")}${button("family-login", H("Family member sign-in"))}${button("guest-code-claim", H("Link another invitation"))}</p></section>`;
   }
   if (state.view === "family-login" && household)
     return ui`<section class="auth"><div class="panel"><h1>${escape(household.name)}</h1><h2>Family member sign-in</h2><form data-form="family-login">${field(H("Sign-in name"), "login", "", "text", 'required autocomplete="username"')}${field(H("Password"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Sign in</button></form></div></section>`;
@@ -313,7 +317,7 @@ function eventPage(event) {
     own
       ? ui`<section class="panel" data-event-section="personal"><p class="eyebrow">Your plans</p><h2>Your RSVP & items</h2>${
           own.version
-            ? ui`<ul>${event.members.map((m) => ui`<li>${escape(fullName(m))}: ${own.attendance[m.id] === "yes" ? C("Attending") : own.attendance[m.id] === "no" ? C("Not attending") : C("No response")}</li>`).join("")}</ul><h3>You’re bringing</h3>${
+            ? ui`<ul>${event.members.map((m) => ui`<li>${escape(fullName(m))}: ${(event.partyAttendance || own.attendance)[m.id] === "yes" ? C("Attending") : (event.partyAttendance || own.attendance)[m.id] === "no" ? C("Not attending") : C("No response")}</li>`).join("")}</ul><h3>You’re bringing</h3>${
                 Object.entries(own.claims).length
                   ? ui`<ul>${Object.entries(own.claims)
                       .map(
@@ -332,7 +336,8 @@ function eventPage(event) {
         "</section>"
   }</div>`;
 }
-function render() {
+function render(target = $("#app"), example = false) {
+  const designTarget = example ? target : document.documentElement;
   const activeEvent = state.data?.events?.find(
     (e) => (e.invitationKey || e.id) === state.event,
   );
@@ -343,13 +348,17 @@ function render() {
       design: state.publicHousehold?.design,
     });
   configureCopy(active);
-  applyDesign(active.design);
+  applyDesign(active.design, designTarget);
   const role = state.session?.role;
   let content = "",
     event = null;
-  if (!role) content = authPage();
+  if (state.view === "card-editor" && ["host", "admin"].includes(role))
+    content = tools.cardEditorPage();
+  else if (!role) content = authPage(designTarget);
   else if (role === "family" || state.view === "family")
-    content = family.render();
+    content = example
+      ? family.renderExample(state.exampleRecord)
+      : family.render();
   else if (role === "admin") {
     content = ui`<section class="hero"><p class="eyebrow">Administrator</p><h1>Open the door<br>for your next host.</h1><p>Approve email addresses and manage shared invitation artwork. No emails are sent.</p></section><div class="grid">${tools.adminPanel()}<section class="panel"><h2>Approved emails</h2><form data-form="approval">${field(H("Email address"), "email", "", "email", "required")}<p class="form-error" role="alert"></p><button>Approve host</button></form><ul class="guest-list">${state.data.approvals.map((a) => ui`<li class="row between"><span>${escape(a.email)}</span>${button("revoke", H("Remove"), `data-email="${escape(a.email)}"`, "quiet")}</li>`).join("") || M('<li class="muted">No pending approvals.</li>')}</ul></section><section class="panel"><h2>Cards & invitation templates</h2><p>Shared templates for invitations, thank-you cards and holiday cards.</p>${button("cards", H("Manage card templates"))}</section><section class="panel"><h2>Registered hosts</h2><ul>${state.data.hosts.map((h) => ui`<li>${escape(h.email)} ${button("recover-owner", H("Recover owner sign-in"), `data-id="${h.id}"`)}${button("delete-host", H("Delete account"), `data-id="${h.id}"`, "danger")}</li>`).join("") || M("<li>No hosts yet.</li>")}</ul><p class="small muted">Host guest records and RSVPs are not included here.</p></section></div>`;
   } else {
@@ -364,24 +373,33 @@ function render() {
         { design: state.data.household.design },
         { design: event?.design },
       );
-    applyDesign(state.activeUI.design);
+    applyDesign(state.activeUI.design, designTarget);
     if (event) content = eventPage(event);
     else {
       state.event = null;
       content = ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : H("Welcome,") + " " + escape(state.data.guest.first)}</p><h1>${escape(state.data.household.name)}</h1><p class="muted">${role === "host" ? C("A familiar table. A new memory. Make room for your next gathering.") : C("Your invitations, all in one place.")}</p>${role === "host" ? ui`<div class="row">${button("household", H("Edit household"), "", "")}${button("new-event", H("Create event"), 'aria-label="Create event"', "")}${button("addresses", H("Address book"))}${button("share", H("Share household link"))}${button("cards", H("Cards & templates"))}${button("family-workspace", H("Family workspace"))}</div>` : ""}</section>${role === "guest" ? button("guest-link-requests", H("Review shared guest links")) : ""}${state.data.events.length ? ui`<section class="grid" aria-label="Events">${state.data.events.map(eventCard).join("")}</section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
     }
   }
-  $("#app").innerHTML =
-    ui`<header><a class="brand" href="/" data-action="home">gather<span>＊</span></a>${state.preview ? M('<span class="pill">Read-only guest preview</span>') : !role ? M('<span class="eyebrow">Come as you are</span>') : ""}</header><main id="main">${content}${role ? ui`<p id="sync-status" class="connection">Updated ${state.lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · syncs automatically</p>` : ""}</main>${role || state.preview ? toolbar(event) : ""}`;
+  target.innerHTML = ui`<header><a class="brand" href="/" data-action="home">gather<span>＊</span></a>${state.preview ? M('<span class="pill">Read-only guest preview</span>') : !role ? M('<span class="eyebrow">Come as you are</span>') : ""}</header><main id="main">${content}${role && state.view !== "card-editor" ? ui`<p id="sync-status" class="connection">Updated ${state.lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · syncs automatically</p>` : ""}</main>${state.view !== "card-editor" && (role || state.preview) ? toolbar(event) : ""}`;
+  if (!example)
+    document.body.classList.toggle(
+      "card-editor-active",
+      state.view === "card-editor",
+    );
+  if (state.view === "card-editor") {
+    tools.mountCardEditor();
+    return;
+  }
   if (role === "host" && !event && state.view !== "family") {
     const panel = document.createElement("section");
     panel.className = "panel private-notes";
     panel.innerHTML = ui`<h2>Private household notes</h2><form data-form="household-notes">${area(H("Notes"), "notes", state.data.household.notes || "", 'maxlength="20000"')}<p class="form-error" role="alert"></p><button>Save private notes</button></form>`;
-    document.querySelector("#main .hero")?.after(panel);
+    target.querySelector("#main .hero")?.after(panel);
   }
   if (role === "guest" && event)
-    document.querySelector("#main [data-event-section=menus]")?.remove();
-  if (role !== "family" && state.view !== "family") applyLayoutDOM(event, role);
+    target.querySelector("#main [data-event-section=menus]")?.remove();
+  if (role !== "family" && state.view !== "family")
+    applyLayoutDOM(event, role, target);
 }
 function modal(title, content, form = "", save = C("Save")) {
   const dialog = $("#editor");
@@ -440,6 +458,7 @@ const guestMatchInput = (form) => ({
   last: form.elements.last.value,
   suffix: form.elements.suffix.value,
   address: form.elements.address.value,
+  addressLines: form.elements.addressLines?.value,
   existingId: state.editingGuest?.id,
 });
 async function findGuestMatches(form, force = false) {
@@ -488,15 +507,16 @@ function guestEditor(guest = {}) {
   state.editingGuest = guest;
   modal(
     guest.id ? C("Edit guest") : C("Add guest"),
-    ui`<div class="form-grid">${field(H("First name"), "first", guest.first, "text", 'required maxlength="80"')}${field(H("Last name"), "last", guest.last, "text", 'required maxlength="80"')}</div>${field(H("Suffix (optional)"), "suffix", guest.suffix, "text", 'maxlength="30"')}${field(H("Phone number (international)"), "phone", guest.phone || "", "tel", 'placeholder="+15551234567"')}${area(H("Private guest notes"), "notes", guest.notes || "", 'maxlength="20000"')}<label class="check"><input name="smsConsent" type="checkbox" ${guest.smsConsent ? "checked" : ""}>This adult has consented to event text reminders. They may reply STOP to opt out.</label>${select(H("Adult or child"), "parent", [["", C("Adult guest")], ...state.data.guests.filter((g) => !g.parent && g.id !== guest.id).map((g) => [g.id, "Child of " + fullName(g)])], guest.parent || "")}${select(H("Shared address (optional)"), "address", [["", C("No address")], ...state.data.addresses.map((a) => [a.id, a.label])], guest.address || "")}<p class="small muted">Children RSVP through their designated adult. Guests with identical first, last and suffix names cannot sign in until corrected.</p>`,
+    ui`<div class="form-grid">${field(H("First name"), "first", guest.first, "text", 'required maxlength="80"')}${field(H("Last name"), "last", guest.last, "text", 'required maxlength="80"')}</div>${field(H("Suffix (optional)"), "suffix", guest.suffix, "text", 'maxlength="30"')}${field(H("Phone number (international)"), "phone", guest.phone || "", "tel", 'placeholder="+15551234567"')}${area(H("Private guest notes"), "notes", guest.notes || "", 'maxlength="20000"')}<label class="check"><input name="smsConsent" type="checkbox" ${guest.smsConsent ? "checked" : ""}>This adult has consented to event text reminders. They may reply STOP to opt out.</label>${select(H("Adult or child"), "parent", [["", C("Adult guest")], ...state.data.guests.filter((g) => !g.parent && g.id !== guest.id).map((g) => [g.id, "Child of " + fullName(g)])], guest.parent || "")}${guestAddresses.markup(guest)}<p class="small muted">Children RSVP through their designated adult. Guests with identical first, last and suffix names cannot sign in until corrected.</p>`,
     "guest",
   );
   document
     .querySelector("#editor .dialog-body")
     .insertAdjacentHTML(
       "beforeend",
-      ui`<h3>Shared guest identity</h3>${guest.inviteCode ? ui`<p>Permanent invite code · share privately</p><code>${escape(guest.inviteCode)}</code>` : guest.linked ? "<p>This guest uses their existing permanent code. It is not exposed to this household.</p>" : ""}${button("guest-find-matches", H("Check for a shared guest"))}<div id="guest-matches"></div>${guest.linked ? button("guest-unlink", H("Correct a mistaken shared link"), `data-id="${guest.id}"`) : ""}`,
+      ui`<h3>Shared guest identity</h3>${guest.inviteCode ? ui`<p>Address invite code · share privately</p><code>${escape(guest.inviteCode)}</code>` : guest.linked ? "<p>This guest uses their address’s invite code.</p>" : ""}${button("guest-find-matches", H("Check for a shared guest"))}<div id="guest-matches"></div>${guest.linked ? button("guest-unlink", H("Correct a mistaken shared link"), `data-id="${guest.id}"`) : ""}`,
     );
+  guestAddresses.mount();
   queueGuestMatches(document.querySelector("form[data-form=guest]"), 0);
 }
 function guestList() {
@@ -507,21 +527,6 @@ function guestList() {
 }
 function addresses() {
   guestList();
-  document
-    .querySelector("#editor .dialog-body")
-    .insertAdjacentHTML(
-      "beforeend",
-      ui`<h3>Shared addresses</h3>${button("add-address", H("＋ Add address"), "", "")}<ul class="guest-list">${state.data.addresses.map((a) => ui`<li><strong>${escape(a.label)}</strong><p class="event-details">${escape(a.lines)}</p>${button("edit-address", H("Edit"), `data-id="${a.id}"`, "quiet")}${button("delete-address", H("Remove"), `data-id="${a.id}"`, "quiet")}</li>`).join("")}</ul>`,
-    );
-}
-
-function addressEditor(address = {}) {
-  state.editingAddress = address;
-  modal(
-    address.id ? C("Edit address") : C("Add address"),
-    `${field(H("Address label"), "label", address.label, "text", 'required maxlength="100" placeholder="The Doe home"')}${area(H("Mailing address (optional)"), "lines", address.lines, 'maxlength="500"')}${field(H("Contact phone (optional)"), "phone", address.phone || "", "tel", 'placeholder="+15551234567"')}`,
-    "address",
-  );
 }
 function menuRow(item = {}) {
   return ui`<div class="menu-row" data-menu-id="${item.id || crypto.randomUUID()}">${field(H("Item name"), "menuName", item.name || "", "text", 'required maxlength="160"')}<div class="row">${select(
@@ -578,12 +583,12 @@ function rsvp() {
           escape(fullName(m)) + (m.parent ? C(" · child") : ""),
           "attendance:" + m.id,
           [
-            ["", C("Choose…")],
+            ["", C("Skip · keep existing response")],
             ["yes", C("Attending")],
             ["no", C("Not attending")],
           ],
-          event.response.attendance[m.id] || "",
-          "required",
+          (event.partyAttendance || event.response.attendance)[m.id] || "",
+          "",
         ),
       )
       .join("")}</fieldset><fieldset><legend>Something to bring</legend>${
@@ -645,7 +650,7 @@ async function share() {
   const link = householdShareUrl();
   modal(
     C("One link for every gathering"),
-    ui`<p>${escape(state.data.household.name)}</p><img class="qr" src="/api/host/qr" alt="Household sign-in QR code"><p class="share-link">${escape(link)}</p><div class="row">${button("copy-link", H("Copy link"))}${button("native-share", H("Share link"))}<a class="button secondary" href="/api/host/qr" download="household-qr.svg">Download QR</a><a class="button secondary" href="${escape(link)}" target="_blank" rel="noopener">Open guest page</a></div><p class="small muted">Your link stays the same when you add events or change your design. A new web address is used after activation. Existing /h/ links always keep working. Guests sign in with their names and permanent invite code.</p>`,
+    ui`<p>${escape(state.data.household.name)}</p><img class="qr" src="/api/host/qr" alt="Household sign-in QR code"><p class="share-link">${escape(link)}</p><div class="row">${button("copy-link", H("Copy link"))}${button("native-share", H("Share link"))}<a class="button secondary" href="/api/host/qr" download="household-qr.svg">Download QR</a><a class="button secondary" href="${escape(link)}" target="_blank" rel="noopener">Open guest page</a></div><p class="small muted">Your link stays the same when you add events or change your design. A new web address is used after activation. Existing /h/ links always keep working. Guests sign in with their names and address invite code.</p>`,
   );
 }
 async function fileData(input) {
@@ -687,7 +692,7 @@ async function submit(form) {
     closeModal();
     notify(
       C(
-        "Your permanent code now includes this relationship. Sign in with that code.",
+        "Your invitations are linked. Sign in using your current address code.",
       ),
     );
     return;
@@ -769,7 +774,8 @@ async function submit(form) {
     await saved("Appearance saved.");
     return;
   }
-  if (kind === "guest" || kind === "address") {
+  if (kind === "guest") {
+    const addressDraft = guestAddresses.value(form);
     if (kind === "guest" && !(await findGuestMatches(form)))
       throw new Error(
         "Choose Use Existing Guest or Create Separate Guest before saving. Existing shared links are corrected with the separate confirmation action.",
@@ -783,6 +789,7 @@ async function submit(form) {
         kind === "guest"
           ? {
               ...value,
+              addressDraft,
               smsConsent: data.has("smsConsent"),
               matchTicket: form.dataset.matchTicket || undefined,
             }
@@ -843,6 +850,7 @@ async function submit(form) {
       data: {
         version: state.editingResponse.version,
         guestEntry: e.guestEntry,
+        partyVersions: e.partyVersions,
         attendance,
         claims,
         customItems: value.customItems
@@ -943,6 +951,7 @@ document.addEventListener("click", async (event) => {
   const action = target.dataset.action,
     key = target.dataset.id;
   try {
+    if (guestAddresses.action(action, target)) return;
     if (
       state.preview &&
       !["exit-preview", "open-event", "home", "print", "close"].includes(action)
@@ -952,8 +961,8 @@ document.addEventListener("click", async (event) => {
     }
     if (action === "guest-code-claim") {
       modal(
-        C("Keep my permanent invite code"),
-        ui`<p>Confirm your existing permanent code and the new code provided by this household. Only this guest-book relationship is linked; private host records stay separate.</p>${field(H("First name"), "first", "", "text", "required")}${field(H("Last name"), "last", "", "text", "required")}${field(H("Suffix, if applicable"), "suffix")}${field(H("New invitation code"), "inviteCode", "", "password", "required")}${field(H("Existing permanent code"), "permanentCode", "", "password", "required")}`,
+        C("Link another invitation"),
+        ui`<p>Confirm the address codes for both invitations using your own name. Only this guest-book relationship is linked; private host records stay separate.</p>${field(H("First name"), "first", "", "text", "required")}${field(H("Last name"), "last", "", "text", "required")}${field(H("Suffix, if applicable"), "suffix")}${field(H("New invitation code"), "inviteCode", "", "password", "required")}${field(H("Other invitation’s address code"), "permanentCode", "", "password", "required")}`,
         "guest-code-claim",
       );
       return;
@@ -1069,7 +1078,7 @@ document.addEventListener("click", async (event) => {
       const g = state.data.guests.find((g) => g.id === key);
       if (
         !confirm(
-          "Restore this entry’s previous guest identity and code? Affected sessions will be revoked. Other hosts keep their records and codes.",
+          "Restore this entry’s previous guest identity? Its address code stays the same. Affected sessions will be revoked. Other hosts keep their records and codes.",
         )
       )
         return;
@@ -1078,7 +1087,9 @@ document.addEventListener("click", async (event) => {
         version: g.version,
         data: { confirm: fullName(g) },
       });
-      await saved("Guest link corrected. Review the restored invite code.");
+      await saved(
+        "Guest link corrected. This address’s invite code is unchanged.",
+      );
       return;
     }
     if (action === "guests") {
@@ -1097,14 +1108,7 @@ document.addEventListener("click", async (event) => {
       addresses();
       return;
     }
-    if (action === "add-address") {
-      addressEditor();
-      return;
-    }
-    if (action === "edit-address") {
-      addressEditor(state.data.addresses.find((a) => a.id === key));
-      return;
-    }
+
     if (action === "add-registry") {
       $("#registry-rows").insertAdjacentHTML("beforeend", registryRow());
       return;
@@ -1258,6 +1262,16 @@ document.addEventListener("click", async (event) => {
     } else notify(error.message);
   }
 });
+const guestAddresses = addressPicker({
+  state,
+  field,
+  area,
+  button,
+  escape,
+  onChange: queueGuestMatches,
+});
+guestAddresses.bind();
+document.addEventListener("input", (event) => guestAddresses.input(event));
 const family = familyTools({
   state,
   api,
@@ -1287,6 +1301,8 @@ const tools = featureTools({
   load,
   fileData,
   selectedEvent,
+  renderDefaultExample,
+  render,
 });
 tools.bind();
 await load();
@@ -1312,17 +1328,21 @@ async function eventDesign(form, event) {
       result[key] = value;
   return result;
 }
-function applyLayoutDOM(event, role) {
+function applyLayoutDOM(event, role, target = $("#app")) {
   const config = event?.ui || state.data?.ui || state.platformUI;
   if (!config) return;
-  const main = document.querySelector("#main"),
-    move = (container, items, keys) => {
+  const main = target.querySelector("#main"),
+    move = (container, items, keys, layout) => {
       if (!container) return;
+      if (layout) container.dataset.layout = layout;
       for (const item of order(
         items.filter((i) => i.element),
         keys || [],
-      ))
+      )) {
+        if (layout && keys?.includes(item.id))
+          item.element.dataset.layoutItem = item.id;
         container.append(item.element);
+      }
     };
   for (const intro of main.querySelectorAll(".hero,.auth,.auth .panel")) {
     const children = [...intro.children];
@@ -1337,6 +1357,8 @@ function applyLayoutDOM(event, role) {
       },
     ].filter((i) => i.element);
     if (items.some((item) => item.id === "title" || item.id === "eyebrow")) {
+      intro.dataset.layout = "introText";
+      for (const item of items) item.element.dataset.layoutItem = item.id;
       const anchor = document.createComment("intro order");
       intro.insertBefore(anchor, children[0]);
       for (const item of order(items, config.layouts.introText || []))
@@ -1359,6 +1381,7 @@ function applyLayoutDOM(event, role) {
         { id: "deadline", element: info?.querySelector(".event-deadline") },
       ],
       config.layouts.eventInformation,
+      "eventInformation",
     );
     const sections = grid ? [...grid.children] : [];
     if (grid) grid.remove();
@@ -1379,6 +1402,7 @@ function applyLayoutDOM(event, role) {
         },
       ],
       config.layouts.event,
+      "event",
     );
     if (actions && role === "guest") {
       const rsvp = actions.querySelector("[data-action=rsvp]"),
@@ -1411,7 +1435,7 @@ function applyLayoutDOM(event, role) {
                       : el.dataset.action || ""),
         element: el,
       }));
-      move(actions, list, config.layouts.eventButtons);
+      move(actions, list, config.layouts.eventButtons, "eventButtons");
     }
   } else if (role === "host" || role === "guest") {
     const hero = main.querySelector(".hero"),
@@ -1424,7 +1448,7 @@ function applyLayoutDOM(event, role) {
         id: el.dataset.action,
         element: el,
       }));
-      move(actions, items, config.layouts.homeButtons);
+      move(actions, items, config.layouts.homeButtons, "homeButtons");
     }
     move(
       main,
@@ -1435,11 +1459,14 @@ function applyLayoutDOM(event, role) {
         { id: "events", element: events },
       ],
       config.layouts[role === "host" ? "hostHome" : "guestHome"],
+      role === "host" ? "hostHome" : "guestHome",
     );
   } else if (!role) {
     const panel = main.querySelector(".auth .panel"),
       form = panel?.querySelector("form");
     if (panel && form) {
+      panel.dataset.layout = "login";
+      form.dataset.layoutItem = "form";
       form.dataset.layoutKey = "form";
       for (const el of [...panel.children])
         if (el !== form) el.dataset.layoutKey = "intro";
@@ -1464,7 +1491,27 @@ function applyLayoutDOM(event, role) {
           { id: "hosts", element: panels[3] },
         ],
         config.layouts.admin,
+        "admin",
       );
     }
+  }
+}
+
+// Render synthetic examples through exactly the same page functions and DOM layout pass.
+// Synchronous state substitution is restored before any event/network callback can run.
+function renderDefaultExample(view, config) {
+  const previous = { ...state };
+  const active = state.activeUI || state.data?.ui || state.platformUI;
+  const root = document.createElement("div");
+  root.id = "app";
+  try {
+    Object.assign(state, exampleState(view, config));
+    render(root, true);
+    annotateExample(root, config);
+    return { markup: root.innerHTML, style: root.getAttribute("style") || "" };
+  } finally {
+    for (const key of Object.keys(state)) delete state[key];
+    Object.assign(state, previous);
+    configureCopy(active);
   }
 }

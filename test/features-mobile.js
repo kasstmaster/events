@@ -75,7 +75,10 @@ async function device(width) {
     return route.continue();
   });
   const page = await context.newPage();
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => {
+    errors.push(error.message);
+    console.error("Page error:", error.message);
+  });
   page.setDefaultTimeout(10000);
   return { context, page };
 }
@@ -108,17 +111,17 @@ try {
     await admin.page.locator("#visual-inspector:visible").count(),
     0,
   );
-  await admin.page.locator("#page-example h1").dblclick();
+  const example = admin.page.frameLocator("#page-example-frame");
+  await example.locator("h1").dblclick();
   await admin.page.getByLabel("Title color", { exact: true }).fill("#334455");
-  const aboveTitle = admin.page.locator(
-    "#page-example [data-layout=introText] > [data-layout-item=eyebrow]",
+  const aboveTitle = example.locator(
+    "[data-layout=introText] > [data-layout-item=eyebrow]",
   );
-  await aboveTitle.locator("p").dblclick();
-  await aboveTitle.dragTo(
-    admin.page.locator(
-      "#page-example [data-layout=introText] > [data-layout-item=description]",
-    ),
-  );
+  await aboveTitle.dblclick();
+  await aboveTitle.press("Escape");
+  stage("dragging the shared introduction");
+  await click(admin.page, "Move down");
+  stage("capturing the default introduction");
   await admin.page.screenshot({
     path: "test-results/features-visual-defaults.png",
     fullPage: true,
@@ -126,14 +129,120 @@ try {
   await admin.page
     .getByLabel("Example page", { exact: true })
     .selectOption("event");
+  await example.getByText("Where", { exact: true }).waitFor();
+  await example.getByText("123 Example Lane", { exact: false }).waitFor();
+  const eventMetaStructure = await example
+    .locator(".event-meta")
+    .evaluate((el) =>
+      el.outerHTML.replace(/ data-[^= ]+="[^"]*"| tabindex="[^"]*"/g, ""),
+    );
+  assert.ok(eventMetaStructure.includes("Where"));
+  assert.equal(await example.locator("[data-action=rsvp]").count(), 0);
+  await example.locator("[data-action=edit-event]").waitFor();
+  // Actual page components, scoped controls and all conditional sample sections.
+  const requests = [];
+  const observe = (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/"))
+      requests.push(request.method() + " " + new URL(request.url()).pathname);
+  };
+  admin.page.on("request", observe);
+  const views = [
+    "guestHome",
+    "guestEvent",
+    "guestEventUnanswered",
+    "login",
+    "guestLoginSuffix",
+    "hostLogin",
+    "registration",
+    "familyLogin",
+    "familyHome",
+    "familyKidHome",
+    "familyList",
+    "familyKidList",
+    "familyRecipe",
+    "familyRecord",
+    "familyChore",
+    "familyTasks",
+    "familyKidTasks",
+    "admin",
+    "eventInformation",
+    "eventButtons",
+    "toolbar",
+    "homeButtons",
+    "introText",
+  ];
+  for (const view of views) {
+    stage("default example: " + view);
+    await admin.page
+      .getByLabel("Example page", { exact: true })
+      .selectOption(view);
+    await example.locator("main").waitFor();
+    if (view.startsWith("guestEvent")) {
+      await example.getByText("Where", { exact: true }).waitFor();
+      assert.equal(
+        await example.locator("[data-event-section=menus]").count(),
+        0,
+      );
+      assert.equal(
+        await example.locator("[data-action=edit-event]").count(),
+        0,
+      );
+      await example.locator(".rsvp-stack .registry-buttons").waitFor();
+      await example
+        .getByRole("link", { name: "Upload Photos & Videos", exact: true })
+        .waitFor();
+    }
+    if (view === "login") {
+      await example.getByLabel("Invite Code", { exact: true }).waitFor();
+      assert.equal(await example.locator("#guest-suffix").isVisible(), false);
+    }
+    if (view === "guestLoginSuffix")
+      assert.equal(await example.locator("#guest-suffix").isVisible(), true);
+    if (view === "familyKidList")
+      assert.equal(
+        await example
+          .getByRole("button", { name: "Delete", exact: true })
+          .count(),
+        0,
+      );
+  }
+  assert.deepEqual(
+    requests,
+    [],
+    "Rendering examples must never read tenant data or submit synthetic records",
+  );
+  admin.page.off("request", observe);
   await admin.page
-    .locator('#page-example [data-default-copy="When"]')
+    .getByLabel("Example page", { exact: true })
+    .selectOption("guestEvent");
+  await example.getByText("Where", { exact: true }).dblclick();
+  await example.getByText("Where", { exact: true }).fill("Meet us at");
+  await example.getByText("Meet us at", { exact: true }).press("Enter");
+  await example.getByText("Meet us at", { exact: true }).waitFor();
+  await admin.page
+    .getByLabel("Example screen size", { exact: true })
+    .selectOption("1440");
+  assert.equal(await example.locator("body").evaluate(() => innerWidth), 1440);
+  await admin.page.screenshot({
+    path: "test-results/features-guest-defaults-desktop.png",
+    fullPage: true,
+  });
+  await admin.page
+    .getByLabel("Example screen size", { exact: true })
+    .selectOption("390");
+  await admin.page
+    .getByLabel("Example page", { exact: true })
+    .selectOption("event");
+  await admin.page
+    .frameLocator("#page-example-frame")
+    .locator('[data-default-copy="When"]')
     .dblclick();
   await admin.page
     .getByLabel("Selected wording", { exact: true })
     .fill("Gathering time");
   await admin.page
-    .locator("#page-example [data-layout=event] > [data-layout-item=menus]")
+    .frameLocator("#page-example-frame")
+    .locator("[data-layout=event] > [data-layout-item=menus]")
     .dblclick({ position: { x: 5, y: 5 } });
   await click(admin.page, "Move up");
   await dialog(admin.page)
@@ -263,11 +372,49 @@ try {
   await h.page
     .getByLabel("Phone number (international)", { exact: true })
     .fill("+15551234567");
+  await h.page
+    .getByLabel("Shared address (optional)", { exact: true })
+    .fill("Example home");
+  await click(h.page, "Continue with a new address");
+  await h.page
+    .getByLabel("Street / mailing address", { exact: true })
+    .fill("123 Sample Avenue");
   await h.page.getByRole("checkbox", { name: /consented/ }).check();
   await dialog(h.page)
     .getByRole("button", { name: "Save", exact: true })
     .click();
   await dialog(h.page).waitFor({ state: "hidden" });
+  stage("inline address search, selection and editing");
+  await click(h.page, "Address book");
+  assert.equal(
+    await h.page
+      .getByRole("button", { name: "＋ Add address", exact: true })
+      .count(),
+    0,
+  );
+  await click(h.page, "＋ Add adult or child");
+  await h.page.getByLabel("First name", { exact: true }).fill("Jordan");
+  await h.page.getByLabel("Last name", { exact: true }).fill("Other");
+  await h.page
+    .getByLabel("Shared address (optional)", { exact: true })
+    .fill("Sample Ave");
+  await h.page.getByRole("option", { name: /Example home/ }).click();
+  await click(h.page, "Edit this address");
+  await h.page
+    .getByLabel("Street / mailing address", { exact: true })
+    .fill("123 Sample Avenue, Unit 2");
+  await click(h.page, "Save");
+  await dialog(h.page).waitFor({ state: "hidden" });
+  assert.equal(store.list("address", host.household).length, 1);
+  assert.equal(
+    store.list("address", host.household)[0].lines,
+    "123 Sample Avenue, Unit 2",
+  );
+  const localCodes = store.all(
+    "SELECT credential FROM guest_access_links WHERE household=?",
+    host.household,
+  );
+  assert.equal(localCodes[0].credential, localCodes[1].credential);
   await click(h.page, "Create event");
   await h.page
     .getByLabel("Event title", { exact: true })
@@ -287,6 +434,7 @@ try {
     .getByLabel("Private event notes", { exact: true })
     .fill("Private event note");
   await h.page.getByLabel("Casey Example", { exact: true }).check();
+  await h.page.getByLabel("Jordan Other", { exact: true }).check();
   await h.page.getByText("Event appearance", { exact: true }).click();
   const imageY = await h.page
       .getByLabel("Background image (optional, up to 2 MB)", { exact: true })
@@ -358,6 +506,9 @@ try {
   stage("card editor and SVG/PNG downloads");
   await click(h.page, "Cards");
   await click(h.page, "Create card / template");
+  await dialog(h.page).waitFor({ state: "hidden" });
+  assert.equal(await dialog(h.page).isVisible(), false);
+  await click(h.page, "Tools");
   await h.page
     .getByLabel("Card name", { exact: true })
     .fill("Thank you, friends");
@@ -374,12 +525,74 @@ try {
   });
   const canvas = h.page.locator("#card-canvas");
   assert.doesNotMatch(await canvas.innerHTML(), /data:image\/svg\+xml/);
+  stage("full-page variable palette, selected formatting and snapping");
+  await h.page.setViewportSize({ width: 1440, height: 950 });
+  const svgBox = await canvas.locator("svg").boundingBox();
+  await h.page
+    .locator('[data-card-variable="recipient.inviteCode"]')
+    .dragTo(canvas, {
+      targetPosition: { x: svgBox.width / 2, y: svgBox.height / 2 },
+    });
+  const selected = h.page.locator("#card-fields fieldset:not([hidden])");
+  await selected.getByLabel("Text size", { exact: true }).fill("30");
+  await selected.getByLabel("Text color", { exact: true }).fill("#772233");
+  await selected.getByLabel("Box width", { exact: true }).fill("240");
+  await selected.getByLabel("Horizontal position", { exact: true }).fill("300");
+  await selected.getByLabel("Vertical position", { exact: true }).fill("350");
+  const box = await canvas.locator("svg").boundingBox(),
+    scale = box.width / 600;
+  await h.page.mouse.move(box.x + 300 * scale, box.y + 370 * scale);
+  await h.page.mouse.down();
+  await h.page.mouse.move(box.x + 123 * scale, box.y + 370 * scale, {
+    steps: 8,
+  });
+  await h.page.mouse.up();
+  assert.equal(
+    Number(
+      await selected
+        .getByLabel("Horizontal position", { exact: true })
+        .inputValue(),
+    ),
+    120,
+  );
+  const resize = await canvas.locator("[data-card-resize]").boundingBox();
+  await h.page.mouse.move(
+    resize.x + resize.width / 2,
+    resize.y + resize.height / 2,
+  );
+  await h.page.mouse.down();
+  await h.page.mouse.move(
+    resize.x + resize.width / 2 + 20,
+    resize.y + resize.height / 2 + 10,
+    { steps: 4 },
+  );
+  await h.page.mouse.up();
+  assert.ok(
+    Number(
+      await selected.getByLabel("Box width", { exact: true }).inputValue(),
+    ) > 240,
+  );
+  const recipientCode = store.get(
+    "guest-access-code",
+    store.one(
+      "SELECT credential FROM guest_access_links WHERE guest=?",
+      store.list("guest", host.household)[0].id,
+    ).credential,
+    "platform",
+  ).code;
+  assert.ok((await canvas.innerText()).includes(recipientCode));
+  await h.page.screenshot({
+    path: "test-results/features-card-fullscreen-desktop.png",
+    fullPage: true,
+  });
   const pending = h.page.waitForEvent("download");
   await click(h.page, "Download SVG");
   const download = await pending;
   const path = await download.path();
   const svg = await readFile(path, "utf8");
   assert.match(svg, /Shared celebration/);
+  assert.ok(svg.includes(recipientCode));
+  assert.doesNotMatch(svg, /card-selection|card-snap-guide|data-card-resize/);
   assert.doesNotMatch(svg, /data:image\/svg\+xml/);
   const pngPending = h.page.waitForEvent("download");
   await click(h.page, "Download PNG");
@@ -405,10 +618,14 @@ try {
     1,
     "the real print action invokes the frame's print API exactly once",
   );
-  await dialog(h.page)
-    .getByRole("button", { name: "Save card", exact: true })
-    .click();
-  await dialog(h.page).waitFor({ state: "hidden" });
+  assert.deepEqual(
+    await h.page
+      .locator("form[data-form=card] :invalid")
+      .evaluateAll((els) => els.map((el) => el.name)),
+    [],
+  );
+  await h.page.getByRole("button", { name: "Save card", exact: true }).click();
+  await h.page.locator("form[data-form=card]").waitFor({ state: "detached" });
   const event = store.list("event", host.household)[0];
   assert.equal(event.notes, "Private event note");
   assert.equal(
@@ -449,12 +666,12 @@ try {
     .getByLabel("Invite Code", { exact: true })
     .fill(
       store.get(
-        "guest-identity",
+        "guest-access-code",
         store.one(
-          "SELECT identity FROM guest_identity_links WHERE guest=? AND household=?",
+          "SELECT credential FROM guest_access_links WHERE guest=? AND household=?",
           guestRecord.id,
           host.household,
-        ).identity,
+        ).credential,
         "platform",
       ).code,
     );
@@ -474,6 +691,44 @@ try {
   assert.doesNotMatch(
     await guest.page.locator("main").innerText(),
     /Private household note|Private event note/,
+  );
+  stage("shared-address RSVP preserves skipped people");
+  await click(guest.page, "RSVP");
+  await guest.page
+    .getByLabel("Casey Example", { exact: true })
+    .selectOption("yes");
+  await guest.page.getByLabel("Jordan Other", { exact: true }).selectOption("");
+  await click(guest.page, "RSVP");
+  await dialog(guest.page).waitFor({ state: "hidden" });
+  const jordan = store
+    .list("guest", host.household)
+    .find((g) => g.first === "Jordan");
+  assert.equal(
+    store.get("response", event.id + ":" + jordan.id, host.household),
+    null,
+  );
+  const caseyResponse = store.get(
+    "response",
+    event.id + ":" + guestRecord.id,
+    host.household,
+  );
+  await click(guest.page, "RSVP");
+  await guest.page
+    .getByLabel("Casey Example", { exact: true })
+    .selectOption("");
+  await guest.page
+    .getByLabel("Jordan Other", { exact: true })
+    .selectOption("yes");
+  await click(guest.page, "RSVP");
+  await dialog(guest.page).waitFor({ state: "hidden" });
+  assert.deepEqual(
+    store.get("response", event.id + ":" + guestRecord.id, host.household),
+    caseyResponse,
+  );
+  assert.equal(
+    store.get("response", event.id + ":" + jordan.id, host.household)
+      .attendance[jordan.id],
+    "yes",
   );
   await guest.page.screenshot({
     path: "test-results/features-guest-mobile.png",

@@ -184,6 +184,8 @@ export class EventsDatabase extends DurableObject {
             "/card-system.js",
             "/reminder-time.js",
             "/family-ui.js",
+            "/default-examples.js",
+            "/address-picker.js",
             "/api/public/context",
           ].includes(path))
       )

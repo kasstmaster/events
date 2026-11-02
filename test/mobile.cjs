@@ -212,10 +212,10 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByLabel("Invite Code", { exact: true })
       .fill(
         store.get(
-          "guest-identity",
+          "guest-access-code",
           store.one(
-            "SELECT identity FROM guest_identity_links WHERE guest IN (SELECT id FROM records WHERE kind='guest' AND json_extract(body,'$.first')='Casey') LIMIT 1",
-          ).identity,
+            "SELECT credential FROM guest_access_links WHERE guest IN (SELECT id FROM records WHERE kind='guest' AND json_extract(body,'$.first')='Casey') LIMIT 1",
+          ).credential,
           "platform",
         ).code,
       );
@@ -281,10 +281,10 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByLabel("Invite Code", { exact: true })
       .fill(
         store.get(
-          "guest-identity",
+          "guest-access-code",
           store.one(
-            "SELECT identity FROM guest_identity_links WHERE guest IN (SELECT id FROM records WHERE kind='guest' AND json_extract(body,'$.first')='Casey') LIMIT 1",
-          ).identity,
+            "SELECT credential FROM guest_access_links WHERE guest IN (SELECT id FROM records WHERE kind='guest' AND json_extract(body,'$.first')='Casey') LIMIT 1",
+          ).credential,
           "platform",
         ).code,
       );

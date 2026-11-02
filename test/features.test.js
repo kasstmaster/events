@@ -4,7 +4,12 @@ import { once } from "node:events";
 import { createHmac } from "node:crypto";
 import { Store } from "../server/node-store.js";
 import { createApp } from "../server/app.js";
-import { newCard, renderCard } from "../public/card-system.js";
+import {
+  newCard,
+  renderCard,
+  snapCardElement,
+  cardBounds,
+} from "../public/card-system.js";
 import { effectiveUI } from "../server/features.js";
 import {
   runReminders,
@@ -1034,4 +1039,32 @@ test("legacy scoped wording/layout can round-trip unchanged without blocking pri
     ).status,
     403,
   );
+});
+
+test("card snapping aligns item bounds with center and edges for every text alignment", () => {
+  for (const align of ["left", "center", "right"]) {
+    const offset = align === "center" ? 60 : align === "right" ? 120 : 0;
+    const item = {
+      field: "text",
+      align,
+      x: 242 + offset,
+      y: 354,
+      width: 120,
+      height: 100,
+    };
+    const guides = snapCardElement(item, { width: 600, height: 800 });
+    assert.equal(cardBounds(item).left, 240);
+    assert.equal(item.y, 350);
+    assert.deepEqual(guides, { x: 300, y: 400 });
+    item.x = 5 + offset;
+    item.y = 695;
+    snapCardElement(item, { width: 600, height: 800 });
+    assert.equal(cardBounds(item).left, 0);
+    assert.equal(item.y, 700);
+    item.x = 477 + offset;
+    item.y = 4;
+    snapCardElement(item, { width: 600, height: 800 });
+    assert.equal(cardBounds(item).left, 480);
+    assert.equal(item.y, 0);
+  }
 });
