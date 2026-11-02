@@ -62,6 +62,7 @@ const files = new Map([
     "family-ui.js",
     "default-examples.js",
     "address-picker.js",
+    "browse-ui.js",
   ].map((file) => ["/" + file, [file, "text/javascript; charset=utf-8"]]),
 ]);
 const date = (value) => {
@@ -101,6 +102,12 @@ async function body(req) {
   }
 }
 function guestInput(input, store, household, existing) {
+  if (
+    input.position !== undefined &&
+    (!Number.isFinite(Number(input.position)) ||
+      Math.abs(Number(input.position)) > 1e15)
+  )
+    fail(400, "Invalid contact position.");
   const parent = text(input.parent ?? "", 100),
     address = text(input.address ?? "", 100);
   if (parent) {
@@ -126,6 +133,9 @@ function guestInput(input, store, household, existing) {
   if (address && !store.get("address", address, household))
     fail(400, "Choose an address in your household.");
   return {
+    position: Number.isFinite(Number(input.position))
+      ? Number(input.position)
+      : (existing?.position ?? Date.now()),
     first: text(input.first, 80, true),
     notes: text(input.notes ?? existing?.notes ?? "", 20000),
     phone: contactPhone(input.phone ?? existing?.phone ?? ""),

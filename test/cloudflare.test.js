@@ -451,7 +451,7 @@ test(
       );
       await page.goto(origin + "/h/" + host.household.slug);
       await page
-        .getByRole("button", { name: "View event", exact: true })
+        .getByRole("button", { name: "View Event", exact: true })
         .click();
       await page
         .getByRole("link", { name: "Our registry", exact: true })

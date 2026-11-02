@@ -152,7 +152,7 @@ try {
         .getByRole("button", { name: "See my invitations", exact: true })
         .click();
       await page
-        .getByRole("button", { name: "View event", exact: true })
+        .getByRole("button", { name: "View Event", exact: true })
         .click();
       await page
         .getByRole("heading", { name: event.title, exact: true })
@@ -271,9 +271,7 @@ try {
     cookie: session.cookie,
   });
   assert.equal(active.shareUrl, "https://dubois.ilymmd.com/");
-  await page
-    .getByRole("button", { name: "Edit household", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Edit House", exact: true }).click();
   assert.equal(
     await page.getByLabel("Household web address", { exact: true }).count(),
     0,

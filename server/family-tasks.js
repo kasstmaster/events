@@ -99,7 +99,7 @@ export function materializeTasks(store, household, now = Date.now()) {
   let pending = false;
   for (const chore of store
     .list("family-record", household)
-    .filter((r) => r.type === "chore" && !r.cancelled)) {
+    .filter((r) => ["task", "chore"].includes(r.type) && !r.cancelled)) {
     const schedule = scheduleKey(chore),
       cursor = store.get("family-task-cursor", chore.id, household);
     for (const occurrence of store

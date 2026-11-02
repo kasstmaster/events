@@ -103,16 +103,6 @@ export function exampleState(view, ui) {
     },
     {
       ...common,
-      id: "example-recipe",
-      type: "recipe",
-      title: "Vegetable soup",
-      ingredients: "Carrots\nPotatoes\nVegetable stock",
-      instructions: "Chop the vegetables.\nSimmer until tender.",
-      source: "https://example.invalid/recipe",
-      notes: "A family favorite.",
-    },
-    {
-      ...common,
       id: "example-record",
       type: "record",
       title: "Washing machine",
@@ -209,15 +199,17 @@ export function exampleState(view, ui) {
       ? household
       : null,
     view:
-      view === "registration"
-        ? "register"
-        : view === "hostLogin"
-          ? "login"
-          : view === "familyLogin"
-            ? "family-login"
-            : familyView
-              ? "family"
-              : "home",
+      view === "contacts"
+        ? "contacts"
+        : view === "registration"
+          ? "register"
+          : view === "hostLogin"
+            ? "login"
+            : view === "familyLogin"
+              ? "family-login"
+              : familyView
+                ? "family"
+                : "home",
     event: [
       "event",
       "guestEvent",
@@ -237,6 +229,7 @@ export function exampleState(view, ui) {
           events: [event],
           guest: members[0],
           guests: members,
+          addresses: [],
           approvals: [{ email: "approved@example.invalid" }],
           hosts: [
             {
@@ -251,7 +244,6 @@ export function exampleState(view, ui) {
     exampleRecord:
       {
         familyList: "example-list",
-        familyRecipe: "example-recipe",
         familyRecord: "example-record",
         familyChore: "example-chore",
         familyTasks: "__mine__",
@@ -346,8 +338,7 @@ export function annotateExample(root, config) {
   }
   const nav = root.querySelector(".toolbar");
   if (nav) {
-    nav.dataset.layout = "toolbar";
     for (const el of nav.querySelectorAll(":scope > [data-action]"))
-      el.dataset.layoutItem = el.dataset.action;
+      el.removeAttribute("data-layout-item");
   }
 }

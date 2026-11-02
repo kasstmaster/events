@@ -47,17 +47,8 @@ const { existsSync, mkdirSync } = require("node:fs");
     return { context, page };
   }
   async function click(page, label) {
-    const scope = (await page.locator("#editor[open]").count())
-      ? page.getByRole("dialog")
-      : label === "RSVP"
-        ? page.locator("#main")
-        : page;
-    await scope
-      .getByRole("button", {
-        name: label === "✕" ? "Close editor" : label,
-        exact: true,
-      })
-      .click();
+    const { clickNavigation } = await import("./helpers/navigation.js");
+    await clickNavigation(page, label);
   }
   async function register(page, email, name) {
     await page.goto(origin);
@@ -97,7 +88,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       beta = await device(768, 1024);
     await register(alpha.page, "alpha@example.test", "The Alpha Family");
     await register(beta.page, "beta@example.test", "The Beta Family");
-    await click(alpha.page, "Address book");
+    await click(alpha.page, "Contacts");
     await click(alpha.page, "＋ Add adult or child");
     await alpha.page.getByLabel("First name", { exact: true }).fill("Casey");
     await alpha.page.getByLabel("Last name", { exact: true }).fill("Example");
@@ -105,7 +96,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByRole("button", { name: "Save", exact: true })
       .click();
     await dialog(alpha.page).waitFor({ state: "hidden" });
-    await click(alpha.page, "Address book");
+    await click(alpha.page, "Contacts");
     await click(alpha.page, "＋ Add adult or child");
     await alpha.page.getByLabel("First name", { exact: true }).fill("Robin");
     await alpha.page.getByLabel("Last name", { exact: true }).fill("Example");
@@ -116,7 +107,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByRole("button", { name: "Save", exact: true })
       .click();
     await dialog(alpha.page).waitFor({ state: "hidden" });
-    await click(alpha.page, "Edit household");
+    await click(alpha.page, "Edit House");
     await alpha.page
       .getByLabel("Background color", { exact: true })
       .fill("#e6edf7");
@@ -125,9 +116,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByRole("button", { name: "Save", exact: true })
       .click();
     await dialog(alpha.page).waitFor({ state: "hidden" });
-    await alpha.page
-      .getByRole("button", { name: "Create event", exact: true })
-      .click();
+    await click(alpha.page, "Create event");
     await alpha.page.getByLabel("Event title").fill("Summer around the table");
     await alpha.page
       .getByLabel("Description", { exact: true })
@@ -176,9 +165,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByRole("heading", { name: "Summer around the table", exact: true })
       .waitFor();
     await noOverflow(alpha.page);
-    await alpha.page
-      .getByRole("button", { name: "Edit event", exact: true })
-      .click();
+    await click(alpha.page, "Edit Event");
     await alpha.page.getByText("Event appearance", { exact: true }).click();
     await alpha.page
       .getByLabel("Background color", { exact: true })
@@ -189,7 +176,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       .click();
     await dialog(alpha.page).waitFor({ state: "hidden" });
     await click(alpha.page, "Home");
-    await click(alpha.page, "Share household link");
+    await click(alpha.page, "Household link and QR");
     const link = await alpha.page.locator(".share-link").textContent();
     assert.ok(link.startsWith(origin + "/h/"));
     await alpha.page.locator(".qr").waitFor();
@@ -223,7 +210,7 @@ const { existsSync, mkdirSync } = require("node:fs");
     await guest.page
       .getByRole("heading", { name: "Summer around the table", exact: true })
       .waitFor();
-    await click(guest.page, "View event");
+    await click(guest.page, "View Event");
     await guest.page.locator(".event-hero").waitFor();
     assert.equal(
       await guest.page.evaluate(
@@ -289,11 +276,11 @@ const { existsSync, mkdirSync } = require("node:fs");
         ).code,
       );
     await click(secondDevice.page, "See my invitations");
-    await click(secondDevice.page, "View event");
+    await click(secondDevice.page, "View Event");
     await secondDevice.page
       .getByText("Lemonade × 2", { exact: true })
       .waitFor();
-    await click(alpha.page, "View event");
+    await click(alpha.page, "View Event");
     await click(alpha.page, "RSVPs");
     await dialog(alpha.page)
       .getByText("2 attending", { exact: true })
@@ -302,6 +289,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByText("2 / 3 · 1 remaining", { exact: true })
       .waitFor();
     await click(alpha.page, "✕");
+    await click(alpha.page, "View Event");
     await click(alpha.page, "Edit event");
     await alpha.page
       .getByLabel("Registry title")
@@ -340,7 +328,7 @@ const { existsSync, mkdirSync } = require("node:fs");
     await guest.page
       .getByRole("heading", { name: "The Alpha Family", exact: true })
       .waitFor();
-    await click(guest.page, "View event");
+    await click(guest.page, "View Event");
     await guest.page
       .locator(".event-hero")
       .waitFor({ timeout: 1000 })

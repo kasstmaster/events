@@ -1,3 +1,4 @@
+import { clickNavigation } from "./helpers/navigation.js";
 // Isolated synthetic records, no production or messaging requests.
 import assert from "node:assert/strict";
 import { once } from "node:events";
@@ -82,14 +83,7 @@ async function device(width) {
   page.setDefaultTimeout(10000);
   return { context, page };
 }
-const click = async (page, name) => {
-  const scope = (await page.locator("#editor[open]").count())
-    ? page.getByRole("dialog")
-    : name === "RSVP"
-      ? page.locator("#main")
-      : page;
-  return scope.getByRole("button", { name, exact: true }).click();
-};
+const click = clickNavigation;
 const dialog = (page) => page.getByRole("dialog");
 async function login(page, email) {
   await page.goto(origin);
@@ -159,7 +153,6 @@ try {
     "familyKidHome",
     "familyList",
     "familyKidList",
-    "familyRecipe",
     "familyRecord",
     "familyChore",
     "familyTasks",
@@ -262,13 +255,11 @@ try {
   const h = await device(390);
   await login(h.page, "host@example.test");
   await h.page.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
-  assert.equal(
+  assert.deepEqual(
     await h.page
-      .locator(
-        ".toolbar [data-action=new-event],.toolbar [data-action=household]",
-      )
-      .count(),
-    0,
+      .locator(".toolbar [data-action]")
+      .evaluateAll((els) => els.map((el) => el.dataset.action)),
+    ["home", "addresses", "household", "share", "logout"],
   );
   assert.equal(await h.page.locator("header [data-action=logout]").count(), 0);
   assert.equal(
@@ -299,7 +290,7 @@ try {
     await h.page.locator("[data-action=host-ui],[data-action=guests]").count(),
     0,
   );
-  await click(h.page, "Edit household");
+  await click(h.page, "Edit House");
   for (const [label, value] of [
     ["Border color", "#123456"],
     ["Text above title color", "#345678"],
@@ -345,11 +336,11 @@ try {
   );
   assert.equal(
     await h.page
-      .locator("[data-action=addresses]")
+      .locator(".toolbar")
       .evaluate((el) => getComputedStyle(el).backgroundColor),
-    "rgb(35, 69, 103)",
+    "rgb(238, 238, 238)",
   );
-  await click(h.page, "Edit household");
+  await click(h.page, "Edit House");
   h.page.once("dialog", (d) => d.accept());
   await click(h.page, "Reset to default colors");
   assert.equal(
@@ -365,7 +356,7 @@ try {
     .getByLabel("Notes", { exact: true })
     .fill("Private household note");
   await click(h.page, "Save private notes");
-  await click(h.page, "Address book");
+  await click(h.page, "Contacts");
   await click(h.page, "＋ Add adult or child");
   await h.page.getByLabel("First name", { exact: true }).fill("Casey");
   await h.page.getByLabel("Last name", { exact: true }).fill("Example");
@@ -385,7 +376,7 @@ try {
     .click();
   await dialog(h.page).waitFor({ state: "hidden" });
   stage("inline address search, selection and editing");
-  await click(h.page, "Address book");
+  await click(h.page, "Contacts");
   assert.equal(
     await h.page
       .getByRole("button", { name: "＋ Add address", exact: true })
@@ -457,7 +448,7 @@ try {
   stage("event formatting copy and delete confirmation");
   assert.equal(
     await h.page
-      .locator(".toolbar .totals")
+      .locator(".event-summary .totals")
       .evaluate((el) => getComputedStyle(el).color),
     "rgb(101, 67, 33)",
   );
@@ -676,7 +667,7 @@ try {
       ).code,
     );
   await click(guest.page, "See my invitations");
-  await click(guest.page, "View event");
+  await click(guest.page, "View Event");
   assert.ok(await guest.page.locator(".event-deadline").isVisible());
   assert.equal(
     await guest.page

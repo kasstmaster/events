@@ -742,7 +742,7 @@ export class Store {
     const { invited, notes, reminders, ...safe } = event;
     return {
       ...safe,
-      totals: this.totals(event, session.household),
+      totals: { attending: this.totals(event, session.household).attending },
       menu: this.menuView(event, session.household),
       members: [guest, ...children].map(
         ({ id, first, last, suffix, parent }) => ({

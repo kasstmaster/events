@@ -17,7 +17,6 @@ import {
   occurrenceComplete,
   notificationAllowed,
 } from "./family-tasks.js";
-import { importRecipe, publicRecipeURL } from "./recipe-import.js";
 
 function storageUsed(store, household) {
   return store.one(
@@ -32,7 +31,7 @@ function fileMetadata(store, household, record) {
     record,
   );
 }
-const types = ["folder", "list", "recipe", "record", "chore"];
+const types = ["folder", "list", "task", "record", "chore"];
 export function membersView(store, household) {
   const primary = store.one(
       "SELECT id,email FROM users WHERE household=? AND role='host'",
@@ -87,7 +86,7 @@ function recordInput(store, member, input, current) {
   const type = current?.type || input.type;
   if (!types.includes(type)) fail(400, "Choose a supported household section.");
   if (member.role === "kid") fail(403, "Adults manage household records.");
-  if (type === "chore" && !manager(member)) {
+  if (["task", "chore"].includes(type) && !manager(member)) {
     const kidIds = new Set(
       store
         .all(
@@ -115,7 +114,21 @@ function recordInput(store, member, input, current) {
       403,
       "A household administrator must move child-shared content between permission scopes.",
     );
+  const section =
+    input.section ??
+    current?.section ??
+    { list: "lists", task: "tasks", record: "records", chore: "chores" }[
+      type
+    ] ??
+    "lists";
+  if (!["lists", "tasks", "records", "chores", "shared"].includes(section))
+    fail(400, "Choose a supported household section.");
+  const position = Number(input.position ?? current?.position ?? Date.now());
+  if (!Number.isFinite(position) || Math.abs(position) > 1e15)
+    fail(400, "Invalid record position.");
   const base = {
+    section,
+    position,
     type,
     categories: input.categories ?? current?.categories ?? [],
     title: text(input.title, 200, true),
@@ -158,14 +171,6 @@ function recordInput(store, member, input, current) {
       fail(409, "Move items out of a category before removing or renaming it.");
     return { ...base, categories };
   }
-  if (type === "recipe")
-    return {
-      ...base,
-      ingredients: text(input.ingredients || "", 20000),
-      instructions: text(input.instructions || "", 30000),
-      source: input.source ? publicRecipeURL(input.source).href : "",
-      notes: text(input.notes || "", 20000),
-    };
   if (type === "record") {
     const details = input.details || {};
     if (
@@ -212,7 +217,7 @@ function recordInput(store, member, input, current) {
 function safeRecord(store, member, record) {
   const safe = { ...record };
   if (
-    record.type === "chore" &&
+    ["task", "chore"].includes(record.type) &&
     record.linkedRecord &&
     !canRead(
       store,
@@ -227,7 +232,7 @@ function canEdit(member, record) {
   if (member.role === "kid")
     fail(403, "This action is available only to adults.");
   if (
-    record.type === "chore" &&
+    ["task", "chore"].includes(record.type) &&
     !manager(member) &&
     (record.assignees || []).some((key) => member.kids?.includes(key))
   )
@@ -530,6 +535,14 @@ export async function familyAPI(ctx) {
       )
     )
       fail(400, "Quiet hours use hours from 0 to 23.");
+    const collectionSort =
+        input.collectionSort ?? own.collectionSort ?? "manual",
+      contactSort = input.contactSort ?? own.contactSort ?? "manual";
+    if (
+      !["manual", "alpha"].includes(collectionSort) ||
+      !["manual", "alpha"].includes(contactSort)
+    )
+      fail(400, "Choose alphabetical or manual sorting.");
     const current = store.get("family-preferences", target, household);
     json(
       res,
@@ -544,22 +557,12 @@ export async function familyAPI(ctx) {
           notifications: input.notifications !== false,
           hideCompleted: input.hideCompleted === true,
           alphabetical: input.alphabetical === true,
+          collectionSort,
+          contactSort,
         },
         current ? version(req) : undefined,
       ),
     );
-    return true;
-  }
-  if (path === "/api/family/import-recipe" && method === "POST") {
-    if (member.role === "kid") fail(403, "Adults import recipes.");
-    store.limit("recipe-import:" + household, 20);
-    const input = await body(req);
-    try {
-      json(res, await importRecipe(input.url, env.recipeTransport));
-    } catch (error) {
-      if (error.status) throw error;
-      fail(422, "This recipe could not be imported. Please use manual entry.");
-    }
     return true;
   }
   if (path === "/api/family/records" && method === "POST") {
@@ -570,7 +573,8 @@ export async function familyAPI(ctx) {
   const historyPath = path.match(/^\/api\/family\/records\/([\w-]+)\/history$/);
   if (historyPath && method === "GET") {
     const record = familyRecord(store, member, historyPath[1]);
-    if (record.type !== "chore") fail(404, "Task history not found.");
+    if (!["task", "chore"].includes(record.type))
+      fail(404, "Task history not found.");
     const offset = Number(
       new URL(req.url, "http://local").searchParams.get("offset") || 0,
     );
@@ -615,7 +619,7 @@ export async function familyAPI(ctx) {
     if (method === "DELETE") {
       canEdit(member, record);
       if (
-        record.type === "chore" &&
+        ["task", "chore"].includes(record.type) &&
         !manager(member) &&
         record.assignees.some((key) =>
           store.one(
@@ -639,7 +643,7 @@ export async function familyAPI(ctx) {
             .some((r) => r.folder === record.id)
         )
           fail(409, "Move records out of this folder first.");
-        if (record.type === "chore")
+        if (["task", "chore"].includes(record.type))
           store.put(
             "family-record",
             record.id,
