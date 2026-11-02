@@ -325,6 +325,15 @@ export function familyTools(ctx) {
       state.familyData = null;
     },
     render: renderWorkspace,
+    renderExample(key = "") {
+      const previous = selected;
+      try {
+        selected = key;
+        return renderWorkspace();
+      } finally {
+        selected = previous;
+      }
+    },
     refresh,
     saving,
     async action(actionName, target) {

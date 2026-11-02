@@ -110,7 +110,7 @@ test("matching exposes minimal evidence, requires guest approval and then spans 
     200,
   );
   const book = (await f.request("/api/host", { cookie: b.cookie })).body;
-  assert.equal(book.guests[0].inviteCode, "");
+  assert.equal(book.guests[0].inviteCode, second.inviteCode);
   const unlink = await f.request("/api/host/guests/" + second.id + "/unlink", {
     method: "POST",
     cookie: b.cookie,
@@ -214,7 +214,7 @@ test("expired deadlines close all RSVP edits and custom items are scoped, opt-in
   );
 });
 
-test("a permanent code can reconnect a relationship after host removal without changing identity or other records", async (t) => {
+test("two current address codes can link identities without moving contacts or changing codes", async (t) => {
   const f = await application(t),
     a = await f.host("Alpha"),
     b = await f.host("Beta"),
@@ -225,11 +225,6 @@ test("a permanent code can reconnect a relationship after host removal without c
     a.household.id,
     original.id,
   ).identity;
-  f.store.run(
-    "DELETE FROM guest_identity_links WHERE household=?",
-    a.household.id,
-  );
-  f.store.remove("guest", original.id, a.household.id, original.version);
   assert.equal(
     (
       await f.request(
@@ -382,7 +377,7 @@ test("shared child links require the designated adult first and children never s
   assert.equal((await f.guestLogin(a, child)).status, 401);
 });
 
-test("deleting the source host retains shared identity, permanent code and the other host’s invitations", async (t) => {
+test("deleting the source host retains shared identity and other invitations using their current address code", async (t) => {
   const { deletionSummary, requestDeletion, finalizeDeletion } =
     await import("../server/account-deletion.js");
   const f = await application(t),
@@ -421,7 +416,11 @@ test("deleting the source host retains shared identity, permanent code and the o
       a.household.id,
     ),
   );
-  const after = await f.guestLogin(b, { ...second, inviteCode: g.inviteCode });
+  const after = await f.guestLogin(b, second);
+  assert.equal(
+    (await f.guestLogin(b, { ...second, inviteCode: g.inviteCode })).status,
+    401,
+  );
   assert.equal(after.status, 200);
   assert.deepEqual(
     (await f.request("/api/guest", { cookie: after.cookie })).body.events.map(

@@ -1,3 +1,4 @@
+import { accessFor } from "./guest-access.js";
 import { fail, text, id } from "./model.js";
 import {
   uiConfig,
@@ -270,6 +271,13 @@ export async function featureAPI({
                   first: recipient.first,
                   last: recipient.last,
                   address: address?.lines || "",
+                  ...(record.elements.some(
+                    (e) => e.field === "recipient.inviteCode",
+                  )
+                    ? {
+                        inviteCode: accessFor(store, recipient, household).code,
+                      }
+                    : {}),
                 }
               : {},
           },

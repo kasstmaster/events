@@ -1040,54 +1040,33 @@ textarea[name="eventNotes"] {
 }
 
 .page-example {
-  background: var(--bg);
-  color: var(--ink);
-  font-family: var(--body-font);
-  font-size: var(--text-size);
-  padding: 20px;
+  position: relative;
+  overflow: hidden;
   border: 1px solid var(--border-color);
   border-radius: 16px;
+  width: 100%;
 }
-.page-example [data-layout] {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+#page-example-frame {
+  position: absolute;
+  inset: 0;
+  max-width: none;
+  border: 0;
+  transform-origin: top left;
+  background: var(--bg);
 }
-.page-example [data-layout="toolbar"],
-.page-example [data-layout="homeButtons"],
-.page-example [data-layout="eventButtons"] {
-  flex-direction: row;
-  flex-wrap: wrap;
-}
-.page-example .example-toolbar {
-  background: var(--toolbar-background);
-  padding: 12px;
-}
-.page-example [data-default-role] {
+body[data-defaults-example] [data-default-role] {
   cursor: pointer;
 }
-.page-example [data-default-role="toolbar"] {
-  color: var(--toolbar-color);
-  font-family: var(--toolbar-font);
-  font-size: var(--toolbar-size);
+body[data-defaults-example] .layout-selected {
+  outline: 3px solid var(--accent-color);
+  outline-offset: 3px;
 }
-.page-example [data-default-role="status"],
 .toolbar .totals,
 .toolbar .totals strong,
 .toolbar .deadline {
   color: var(--status-color);
   font-family: var(--status-font);
   font-size: var(--status-size);
-}
-.page-example [data-default-role="notes"] {
-  color: var(--notes-color);
-  background: var(--notes-background);
-  font-family: var(--notes-font);
-  font-size: var(--notes-size);
-}
-.page-example .layout-selected {
-  outline: 3px solid var(--accent-color);
-  outline-offset: 3px;
 }
 #visual-inspector [hidden],
 #default-design-controls label[hidden] {
@@ -1183,4 +1162,136 @@ code {
   height: 100px;
   object-fit: contain;
   border-radius: 12px;
+}
+
+.address-picker [role="listbox"] {
+  margin-top: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+.address-picker [role="listbox"][hidden] {
+  display: none;
+}
+.address-picker [role="option"] {
+  text-align: left;
+  white-space: normal;
+}
+.address-picker [role="option"] span {
+  display: block;
+}
+.address-picker [role="option"]:focus {
+  outline: 3px solid var(--accent-color);
+}
+
+/* Card editing is a page, with tools beside the canvas, never below it. */
+body.card-editor-active {
+  overflow: hidden;
+}
+.card-editor-active #app > header {
+  display: none;
+}
+.card-editor-active #main {
+  max-width: none;
+  padding: 0;
+  margin: 0;
+}
+.card-editor-page {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.card-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+.card-editor-header h1 {
+  font-size: 24px;
+  margin: 0;
+}
+.card-editor-page > p {
+  margin: 8px 20px;
+}
+.card-editor-page .card-workspace {
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 0;
+  align-items: stretch;
+}
+.card-preview-area {
+  min-width: 0;
+  overflow: auto;
+  padding: 24px;
+}
+.card-editor-page #card-canvas {
+  position: relative;
+  top: auto;
+  max-width: 700px;
+}
+.card-editor-page .card-controls {
+  max-height: none;
+  overflow-y: auto;
+  background: var(--panel);
+  padding: 16px;
+  border-left: 1px solid var(--border-color);
+}
+.card-controls fieldset[hidden] {
+  display: none;
+}
+.card-variable-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.card-variable-list button {
+  font-size: 14px;
+  padding: 8px;
+  min-width: 0;
+  cursor: grab;
+}
+.card-tools-toggle {
+  display: none;
+}
+@media (max-width: 849px) {
+  .card-tools-toggle {
+    display: inline-block;
+  }
+  .card-editor-header {
+    padding: 10px;
+  }
+  .card-editor-header h1 {
+    font-size: 19px;
+  }
+  .card-editor-header button {
+    padding: 8px;
+  }
+  .card-editor-page .card-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .card-preview-area {
+    padding: 14px;
+  }
+  .card-editor-page .card-controls {
+    position: fixed;
+    z-index: 20;
+    top: 80px;
+    bottom: 0;
+    right: 0;
+    width: min(360px, 88vw);
+    transform: translateX(100%);
+    visibility: hidden;
+    box-shadow: -8px 0 20px #0002;
+  }
+  .card-tools-open .card-editor-page .card-controls {
+    transform: none;
+    visibility: visible;
+  }
 }

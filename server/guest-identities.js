@@ -1,9 +1,7 @@
-import { Buffer } from "node:buffer";
-import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
+import { addressEvent } from "./address-rsvp.js";
+import { accessFor, accessCandidates } from "./guest-access.js";
 import { fail, id, text, normalizeName } from "./model.js";
 import { effectiveUI } from "./features.js";
-const digest = (value) =>
-  createHash("sha256").update(String(value)).digest("hex");
 export const compareName = (value) =>
   normalizeName(
     String(value || "")
@@ -43,11 +41,8 @@ export function identityFor(store, guest, household) {
         guest.id,
       );
       if (link) return store.get("guest-identity", link.identity, "platform");
-      const key = id(),
-        code = randomBytes(24).toString("base64url");
+      const key = id();
       const identity = store.put("guest-identity", key, "platform", {
-        code,
-        codeHash: digest(code),
         creator: household,
         revision: 1,
       });
@@ -61,8 +56,14 @@ export function identityFor(store, guest, household) {
     });
   return store.get("guest-identity", link.identity, "platform");
 }
-export function guestContact(store, guest, household) {
-  const identity = identityFor(store, guest, household);
+export function guestContact(store, guest, household, previous) {
+  identityFor(store, guest, household);
+  const credential = accessFor(
+    store,
+    guest,
+    household,
+    !!previous && (previous.address || "") !== (guest.address || ""),
+  );
   const linked = !!store.one(
     "SELECT linked FROM guest_identity_links WHERE household=? AND guest=?",
     household,
@@ -70,7 +71,7 @@ export function guestContact(store, guest, household) {
   )?.linked;
   return {
     ...guest,
-    inviteCode: !linked && identity.creator === household ? identity.code : "",
+    inviteCode: credential.code,
     linked,
   };
 }
@@ -94,38 +95,33 @@ export function guestRelations(store, identity) {
     .filter((link) => link.record && !link.record.parent);
 }
 export function authenticateGuest(store, input) {
-  const code = text(input.inviteCode || "", 100),
-    row = store.one(
-      "SELECT id,household FROM records WHERE kind='guest-identity' AND json_extract(body,'$.codeHash')=?",
-      digest(code),
-    );
-  const identity = row && store.get("guest-identity", row.id, "platform");
-  if (
-    !identity ||
-    !code ||
-    !timingSafeEqual(
-      Buffer.from(identity.codeHash, "hex"),
-      Buffer.from(digest(code), "hex"),
-    )
-  )
-    return null;
+  const code = text(input.inviteCode || "", 100);
   const first = compareName(text(input.first, 80, true)),
     last = compareName(text(input.last, 80, true)),
     suffix = compareName(text(input.suffix || "", 30));
-  const candidates = guestRelations(store, identity.id).filter(
+  const candidates = accessCandidates(store, code).filter(
     (link) =>
+      !link.record.parent &&
       compareName(link.record.first) === first &&
       compareName(link.record.last) === last,
   );
+  const qualified = candidates.filter(
+    (link) => compareName(link.record.suffix) === suffix,
+  );
+  const identities = new Set(
+    qualified.map((link) => identityFor(store, link.record, link.household).id),
+  );
+  const relation = identities.size === 1 ? qualified[0] : null;
   return {
-    identity,
+    identity: relation
+      ? identityFor(store, relation.record, relation.household)
+      : null,
     candidates,
-    relation: candidates.find(
-      (link) => compareName(link.record.suffix) === suffix,
-    ),
+    relation,
     suffixRequired: candidates.some((link) => !!link.record.suffix),
   };
 }
+
 export function invitationView(store, session) {
   const proof = store.one(
     "SELECT identity FROM guest_identity_sessions WHERE token=?",
@@ -138,7 +134,7 @@ export function invitationView(store, session) {
       .list("event", link.household)
       .filter((event) => event.invited.includes(link.guest))
       .map((event) => ({
-        ...store.guestEvent(event, {
+        ...addressEvent(store, event, {
           household: link.household,
           guest: link.guest,
         }),
@@ -225,7 +221,11 @@ export function matchingGuests(store, household, input) {
     .filter((m) => m.expires < Date.now()))
     store.remove("guest-match", old.id, household, old.version);
   const ownAddress = addressKey(
-    input.address ? store.get("address", input.address, household)?.lines : "",
+    input.addressLines !== undefined
+      ? text(input.addressLines, 500)
+      : input.address
+        ? store.get("address", input.address, household)?.lines
+        : "",
   );
   const current = input.existingId
     ? store.one(
@@ -513,16 +513,14 @@ export async function identityAPI(ctx) {
 
 export function claimPermanentCode(store, input, household) {
   const newProof = authenticateGuest(store, input),
-    old = store.one(
-      "SELECT id FROM records WHERE kind='guest-identity' AND json_extract(body,'$.codeHash')=?",
-      digest(text(input.permanentCode || "", 100)),
-    );
-  const relation = newProof?.candidates.find(
-    (link) =>
-      link.household === household &&
-      compareName(link.record.suffix) === compareName(input.suffix),
-  );
-  if (!old || !relation) fail(401, "Unable to confirm both invite codes.");
+    oldProof = authenticateGuest(store, {
+      ...input,
+      inviteCode: input.permanentCode,
+    });
+  const old = oldProof?.identity;
+  const relation = newProof?.relation;
+  if (!old || !relation || relation.household !== household)
+    fail(401, "Unable to confirm both invite codes.");
   if (old.id === newProof.identity.id) return;
   store.transaction(() => {
     rememberLink(store, household, relation.guest);

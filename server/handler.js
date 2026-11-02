@@ -1,3 +1,4 @@
+import { saveAddressResponse } from "./address-rsvp.js";
 import {
   identityAPI,
   identityFor,
@@ -59,6 +60,8 @@ const files = new Map([
     "card-system.js",
     "reminder-time.js",
     "family-ui.js",
+    "default-examples.js",
+    "address-picker.js",
   ].map((file) => ["/" + file, [file, "text/javascript; charset=utf-8"]]),
 ]);
 const date = (value) => {
@@ -870,7 +873,7 @@ export function createHandler({
             const input = await body(req),
               record =
                 kind === "guest"
-                  ? guestInput(input, store, household, existing)
+                  ? null
                   : kind === "address"
                     ? {
                         label: text(input.label, 100, true),
@@ -881,18 +884,49 @@ export function createHandler({
                       }
                     : eventInput(input, store, household, existing);
             const saved = store.transaction(() => {
+              let nextRecord = record;
+              if (kind === "guest") {
+                let address = input.address;
+                if (input.addressDraft) {
+                  const draft = input.addressDraft;
+                  if (typeof draft !== "object" || Array.isArray(draft))
+                    fail(400, "Invalid shared address.");
+                  const key = draft.id ? text(draft.id, 100) : id();
+                  const current = draft.id ? owned("address", key) : null;
+                  if (current && !Number.isSafeInteger(draft.version))
+                    fail(409, "Address changed. Review it before saving.");
+                  const savedAddress = store.put(
+                    "address",
+                    key,
+                    household,
+                    {
+                      label: text(draft.label, 100, true),
+                      lines: text(draft.lines || "", 500),
+                      phone: contactPhone(draft.phone || ""),
+                    },
+                    current ? draft.version : undefined,
+                  );
+                  address = savedAddress.id;
+                }
+                nextRecord = guestInput(
+                  { ...input, address },
+                  store,
+                  household,
+                  existing,
+                );
+              }
               const saved = store.put(
                 kind,
                 key || id(),
                 household,
-                record,
+                nextRecord,
                 key ? version(req) : undefined,
               );
               if (kind === "guest") {
                 identityFor(store, saved, household);
                 if (input.matchTicket)
                   requestGuestLink(store, household, saved, input.matchTicket);
-                return guestContact(store, saved, household);
+                return guestContact(store, saved, household, existing);
               }
               return saved;
             });
@@ -926,6 +960,12 @@ export function createHandler({
               )
                 fail(409, "Unassign this address from guests first.");
               store.remove(kind, key, household, version(req));
+              if (kind === "guest")
+                store.run(
+                  "DELETE FROM guest_access_links WHERE household=? AND guest=?",
+                  household,
+                  key,
+                );
               if (kind === "guest")
                 store.run(
                   "DELETE FROM guest_identity_history WHERE household=? AND guest=?",
@@ -987,7 +1027,8 @@ export function createHandler({
           const event = store.get("event", match[1], relation.household);
           json(
             res,
-            store.saveResponse(
+            saveAddressResponse(
+              store,
               event,
               { household: relation.household, guest: relation.guest },
               input,

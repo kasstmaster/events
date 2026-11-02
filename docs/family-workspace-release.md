@@ -1,5 +1,7 @@
 # Family workspace release handoff
 
+This records the original family release. The subsequent owner-approved address-code, shared-address RSVP and editor changes are covered by [the current follow-up guide](visual-address-card-release.md); its credential rules replace the individual-code descriptions below.
+
 ## Scope and source
 
 This release extends the `feat/household-subdomains` application after `ae782336cab30f3469e7f6b82915ce2b3a84f92e`. It adds permanent guest-code identities and approved shared invitations, household family accounts and child-specific permissions, shared lists, reviewed recipe import, private home documents, recurring chores and in-app reminders. Family logos, custom RSVP items and strict deadlines are included. The existing shared visual-default, formatting and card flows remain shared. See [operations and rollout](family-workspace.md).

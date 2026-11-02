@@ -15,6 +15,8 @@ import {
   cardTextLines,
   populateField,
   cardFieldLabels,
+  cardBounds,
+  snapCardElement,
 } from "./card-system.js";
 export function featureTools(ctx) {
   const {
@@ -31,8 +33,12 @@ export function featureTools(ctx) {
     load,
     fileData,
     selectedEvent,
+    renderDefaultExample,
+    render,
   } = ctx;
   let editingPrivate = false;
+  let selectedCardField = 0,
+    snapGuides = {};
   let editingUI,
     editingCard,
     cardContext = {},
@@ -65,227 +71,198 @@ export function featureTools(ctx) {
     editingUI.draftLayouts = structuredClone(result.ui.layouts);
     modal(
       C("Page defaults · visual editor"),
-      ui`<p>Example pages only. Double-click text or a container to edit. Drag the selected item within its group, or use Move up / Move down. Wording and positions apply to every household. Existing household and event formatting is preserved when defaults change.</p>${select(
+      ui`<p>Example pages only. Double-click interface text and type to change wording. Double-click a container to format or move it. Drag the selected item within its group, or use Move up / Move down. Wording and positions apply to every household. Existing household and event formatting is preserved when defaults change.</p>${select(
         H("Example page"),
         "examplePage",
         Object.entries({
           ...viewLabels,
+          event: "Host event page",
+          guestEvent: "Guest event · RSVP saved",
+          guestEventUnanswered: "Guest event · no RSVP yet",
+          guestLoginSuffix: "Guest sign-in · suffix revealed",
+          familyLogin: "Family member sign-in",
+          familyHome: "Family workspace · owner",
+          familyKidHome: "Family workspace · kid",
+          familyList: "Family list",
+          familyKidList: "Family list · kid",
+          familyRecipe: "Family recipe",
+          familyRecord: "Private home record",
+          familyChore: "Family chore",
+          familyTasks: "My Tasks · adult",
+          familyKidTasks: "My Tasks · kid",
           hostLogin: "Host sign-in",
           registration: "Host registration",
         }).map(([id, label]) => [id, C(label)]),
         "hostHome",
-      )}<div id="page-example" class="page-example"></div><section id="visual-inspector" hidden><h3>Selected element</h3><p id="selected-element"></p><div id="selected-wording"></div><div id="default-design-controls">${designFields(result.ui.design)}</div><div class="row">${button("visual-up", H("Move up"))}${button("visual-down", H("Move down"))}</div></section>`,
+      )}${select(
+        H("Example screen size"),
+        "exampleWidth",
+        [
+          ["390", C("Phone")],
+          ["768", C("Tablet")],
+          ["1440", C("Desktop")],
+        ],
+        "390",
+      )}<p class="small muted">These are the real page layouts with sample information. Select elements to edit defaults; example buttons do not change data.</p><div id="page-example" class="page-example"><iframe id="page-example-frame" title="Example page" sandbox="allow-same-origin"></iframe></div><section id="visual-inspector" hidden><h3>Selected element</h3><p id="selected-element"></p><div id="selected-wording"></div><div id="default-design-controls">${designFields(result.ui.design)}</div><div class="row">${button("visual-up", H("Move up"))}${button("visual-down", H("Move down"))}</div></section>`,
       "ui-settings",
     );
     renderExample("hostHome");
   }
   let visualSelection;
-  // Synthetic examples use the same classes, roles and structured order as live pages.
-  // They never request a household record or create an account/guest/RSVP.
+  const exampleDocument = () =>
+    document.querySelector("#page-example-frame")?.contentDocument;
+  function sizeExample() {
+    const frame = document.querySelector("#page-example-frame"),
+      wrapper = frame?.parentElement;
+    if (!frame || !wrapper) return;
+    const width = Number(document.querySelector("[name=exampleWidth]").value),
+      height = 900;
+    const scale = Math.min(1, wrapper.clientWidth / width);
+    frame.style.width = width + "px";
+    frame.style.height = height + "px";
+    frame.style.transform = `scale(${scale})`;
+    wrapper.style.height = height * scale + "px";
+  }
   function renderExample(view) {
     visualSelection = null;
     document.querySelector("#visual-inspector").hidden = true;
-    const copy = (key) => escape(editingUI.draftCopy[key] ?? key);
-    const text = (key, role = "text", tag = "p") =>
-      `<${tag} tabindex="0" data-default-role="${role}" data-default-copy="${escape(key)}" class="${role === "description" ? "muted" : role === "eyebrow" ? "eyebrow" : role === "status" ? "pill" : ""}">${copy(key)}</${tag}>`;
-    const sample = (label, role = "text", tag = "p") =>
-      `<${tag} tabindex="0" data-default-role="${role}">${escape(label)}</${tag}>`;
-    const group = (name, items, cls = "") =>
-      `<div class="${cls}" data-layout="${name}">${editingUI.draftLayouts[name]
-        .filter(
-          (id) =>
-            !(name === "homeButtons" && id === "guests") &&
-            !(name === "eventButtons" && id === "delete-event"),
-        )
-        .map(
-          (id) =>
-            `<div data-layout-item="${id}" data-default-role="container" tabindex="0">${items[id] || text(layoutLabels[id] || id)}</div>`,
-        )
-        .join("")}</div>`;
-    const intro = (mode = "host") =>
-      group(
-        "introText",
-        {
-          eyebrow: text(
-            mode === "guest"
-              ? "Welcome,"
-              : mode === "login"
-                ? "You’re in good company"
-                : ["hostLogin", "registration"].includes(mode)
-                  ? "A place for your people"
-                  : "Your gathering place",
-            "eyebrow",
-          ),
-          title:
-            mode === "hostLogin"
-              ? text("Good things begin together.", "title", "h1")
-              : mode === "registration"
-                ? text("Make yourself at home.", "title", "h1")
-                : sample("Example household", "title", "h1"),
-          description: text(
-            mode === "guest"
-              ? "Your invitations, all in one place."
-              : mode === "login"
-                ? "Welcome. Enter your name to see your invitations."
-                : "A familiar table. A new memory. Make room for your next gathering.",
-            "description",
-          ),
-        },
-        "hero",
-      );
-    const toolbar = () =>
-      group(
-        "toolbar",
-        Object.fromEntries(
-          layouts.toolbar.map((id) => [
-            id,
-            text(
-              {
-                home: "Home",
-                print: "Print",
-                rsvp: "RSVP",
-                dashboard: "RSVPs",
-                logout: "Sign out",
-              }[id],
-              "toolbar",
-              "span",
-            ),
-          ]),
-        ),
-        "example-toolbar",
-      );
-    const actions = (name) =>
-      group(
-        name,
-        Object.fromEntries(
-          layouts[name].map((id) => [
-            id,
-            text(
-              {
-                invitation: "Preview invitation",
-                rsvp: "RSVP",
-                uploads: "Upload Photos & Videos",
-                cards: "Cards & templates",
-              }[id] ||
-                layoutLabels[id] ||
-                id,
-              "button",
-              "button",
-            ),
-          ]),
-        ),
-        "row",
-      );
-    const eventInfo = () =>
-      group(
-        "eventInformation",
-        {
-          artwork: sample("Event artwork", "description"),
-          eyebrow: text("Something to share", "eyebrow"),
-          title: sample("Example celebration", "title", "h1"),
-          description: sample("Good company. Great memories.", "description"),
-          details:
-            text("When", "status") + sample("June 12 · Two o’clock", "status"),
-          deadline: text("RSVP By", "status"),
-        },
-        "event-hero",
-      );
-    const eventCard = `<article class="card">${text("You’re invited to gather", "eyebrow")}${sample("Example celebration", "title", "h2")}${sample("A lovely afternoon", "description")}${text("Attending", "status")}${text("View event", "button", "button")}</article>`;
-    const event = () =>
-      group("event", {
-        information: eventInfo(),
-        actions: actions("eventButtons"),
-        menus: `<section class="panel">${text("Something to share", "eyebrow")}${text("At the table", "title", "h2")}${sample("Salad", "text")}${text("Needed", "status")}</section>`,
-        personal: `<section class="panel">${text("Your plans", "eyebrow")}${text("Your RSVP & items", "title", "h2")}${text("Attending", "status")}</section>`,
-      });
-    const login = () =>
-      group("login", {
-        intro: intro("login"),
-        form: `<section class="panel">${text("Guest sign-in", "title", "h2")}${text("First name", "text", "label")}<input data-default-role="input" value="Example" readonly>${text("Last name", "text", "label")}<input data-default-role="input" value="Guest" readonly>${text("Suffix, if applicable", "text", "label")}<input data-default-role="input" value="" readonly>${text("See my invitations", "button", "button")}</section>`,
-      });
-    const pages = {
-      hostHome: () =>
-        group("hostHome", {
-          intro: intro(),
-          actions: actions("homeButtons"),
-          notes: `<section class="panel private-notes">${text("Private household notes", "notes", "h2")}${sample("Example private note", "notes")}<textarea data-default-role="notes" readonly>Example note</textarea>${text("Save private notes", "button", "button")}</section>`,
-          events: eventCard,
-        }),
-      guestHome: () =>
-        group("guestHome", { intro: intro("guest"), events: eventCard }),
-      event,
-      login,
-      hostLogin: () =>
-        group("login", {
-          intro: intro("hostLogin"),
-          form: `<section class="panel">${text("Host Login", "title", "h2")}${text("Email address", "text", "label")}<input data-default-role="input" value="host@example.test" readonly>${text("Password", "text", "label")}<input data-default-role="input" value="Example password" readonly>${text("Sign in", "button", "button")}${text("Create your account", "button", "button")}</section>`,
-        }),
-      registration: () =>
-        group("login", {
-          intro: intro("registration"),
-          form: `<section class="panel">${text("Create your account", "title", "h2")}${text("Email address", "text", "label")}<input data-default-role="input" value="host@example.test" readonly>${text("Family household name", "text", "label")}<input data-default-role="input" value="Example household" readonly>${text("Password", "text", "label")}<input data-default-role="input" value="Example password" readonly>${text("Create account", "button", "button")}</section>`,
-        }),
-      introText: intro,
-      eventInformation: eventInfo,
-      toolbar,
-      eventButtons: () => actions("eventButtons"),
-      homeButtons: () => actions("homeButtons"),
-      admin: () =>
-        group(
-          "admin",
-          Object.fromEntries(
-            layouts.admin.map((id) => [
-              id,
-              `<section class="panel">${text(layoutLabels[id], "title", "h2")}${text("Save", "button", "button")}</section>`,
-            ]),
-          ),
-        ),
+    const form = document.querySelector("form[data-form=ui-settings]");
+    const config = {
+      ...editingUI.ui,
+      copy: editingUI.draftCopy,
+      layouts: editingUI.draftLayouts,
+      design: readDesign(form, editingUI.ui.design),
     };
-    document.querySelector("#page-example").innerHTML =
-      (pages[view] || intro)() +
-      (view === "hostHome" || view === "guestHome" || view === "event"
-        ? toolbar()
-        : "");
-    styleExample();
+    const rendered = renderDefaultExample(view, config);
+    const frame = document.querySelector("#page-example-frame");
+    frame.onload = () => {
+      const doc = frame.contentDocument;
+      if (view === "guestLoginSuffix")
+        doc.querySelector("#guest-suffix")?.removeAttribute("hidden");
+      doc.addEventListener("click", (event) => {
+        event.preventDefault();
+      });
+      doc.addEventListener("submit", (event) => {
+        event.preventDefault();
+      });
+      doc.addEventListener("beforeinput", (event) => {
+        if (!event.target.closest?.('[contenteditable="plaintext-only"]'))
+          event.preventDefault();
+      });
+      doc.addEventListener("input", (event) => {
+        const el = event.target.closest?.(
+          '[contenteditable="plaintext-only"][data-default-copy]',
+        );
+        if (el) updateExampleCopy(el.dataset.defaultCopy, el.textContent, el);
+      });
+      doc.addEventListener("focusout", (event) => {
+        const el = event.target.closest?.('[contenteditable="plaintext-only"]');
+        if (el) {
+          el.removeAttribute("contenteditable");
+          const row = el.closest("[data-layout-item]");
+          if (row) row.draggable = true;
+        }
+      });
+      doc.addEventListener("dblclick", (event) => {
+        const element = event.target.closest?.("[data-default-role]");
+        if (element && role() === "admin") {
+          event.preventDefault();
+          selectVisual(element);
+          if (element.dataset.defaultCopy) editWordingInline(element);
+        }
+      });
+      doc.addEventListener("keydown", (event) => {
+        const element = event.target.closest?.("[data-default-role]");
+        if (element?.isContentEditable) {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            updateExampleCopy(
+              element.dataset.defaultCopy,
+              element.dataset.previousWording,
+              element,
+            );
+            element.textContent = element.dataset.previousWording;
+            element.blur();
+          } else if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            element.blur();
+          }
+          return;
+        }
+        if (element && ["Enter", " "].includes(event.key)) {
+          event.preventDefault();
+          selectVisual(element);
+          if (element.dataset.defaultCopy) editWordingInline(element);
+        }
+      });
+      doc.addEventListener("dragstart", (event) => {
+        const row = event.target.closest?.("[data-layout-item]");
+        if (row?.draggable) {
+          dragIndex = row;
+          event.dataTransfer.setData("text/plain", row.dataset.layoutItem);
+        }
+      });
+      doc.addEventListener("dragover", (event) => {
+        if (event.target.closest?.("[data-layout-item]"))
+          event.preventDefault();
+      });
+      doc.addEventListener("drop", (event) => {
+        const row = event.target.closest?.("[data-layout-item]");
+        if (row && dragIndex && row.parentElement === dragIndex.parentElement) {
+          event.preventDefault();
+          row.before(dragIndex);
+          saveExampleLayout(row);
+        }
+        dragIndex = null;
+      });
+      sizeExample();
+    };
+    frame.srcdoc = `<!doctype html><html lang="en" style="${escape(rendered.style)}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"></head><body data-defaults-example><div id="app">${rendered.markup}</div></body></html>`;
+    sizeExample();
   }
   function styleExample() {
-    const example = document.querySelector("#page-example");
-    if (!example) return;
-    const form = example.closest("form"),
-      d = readDesign(form, editingUI.ui.design);
-    example.style.backgroundImage = d.backgroundImage
-      ? `url("${d.backgroundImage}")`
-      : "none";
-    const props = {
-      background: "bg",
-      container: "panel",
-      titleColor: "heading",
-      textColor: "ink",
-      titleFont: "title-font",
-      textFont: "body-font",
-      titleSize: "title-size",
-      textSize: "text-size",
-    };
-    for (const [key, value] of Object.entries(d)) {
-      if (key === "backgroundImage") continue;
-      const css =
-        props[key] || key.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
-      example.style.setProperty(
-        "--" + css,
-        typeof value === "number" && key !== "opacity" ? value + "px" : value,
-      );
-    }
-    example.style.setProperty(
-      "--panel",
-      `color-mix(in srgb, ${d.container} ${d.opacity}%, transparent)`,
+    const root = exampleDocument()?.documentElement;
+    if (!root) return;
+    const form = document.querySelector("form[data-form=ui-settings]");
+    const d = readDesign(form, editingUI.ui.design);
+    // The shared renderer applies the complete design variables; preserve the selected node.
+    const rendered = renderDefaultExample(
+      document.querySelector("[name=examplePage]").value,
+      {
+        ...editingUI.ui,
+        copy: editingUI.draftCopy,
+        layouts: editingUI.draftLayouts,
+        design: d,
+      },
     );
+    root.setAttribute("style", rendered.style);
+  }
+  function updateExampleCopy(key, value, source) {
+    editingUI.draftCopy[key] = value;
+    for (const el of exampleDocument().querySelectorAll("[data-default-copy]"))
+      if (el.dataset.defaultCopy === key && el !== source)
+        el.textContent = value;
+    const inspector = document.querySelector("[name=selectedWording]");
+    if (inspector && source !== inspector) inspector.value = value;
+  }
+  function editWordingInline(element) {
+    element.dataset.previousWording = element.textContent;
+    element.setAttribute("contenteditable", "plaintext-only");
+    element.draggable = false;
+    element.closest("[data-layout-item]")?.setAttribute("draggable", "false");
+    element.focus();
+    const selection = element.ownerDocument.getSelection(),
+      range = element.ownerDocument.createRange();
+    range.selectNodeContents(element);
+    selection.removeAllRanges();
+    selection.addRange(range);
   }
   function selectVisual(element) {
-    const form = element.closest("form");
+    const form = document.querySelector("form[data-form=ui-settings]");
     visualSelection = element;
-    window.getSelection()?.removeAllRanges();
-    for (const el of document.querySelectorAll(
-      "#page-example [data-default-role]",
+    element.ownerDocument.getSelection()?.removeAllRanges();
+    for (const el of exampleDocument().querySelectorAll(
+      "[data-default-role]",
     )) {
       el.classList.toggle("layout-selected", el === element);
       el.draggable = el === element && el.hasAttribute("data-layout-item");
@@ -346,9 +323,11 @@ export function featureTools(ctx) {
       control.closest("label").hidden = !allowed.includes(control.name);
   }
   function saveExampleLayout(element) {
-    const group = element.closest("[data-layout]");
+    const group = element.parentElement?.closest("[data-layout]");
     if (group) {
-      const keys = [...group.children].map((el) => el.dataset.layoutItem);
+      const keys = [...group.children]
+        .map((el) => el.dataset.layoutItem)
+        .filter((key) => layouts[group.dataset.layout]?.includes(key));
       editingUI.draftLayouts[group.dataset.layout] = [
         ...keys,
         ...layouts[group.dataset.layout].filter((key) => !keys.includes(key)),
@@ -446,6 +425,7 @@ export function featureTools(ctx) {
     privateTemplate = false,
   ) {
     editingPrivate = privateTemplate;
+    selectedCardField = 0;
     editingCard = normalizeCard(card);
     if (source) {
       delete editingCard.id;
@@ -460,10 +440,15 @@ export function featureTools(ctx) {
         first: C("Recipient"),
         last: "Name",
         address: "Address",
+        inviteCode: "0123",
       },
     };
     qrData = role() === "host" ? await qrURL() : "";
-    drawCardEditor();
+    notify("");
+    if (state.view !== "card-editor") state.cardReturnView = state.view;
+    document.querySelector("#editor").close();
+    state.view = "card-editor";
+    render();
   }
   async function qrURL() {
     const response = await fetch("/api/host/qr", {
@@ -472,50 +457,88 @@ export function featureTools(ctx) {
     if (!response.ok) throw new Error("Could not load household QR.");
     return "data:image/svg+xml;base64," + btoa(await response.text());
   }
-  function drawCardEditor() {
+  function cardEditorPage() {
     const card = editingCard;
-    modal(
-      role() === "admin" ? C("Edit shared template") : C("Edit your card"),
-      ui`<p>Drag a field in the preview; use numeric positions and Move controls for touch/keyboard. Text bounds are guides—check long names before printing.</p><div class="card-workspace"><div id="card-canvas" tabindex="0" aria-label="Card preview"></div><div class="card-controls">${field(H("Card name"), "cardName", card.name, "text", 'required maxlength="100"')}${select(
-        H("Card type"),
-        "cardKind",
-        [
-          ["invitation", C("Invitation")],
-          ["thank-you", C("Thank-you")],
-          ["holiday", C("Holiday")],
-        ],
-        card.kind,
-      )}${role() === "host" ? `${select(H("Populate from event"), "cardEvent", options(), card.event || state.event || "")}${select(H("Recipient"), "cardRecipient", [["", C("No recipient")], ...cardOptions()], card.recipient || "")}` : ""}${field(H("Background artwork"), "cardBackground", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input name="removeCardBackground" type="checkbox">Remove background artwork</label>${field(H("Card background color"), "cardColor", card.color, "color")}<div class="form-grid">${field(H("Canvas width"), "cardWidth", card.width, "number", 'min="300" max="2400"')}${field(H("Canvas height"), "cardHeight", card.height, "number", 'min="300" max="2400"')}</div><label class="check"><input name="includeQR" type="checkbox" ${card.includeQR ? "checked" : ""}>Include QR code</label>${role() === "host" ? M('<label class="check"><input name="savePrivateTemplate" type="checkbox">Save as a reusable private template</label>') : ""}<div id="card-fields">${card.elements
-        .map(
-          (e, index) =>
-            ui`<fieldset data-card-index="${index}"><legend>Field ${index + 1}</legend>${select(
-              H("Dynamic field"),
-              "field",
-              cardFields.map((f) => [f, C(cardFieldLabels[f])]),
-              e.field,
-            )}${area(H("Text / fallback"), "fieldText", e.field === "text" ? e.text : e.fallback)}<div class="form-grid">${["x", "y", "width", "height", "fontSize"].map((k) => field(C({ x: "Horizontal position", y: "Vertical position", width: "Box width", height: "Box height", fontSize: "Text size" }[k]), k, e[k], "number", `min="${k === "fontSize" ? 8 : 0}" max="2400"`)).join("")}${field(H("Text color"), "color", e.color, "color")}${select(
-              H("Font"),
-              "font",
-              cardFonts.map((f) => [f, f]),
-              e.font,
-            )}${select(
-              H("Alignment"),
-              "align",
-              [
-                ["left", C("Left")],
-                ["center", C("Center")],
-                ["right", C("Right")],
-              ],
-              e.align,
-            )}</div><label class="check"><input name="bold" type="checkbox" ${e.bold ? "checked" : ""}>Bold</label>${button("remove-card-field", H("Remove field"), `data-index="${index}"`, "quiet")}</fieldset>`,
-        )
-        .join(
-          "",
-        )}</div>${button("add-card-field", H("Add field"))}<hr>${field(H("Print quantity"), "printQuantity", 1, "number", 'min="1" max="50"')}<p class="small muted">One card per printed page; quantity generates that many pages. Paper size, scaling and printer copies remain in your print dialog.</p><div class="row">${button("download-card", H("Download SVG"))}${button("download-png", "Download PNG")}${button("print-card", H("Print cards"))}${button("share-card", H("Share / text"))}${button("email-card", H("Email composer"))}</div></div></div>`,
-      "card",
-      role() === "admin" ? C("Save shared template") : C("Save card"),
+    return ui`<form data-form="card" class="card-editor-page"><div class="card-editor-header"><h1>${role() === "admin" ? C("Edit shared template") : C("Edit your card")}</h1><div class="row">${button("card-tools-toggle", H("Tools"), `aria-expanded="${!!state.cardToolsOpen}"`, "card-tools-toggle")}${button("card-editor-back", H("Close editor"))}<button>${role() === "admin" ? C("Save shared template") : C("Save card")}</button></div></div><p class="form-error" role="alert"></p><p>Drag a field in the preview; use numeric positions or arrow keys for precise movement. Text bounds are guides—check long names before printing.</p><div class="card-workspace"><section class="card-preview-area" aria-label="Card workspace"><div id="card-canvas" tabindex="0" aria-label="Card preview"></div></section><aside class="card-controls" aria-label="Card editor tools" ${window.innerWidth < 850 && !state.cardToolsOpen ? "inert" : ""}>${button("card-tools-toggle", H("Close tools"), "", "card-tools-toggle")}<h2>Variables</h2><p>Drag a variable onto the preview, or select it to add it. Select an item in the preview to format it. Items snap to the center and edges.</p><div class="card-variable-list">${cardFields.map((key) => ui`<button type="button" draggable="true" data-card-variable="${key}" data-action="add-card-variable" data-id="${key}">${C(cardFieldLabels[key])}</button>`).join("")}</div>${select(
+      H("Selected item"),
+      "cardSelected",
+      card.elements.map((e, index) => [
+        String(index),
+        `${index + 1}. ${String(C(cardFieldLabels[e.field]))}`,
+      ]),
+      String(selectedCardField),
+    )}${field(H("Card name"), "cardName", card.name, "text", 'required maxlength="100"')}${select(
+      H("Card type"),
+      "cardKind",
+      [
+        ["invitation", C("Invitation")],
+        ["thank-you", C("Thank-you")],
+        ["holiday", C("Holiday")],
+      ],
+      card.kind,
+    )}${role() === "host" ? `${select(H("Populate from event"), "cardEvent", options(), card.event || state.event || "")}${select(H("Recipient"), "cardRecipient", [["", C("No recipient")], ...cardOptions()], card.recipient || "")}` : ""}${field(H("Background artwork"), "cardBackground", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input name="removeCardBackground" type="checkbox">Remove background artwork</label>${field(H("Card background color"), "cardColor", card.color, "color")}<div class="form-grid">${field(H("Canvas width"), "cardWidth", card.width, "number", 'min="300" max="2400"')}${field(H("Canvas height"), "cardHeight", card.height, "number", 'min="300" max="2400"')}</div><label class="check"><input name="includeQR" type="checkbox" ${card.includeQR ? "checked" : ""}>Include QR code</label>${role() === "host" ? M('<label class="check"><input name="savePrivateTemplate" type="checkbox">Save as a reusable private template</label>') : ""}<div id="card-fields">${card.elements
+      .map(
+        (e, index) =>
+          ui`<fieldset data-card-index="${index}" ${index === selectedCardField ? "" : "hidden"}><legend>Field ${index + 1}</legend>${select(
+            H("Dynamic field"),
+            "field",
+            cardFields.map((f) => [f, C(cardFieldLabels[f])]),
+            e.field,
+          )}${area(H("Text / fallback"), "fieldText", e.field === "text" ? e.text : e.fallback)}<div class="form-grid">${["x", "y", "width", "height", "fontSize"].map((k) => field(C({ x: "Horizontal position", y: "Vertical position", width: "Box width", height: "Box height", fontSize: "Text size" }[k]), k, e[k], "number", `min="${k === "fontSize" ? 8 : 0}" max="2400" step="any"`)).join("")}${field(H("Text color"), "color", e.color, "color")}${select(
+            H("Font"),
+            "font",
+            cardFonts.map((f) => [f, f]),
+            e.font,
+          )}${select(
+            H("Alignment"),
+            "align",
+            [
+              ["left", C("Left")],
+              ["center", C("Center")],
+              ["right", C("Right")],
+            ],
+            e.align,
+          )}</div><label class="check"><input name="bold" type="checkbox" ${e.bold ? "checked" : ""}>Bold</label>${button("remove-card-field", H("Remove field"), `data-index="${index}"`, "quiet")}</fieldset>`,
+      )
+      .join(
+        "",
+      )}</div>${button("add-card-field", H("Add field"))}<hr>${field(H("Print quantity"), "printQuantity", 1, "number", 'min="1" max="50"')}<p class="small muted">One card per printed page; quantity generates that many pages. Paper size, scaling and printer copies remain in your print dialog.</p><div class="row">${button("download-card", H("Download SVG"))}${button("download-png", "Download PNG")}${button("print-card", H("Print cards"))}${button("share-card", H("Share / text"))}${button("email-card", H("Email composer"))}</div></aside></div></form>`;
+  }
+  function drawCardEditor() {
+    render();
+  }
+  function chooseCardField(index) {
+    selectedCardField = Math.max(
+      0,
+      Math.min(editingCard.elements.length - 1, index),
     );
+    const select = document.querySelector("[name=cardSelected]");
+    if (select) select.value = String(selectedCardField);
+    for (const row of document.querySelectorAll("[data-card-index]"))
+      row.hidden = Number(row.dataset.cardIndex) !== selectedCardField;
     refreshCard();
+  }
+  function addCardVariable(field, point) {
+    if (!cardFields.includes(field)) return;
+    collectCard();
+    if (field === "qr") editingCard.includeQR = true;
+    const element = {
+      ...newCard().elements[0],
+      id: crypto.randomUUID(),
+      field,
+      text: field === "text" ? String(C("Your text")) : "",
+      fallback: "",
+      x: point?.x ?? editingCard.width / 2,
+      y: point?.y ?? editingCard.height / 2,
+      width: Math.min(field === "qr" ? 160 : 240, editingCard.width),
+      height: field === "qr" ? 160 : 70,
+      fontSize: 24,
+      align: field === "qr" ? "left" : "center",
+    };
+    snapCardElement(element, editingCard);
+    editingCard.elements.push(element);
+    selectedCardField = editingCard.elements.length - 1;
+    drawCardEditor();
   }
   function collectCard() {
     const form = document.querySelector("form[data-form=card]");
@@ -571,6 +594,11 @@ export function featureTools(ctx) {
               first: recipient.first,
               last: recipient.last,
               address: address?.lines || "",
+              ...(editingCard.elements.some(
+                (e) => e.field === "recipient.inviteCode",
+              )
+                ? { inviteCode: recipient.inviteCode || "" }
+                : {}),
             }
           : {},
       };
@@ -580,6 +608,23 @@ export function featureTools(ctx) {
     const target = document.querySelector("#card-canvas");
     if (!target) return;
     target.innerHTML = renderCard(editingCard, cardContext, qrData);
+    const svg = target.querySelector("svg"),
+      selected = editingCard.elements[selectedCardField];
+    if (selected) {
+      const b = cardBounds(selected);
+      svg.insertAdjacentHTML(
+        "beforeend",
+        `<rect class="card-selection" x="${b.left}" y="${b.top}" width="${b.width}" height="${b.height}" fill="none" stroke="#b7784c" stroke-width="2" pointer-events="none"/><rect data-card-resize="${selectedCardField}" aria-label="Resize selected item" x="${b.left + b.width - 7}" y="${b.top + b.height - 7}" width="14" height="14" fill="#b7784c" style="cursor:nwse-resize"/>`,
+      );
+    }
+    for (const [axis, value] of Object.entries(snapGuides))
+      svg.insertAdjacentHTML(
+        "beforeend",
+        axis === "x"
+          ? `<line class="card-snap-guide" x1="${value}" x2="${value}" y1="0" y2="${editingCard.height}" stroke="#b7784c" stroke-dasharray="6 4" pointer-events="none"/>`
+          : `<line class="card-snap-guide" y1="${value}" y2="${value}" x1="0" x2="${editingCard.width}" stroke="#b7784c" stroke-dasharray="6 4" pointer-events="none"/>`,
+      );
+
     const clipped = editingCard.elements.some(
       (e) =>
         e.field !== "qr" &&
@@ -597,7 +642,9 @@ export function featureTools(ctx) {
       target.after(warning);
     }
     warning.textContent = clipped
-      ? "Some text may be clipped. Increase the field height or reduce its size before exporting."
+      ? C(
+          "Some text may be clipped. Increase the field height or reduce its size before exporting.",
+        )
       : "";
   }
   function cardSVG() {
@@ -738,6 +785,11 @@ export function featureTools(ctx) {
     },
     adminPanel: () =>
       ui`<section class="panel"><h2>Shared design & pages</h2><div class="row">${button("global-defaults", H("Edit global defaults"))}${button("preview-guest", H("Preview guest experience"))}${button("cards", H("Cards & templates"))}</div><p>Content, formatting and layout are separate. Preview never submits guest data.</p>${(state.data.deletions || []).length ? ui`<h3>Account cleanup</h3><ul>${state.data.deletions.map((job) => ui`<li>${escape(job.email || job.label || "Deleted household")}: ${escape(job.phase)} ${job.error ? escape(job.error) : ""}</li>`).join("")}</ul>` : ""}</section>`,
+    cardEditorPage,
+    mountCardEditor() {
+      document.body.classList.toggle("card-tools-open", !!state.cardToolsOpen);
+      refreshCard();
+    },
     async action(action, target) {
       const key = target.dataset.id;
       if (action === "global-defaults") {
@@ -799,22 +851,37 @@ export function featureTools(ctx) {
         await cards();
         return true;
       }
+      if (action === "card-tools-toggle") {
+        state.cardToolsOpen = !state.cardToolsOpen;
+        document.body.classList.toggle("card-tools-open", state.cardToolsOpen);
+        document.querySelector(".card-controls").inert =
+          window.innerWidth < 850 && !state.cardToolsOpen;
+        for (const b of document.querySelectorAll(
+          "[data-action=card-tools-toggle]",
+        ))
+          b.setAttribute("aria-expanded", String(state.cardToolsOpen));
+        return true;
+      }
+      if (action === "card-editor-back") {
+        state.view = state.cardReturnView || "home";
+        render();
+        return true;
+      }
+      if (action === "add-card-variable") {
+        addCardVariable(key);
+        return true;
+      }
       if (action === "add-card-field") {
-        collectCard();
-        editingCard.elements.push({
-          ...newCard().elements[0],
-          id: crypto.randomUUID(),
-          field: "text",
-          text: "Your text",
-          x: 40,
-          y: 40,
-        });
-        drawCardEditor();
+        addCardVariable("text");
         return true;
       }
       if (action === "remove-card-field") {
         collectCard();
         editingCard.elements.splice(Number(target.dataset.index), 1);
+        selectedCardField = Math.max(
+          0,
+          Math.min(selectedCardField, editingCard.elements.length - 1),
+        );
         drawCardEditor();
         return true;
       }
@@ -996,6 +1063,7 @@ export function featureTools(ctx) {
           version: key ? editingCard.version : undefined,
           data: editingCard,
         });
+        state.view = state.cardReturnView || "home";
         await saved("Card saved. Source templates remain unchanged.");
         return true;
       }
@@ -1035,19 +1103,22 @@ export function featureTools(ctx) {
       return false;
     },
     input(event) {
+      if (event.target.name === "cardSelected") {
+        chooseCardField(Number(event.target.value));
+        return;
+      }
+      if (event.target.name === "exampleWidth") sizeExample();
       if (event.target.name === "examplePage")
         renderExample(event.target.value);
       if (
         event.target.name === "selectedWording" &&
         visualSelection?.dataset.defaultCopy
       ) {
-        const key = visualSelection.dataset.defaultCopy;
-        editingUI.draftCopy[key] = event.target.value;
-        for (const el of document.querySelectorAll(
-          "#page-example [data-default-copy]",
-        ))
-          if (el.dataset.defaultCopy === key)
-            el.textContent = event.target.value;
+        updateExampleCopy(
+          visualSelection.dataset.defaultCopy,
+          event.target.value,
+          event.target,
+        );
       }
       if (event.target.closest("#default-design-controls")) styleExample();
       if (event.target.name === "cardBackground") {
@@ -1073,6 +1144,14 @@ export function featureTools(ctx) {
       if (event.target.name === "previewHousehold") updateScopeEvents();
     },
     bind() {
+      window.addEventListener("resize", () => {
+        sizeExample();
+        if (state.view === "card-editor") {
+          const side = document.querySelector(".card-controls");
+          if (side)
+            side.inert = window.innerWidth < 850 && !state.cardToolsOpen;
+        }
+      });
       document.addEventListener("dblclick", (event) => {
         const element = event.target.closest(
           "#page-example [data-default-role]",
@@ -1118,58 +1197,123 @@ export function featureTools(ctx) {
         dragIndex = null;
       });
       let dragging;
-      document.addEventListener("pointerdown", (event) => {
-        const canvas = event.target.closest("#card-canvas");
-        if (!canvas) return;
-        const svg = canvas.querySelector("svg"),
-          rect = svg.getBoundingClientRect(),
-          x = ((event.clientX - rect.left) * editingCard.width) / rect.width,
-          y = ((event.clientY - rect.top) * editingCard.height) / rect.height;
-        const index = editingCard.elements.findLastIndex(
-          (e) =>
-            Math.abs(e.x - x) < Math.max(e.width, 60) &&
-            Math.abs(e.y - y) < Math.max(e.height, 40),
-        );
-        if (index >= 0) {
-          dragging = {
-            index,
-            x,
-            y,
-            startX: editingCard.elements[index].x,
-            startY: editingCard.elements[index].y,
-          };
-          canvas.setPointerCapture(event.pointerId);
-          event.preventDefault();
+      const point = (event) => {
+        const rect = document
+          .querySelector("#card-canvas svg")
+          .getBoundingClientRect();
+        return {
+          x: ((event.clientX - rect.left) * editingCard.width) / rect.width,
+          y: ((event.clientY - rect.top) * editingCard.height) / rect.height,
+        };
+      };
+      document.addEventListener("dragstart", (event) => {
+        const palette = event.target.closest?.("[data-card-variable]");
+        if (palette) {
+          event.dataTransfer.setData(
+            "application/x-events-card-variable",
+            palette.dataset.cardVariable,
+          );
+          event.dataTransfer.effectAllowed = "copy";
         }
+      });
+      document.addEventListener("dragover", (event) => {
+        if (event.target.closest?.("#card-canvas")) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+        }
+      });
+      document.addEventListener("drop", (event) => {
+        if (event.target.closest?.("#card-canvas")) {
+          event.preventDefault();
+          const field = event.dataTransfer.getData(
+            "application/x-events-card-variable",
+          );
+          if (cardFields.includes(field)) addCardVariable(field, point(event));
+        }
+      });
+      document.addEventListener("pointerdown", (event) => {
+        const canvas = event.target.closest?.("#card-canvas");
+        if (!canvas || event.button !== 0) return;
+        const p = point(event);
+        const resize = event.target.closest("[data-card-resize]");
+        const marked = event.target.closest("[data-card-element]");
+        const index = resize
+          ? Number(resize.dataset.cardResize)
+          : marked
+            ? Number(marked.dataset.cardElement)
+            : editingCard.elements.findLastIndex((e) => {
+                if (e.field === "qr" && !editingCard.includeQR) return false;
+                const b = cardBounds(e);
+                return (
+                  p.x >= b.left &&
+                  p.x <= b.left + b.width &&
+                  p.y >= b.top &&
+                  p.y <= b.top + b.height
+                );
+              });
+        if (index < 0) return;
+        chooseCardField(index);
+        const e = editingCard.elements[index];
+        dragging = {
+          index,
+          x: p.x,
+          y: p.y,
+          startX: e.x,
+          startY: e.y,
+          resize: !!resize,
+          startWidth: e.width,
+          startHeight: e.height,
+          bounds: cardBounds(e),
+        };
+        canvas.focus();
+        canvas.setPointerCapture(event.pointerId);
+        event.preventDefault();
       });
       document.addEventListener("pointermove", (event) => {
         if (!dragging) return;
-        const svg = document.querySelector("#card-canvas svg"),
-          rect = svg.getBoundingClientRect(),
+        const p = point(event),
           e = editingCard.elements[dragging.index];
-        e.x = Math.max(
-          0,
-          Math.min(
-            editingCard.width,
-            Math.round(
-              dragging.startX +
-                ((event.clientX - rect.left) * editingCard.width) / rect.width -
-                dragging.x,
+        if (Math.abs(p.x - dragging.x) + Math.abs(p.y - dragging.y) > 4)
+          dragging.moved = true;
+        if (dragging.resize) {
+          const min = e.field === "qr" ? 100 : 10;
+          e.width = Math.max(
+            min,
+            Math.min(
+              editingCard.width - dragging.bounds.left,
+              Math.round(dragging.startWidth + p.x - dragging.x),
             ),
-          ),
-        );
-        e.y = Math.max(
-          0,
-          Math.min(
-            editingCard.height,
-            Math.round(
-              dragging.startY +
-                ((event.clientY - rect.top) * editingCard.height) /
-                  rect.height -
-                dragging.y,
+          );
+          e.height = Math.max(
+            min,
+            Math.min(
+              editingCard.height - dragging.bounds.top,
+              Math.round(dragging.startHeight + p.y - dragging.y),
             ),
-          ),
-        );
+          );
+          const offset =
+            e.field === "qr"
+              ? 0
+              : e.align === "center"
+                ? e.width / 2
+                : e.align === "right"
+                  ? e.width
+                  : 0;
+          e.x = dragging.bounds.left + offset;
+          const row = document.querySelector(
+            `[data-card-index="${dragging.index}"]`,
+          );
+          for (const key of ["x", "y", "width", "height"])
+            row.querySelector(`[name=${key}]`).value = e[key];
+          refreshCard();
+          return;
+        }
+        e.x = Math.round(dragging.startX + p.x - dragging.x);
+        e.y = Math.round(dragging.startY + p.y - dragging.y);
+        const scale =
+          document.querySelector("#card-canvas svg").getBoundingClientRect()
+            .width / editingCard.width;
+        snapGuides = snapCardElement(e, editingCard, 8 / scale);
         const row = document.querySelector(
           `[data-card-index="${dragging.index}"]`,
         );
@@ -1177,7 +1321,49 @@ export function featureTools(ctx) {
         row.querySelector("[name=y]").value = e.y;
         refreshCard();
       });
-      document.addEventListener("pointerup", () => (dragging = null));
+      const release = () => {
+        if (dragging && !dragging.moved && window.innerWidth < 850) {
+          state.cardToolsOpen = true;
+          document.body.classList.add("card-tools-open");
+          document.querySelector(".card-controls").inert = false;
+        }
+        dragging = null;
+        snapGuides = {};
+        if (state.view === "card-editor") refreshCard();
+      };
+      document.addEventListener("pointerup", release);
+      document.addEventListener("pointercancel", release);
+      document.addEventListener("keydown", (event) => {
+        if (
+          !event.target.matches?.("#card-canvas") ||
+          !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
+            event.key,
+          )
+        )
+          return;
+        const e = editingCard.elements[selectedCardField];
+        if (!e) return;
+        event.preventDefault();
+        const step = event.shiftKey ? 10 : 1;
+        e.x +=
+          event.key === "ArrowLeft"
+            ? -step
+            : event.key === "ArrowRight"
+              ? step
+              : 0;
+        e.y +=
+          event.key === "ArrowUp"
+            ? -step
+            : event.key === "ArrowDown"
+              ? step
+              : 0;
+        const row = document.querySelector(
+          `[data-card-index="${selectedCardField}"]`,
+        );
+        row.querySelector("[name=x]").value = e.x;
+        row.querySelector("[name=y]").value = e.y;
+        refreshCard();
+      });
     },
   };
 }
