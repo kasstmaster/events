@@ -4,6 +4,11 @@ export const roleDefaults = {
   backgroundImage: "",
   container: "#fffdf9",
   opacity: 96,
+  titleStyle: "normal",
+  descriptionStyle: "normal",
+  textStyle: "normal",
+  borderWidth: 1,
+  borderStyle: "solid",
   titleColor: "#294d42",
   titleFont: "Georgia",
   titleSize: 34,
@@ -74,16 +79,93 @@ export const layouts = {
     "cards",
   ],
 };
+// Deterministic compatibility migration. Explicit category keys win; otherwise the
+// first saved legacy role in each list supplies that category. Normalize each layer
+// before inheritance so an event's legacy override still beats household defaults.
+export function categoryDesign(value = {}) {
+  const result = { ...value };
+  const groups = {
+    textColor: [
+      "toolbarColor",
+      "inputColor",
+      "notesColor",
+      "buttonText",
+      "statusColor",
+      "eyebrowColor",
+      "linkColor",
+      "accentColor",
+      "dangerColor",
+    ],
+    textFont: [
+      "toolbarFont",
+      "notesFont",
+      "buttonFont",
+      "statusFont",
+      "eyebrowFont",
+    ],
+    textSize: [
+      "toolbarSize",
+      "notesSize",
+      "buttonSize",
+      "statusSize",
+      "eyebrowSize",
+    ],
+    container: [
+      "toolbarBackground",
+      "inputBackground",
+      "notesBackground",
+      "statusBackground",
+      "dangerBackground",
+      "buttonColor",
+    ],
+  };
+  for (const [key, aliases] of Object.entries(groups)) {
+    const source = [key, ...aliases].find((k) => Object.hasOwn(value, k));
+    if (source !== undefined) {
+      result[key] = value[source];
+      for (const alias of aliases) result[alias] = value[source];
+    }
+  }
+  return result;
+}
+export const appearanceCategories = [
+  "Background",
+  "Titles",
+  "Description",
+  "Text",
+  "Containers",
+];
+export const appearanceKeys = [
+  "background",
+  "backgroundImage",
+  "titleColor",
+  "titleFont",
+  "titleSize",
+  "titleStyle",
+  "descriptionColor",
+  "descriptionFont",
+  "descriptionSize",
+  "descriptionStyle",
+  "textColor",
+  "textFont",
+  "textSize",
+  "textStyle",
+  "container",
+  "opacity",
+  "borderColor",
+  "borderWidth",
+  "borderStyle",
+];
 export function resolveUI(...layers) {
   const result = {
     copy: {},
-    design: { ...roleDefaults },
+    design: categoryDesign(roleDefaults),
     layouts: { ...layouts },
   };
   for (const layer of layers) {
     if (!layer) continue;
     Object.assign(result.copy, layer.copy);
-    Object.assign(result.design, layer.design);
+    Object.assign(result.design, categoryDesign(layer.design));
     for (const [name, keys] of Object.entries(layer.layouts || {})) {
       if (!(name in layouts)) continue;
       result.layouts[name] = [
@@ -165,74 +247,3 @@ export const fontOptions = [
   "Verdana",
   "Times New Roman",
 ];
-export function designControls(d, { field, select, label = (value) => value }) {
-  const roles = [
-    ["title", "Title"],
-    ["description", "Description"],
-    ["text", "Body text"],
-    ["button", "Button"],
-    ["eyebrow", "Text above title"],
-    ["status", "Attendance / needed information"],
-    ["toolbar", "Toolbar"],
-    ["notes", "Private notes"],
-  ];
-  return (
-    field(
-      label("Background image (optional, up to 2 MB)"),
-      "backgroundUpload",
-      "",
-      "file",
-      'accept="image/png,image/jpeg,image/webp"',
-    ) +
-    '<div class="form-grid">' +
-    field(label("Background color"), "background", d.background, "color") +
-    field(label("Container color"), "container", d.container, "color") +
-    field(
-      label("Container opacity (%)"),
-      "opacity",
-      d.opacity,
-      "number",
-      'min="35" max="100"',
-    ) +
-    roles
-      .map(
-        ([key, name]) =>
-          field(
-            label(name + " color"),
-            key === "button" ? "buttonColor" : key + "Color",
-            d[key === "button" ? "buttonColor" : key + "Color"],
-            "color",
-          ) +
-          select(
-            label(name + " font"),
-            key + "Font",
-            fontOptions.map((f) => [f, f]),
-            d[key + "Font"],
-          ) +
-          field(
-            label(name + " size"),
-            key + "Size",
-            d[key + "Size"],
-            "number",
-            `min="${key === "title" ? 22 : 14}" max="${key === "title" ? 64 : 28}"`,
-          ),
-      )
-      .join("") +
-    field(label("Button text color"), "buttonText", d.buttonText, "color") +
-    [
-      ["borderColor", "Border color"],
-      ["statusBackground", "Attendance / needed background"],
-      ["toolbarBackground", "Toolbar background"],
-      ["inputColor", "Input text color"],
-      ["inputBackground", "Input background"],
-      ["linkColor", "Link color"],
-      ["accentColor", "Accent / focus color"],
-      ["dangerColor", "Destructive action text color"],
-      ["dangerBackground", "Destructive action background"],
-      ["notesBackground", "Private notes background"],
-    ]
-      .map(([key, name]) => field(label(name), key, d[key], "color"))
-      .join("") +
-    "</div>"
-  );
-}

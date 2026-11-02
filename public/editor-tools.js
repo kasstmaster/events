@@ -5,7 +5,6 @@ import {
   roleDefaults,
   layoutLabels,
   viewLabels,
-  designControls,
 } from "./ui-system.js";
 import {
   newCard,
@@ -35,6 +34,7 @@ export function featureTools(ctx) {
     selectedEvent,
     renderDefaultExample,
     render,
+    startAppearance,
   } = ctx;
   let editingPrivate = false;
   let selectedCardField = 0,
@@ -57,7 +57,6 @@ export function featureTools(ctx) {
           g.id,
           [g.first, g.last, g.suffix].filter(Boolean).join(" "),
         ]);
-  const designFields = (d) => designControls(d, { field, select, label: H });
   async function uiEditor(scope = "global", key = "") {
     if (role() !== "admin" || scope !== "global")
       throw new Error("Administrators edit page defaults only.");
@@ -82,6 +81,12 @@ export function featureTools(ctx) {
           guestLoginSuffix: "Guest sign-in · suffix revealed",
           familyLogin: "Family member sign-in",
           contacts: "Contacts",
+          adminApprovals: "Administrator approvals",
+          adminHosts: "Administrator hosts",
+          adminSettings: "Administrator Settings",
+          hostSettings: "Host Settings",
+          guestSettings: "Guest Settings",
+          familySettings: "Family Settings",
           familyHome: "Family workspace · owner",
           familyKidHome: "Family workspace · kid",
           familyList: "Family list",
@@ -103,10 +108,43 @@ export function featureTools(ctx) {
           ["1440", C("Desktop")],
         ],
         "390",
-      )}<p class="small muted">These are the real page layouts with sample information. Select elements to edit defaults; example buttons do not change data.</p><div id="page-example" class="page-example"><iframe id="page-example-frame" title="Example page" sandbox="allow-same-origin"></iframe></div><section id="visual-inspector" hidden><h3>Selected element</h3><p id="selected-element"></p><div id="selected-wording"></div><div id="default-design-controls">${designFields(result.ui.design)}</div><div class="row">${button("visual-up", H("Move up"))}${button("visual-down", H("Move down"))}</div></section>`,
+      )}<p class="small muted">These are the real page layouts with sample information. Select elements to edit defaults; example buttons do not change data.</p><div id="page-example" class="page-example"><iframe id="page-example-frame" title="Example page" sandbox="allow-same-origin"></iframe></div><section id="visual-inspector" hidden><h3>Selected element</h3><p id="selected-element"></p><div id="selected-wording"></div><p>Appearance is edited with the five categories in the top toolbar. These controls change shared wording and layout only.</p><div class="row">${button("visual-up", H("Move up"))}${button("visual-down", H("Move down"))}</div></section>`,
       "ui-settings",
     );
     renderExample("hostHome");
+    const previousDesign = structuredClone(result.ui.design);
+    await startAppearance("global", {
+      design: previousDesign,
+      defaults: roleDefaults,
+      sources: [],
+      preview: (design) => {
+        editingUI.ui.design = design;
+        styleExample();
+      },
+      save: persistDefaults,
+      cancel: () => {
+        closeModalForDefaults();
+      },
+    });
+  }
+  function closeModalForDefaults() {
+    document.querySelector("#editor [data-action=close]")?.click();
+  }
+  async function persistDefaults(design) {
+    const config = { copy: {}, design, layouts: {} };
+    for (const [key, value] of Object.entries(editingUI.draftCopy))
+      if (value !== key) config.copy[key] = value;
+    for (const [key, value] of Object.entries(editingUI.draftLayouts))
+      if (JSON.stringify(value) !== JSON.stringify(layouts[key]))
+        config.layouts[key] = value;
+    await api(editingUI.path, {
+      method: "PUT",
+      version: editingUI.version,
+      data: config,
+    });
+    closeModalForDefaults();
+    await load();
+    notify(C("Page settings saved."));
   }
   let visualSelection;
   const exampleDocument = () =>
@@ -122,6 +160,19 @@ export function featureTools(ctx) {
     frame.style.height = height + "px";
     frame.style.transform = `scale(${scale})`;
     wrapper.style.height = height * scale + "px";
+    const doc = frame.contentDocument;
+    if (doc?.documentElement) {
+      doc.documentElement.style.setProperty(
+        "--top-height",
+        (doc.querySelector(".top-shell")?.getBoundingClientRect().height || 0) +
+          "px",
+      );
+      doc.documentElement.style.setProperty(
+        "--bottom-height",
+        (doc.querySelector(".toolbar")?.getBoundingClientRect().height || 0) +
+          "px",
+      );
+    }
   }
   function renderExample(view) {
     visualSelection = null;
@@ -131,7 +182,7 @@ export function featureTools(ctx) {
       ...editingUI.ui,
       copy: editingUI.draftCopy,
       layouts: editingUI.draftLayouts,
-      design: readDesign(form, editingUI.ui.design),
+      design: editingUI.ui.design,
     };
     const rendered = renderDefaultExample(view, config);
     const frame = document.querySelector("#page-example-frame");
@@ -215,6 +266,11 @@ export function featureTools(ctx) {
         }
         dragIndex = null;
       });
+      const top = doc.querySelector(".top-shell");
+      doc.documentElement.style.setProperty(
+        "--top-height",
+        (top?.getBoundingClientRect().height || 0) + "px",
+      );
       sizeExample();
     };
     frame.srcdoc = `<!doctype html><html lang="en" style="${escape(rendered.style)}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"></head><body data-defaults-example><div id="app">${rendered.markup}</div></body></html>`;
@@ -224,7 +280,7 @@ export function featureTools(ctx) {
     const root = exampleDocument()?.documentElement;
     if (!root) return;
     const form = document.querySelector("form[data-form=ui-settings]");
-    const d = readDesign(form, editingUI.ui.design);
+    const d = editingUI.ui.design;
     // The shared renderer applies the complete design variables; preserve the selected node.
     const rendered = renderDefaultExample(
       document.querySelector("[name=examplePage]").value,
@@ -236,6 +292,7 @@ export function featureTools(ctx) {
       },
     );
     root.setAttribute("style", rendered.style);
+    sizeExample();
   }
   function updateExampleCopy(key, value, source) {
     editingUI.draftCopy[key] = value;
@@ -281,47 +338,8 @@ export function featureTools(ctx) {
           editingUI.draftCopy[key] ?? key,
         )
       : "<p>Example content represents household data; only its default formatting is editable here.</p>";
-    const allowed =
-      selectedRole === "container"
-        ? [
-            "background",
-            "backgroundUpload",
-            "container",
-            "opacity",
-            "borderColor",
-            "accentColor",
-          ]
-        : selectedRole === "input"
-          ? [
-              "inputColor",
-              "inputBackground",
-              "textFont",
-              "textSize",
-              "borderColor",
-            ]
-          : selectedRole === "button"
-            ? [
-                "buttonColor",
-                "buttonText",
-                "buttonFont",
-                "buttonSize",
-                "borderColor",
-                "dangerColor",
-                "dangerBackground",
-              ]
-            : selectedRole === "text"
-              ? ["textColor", "textFont", "textSize", "linkColor"]
-              : [
-                  selectedRole + "Color",
-                  selectedRole + "Font",
-                  selectedRole + "Size",
-                  selectedRole + "Background",
-                ];
-    for (const control of form.querySelectorAll(
-      "#default-design-controls input,#default-design-controls select",
-    ))
-      control.closest("label").hidden = !allowed.includes(control.name);
   }
+
   function saveExampleLayout(element) {
     const group = element.parentElement?.closest("[data-layout]");
     if (group) {
@@ -335,19 +353,6 @@ export function featureTools(ctx) {
     }
   }
 
-  function readDesign(form, base) {
-    const fd = new FormData(form),
-      d = { ...base };
-    for (const key of Object.keys(roleDefaults)) {
-      if (key === "backgroundImage") continue;
-      if (fd.has(key))
-        d[key] =
-          typeof roleDefaults[key] === "number"
-            ? Number(fd.get(key))
-            : fd.get(key);
-    }
-    return d;
-  }
   async function chooseScope(preview = false) {
     const data = await api("/api/admin/households");
     state.previewHouseholds = data;
@@ -389,11 +394,12 @@ export function featureTools(ctx) {
       role() === "admin"
         ? records
         : [...state.templates, ...(await api("/api/host/private-templates"))];
+    state.nextManagementKind = "cards";
     modal(
       role() === "admin"
         ? C("Shared card templates")
         : C("Your cards & templates"),
-      ui`<p>One editor for invitations, thank-you cards and holiday cards. Use a desktop or larger tablet for detailed layout work.</p>${button("new-card", H("Create card / template"), "", "")}<h3>${role() === "admin" ? C("Shared templates") : C("Saved cards")}</h3><ul>${records.map((r) => ui`<li>${escape(r.name)} ${button("edit-card", H("Open"), `data-id="${r.id}"`, "quiet")}${button("remove-card", H("Remove"), `data-id="${r.id}"`, "quiet")}</li>`).join("") || M("<li>Nothing saved yet.</li>")}</ul>${role() === "host" ? ui`<h3>Start from a template</h3><div class="stack">${templates.map((t) => button("use-card-template", escape(t.name), `data-id="${t.id}"`)).join("")}</div>` : ""}`,
+      ui`<p>One editor for invitations, thank-you cards and holiday cards. Use a desktop or larger tablet for detailed layout work.</p>${role() === "admin" ? "" : button("new-card", H("Create card / template"), "", "")}<h3>${role() === "admin" ? C("Shared templates") : C("Saved cards")}</h3><ul>${records.map((r) => ui`<li>${escape(r.name)} ${button("edit-card", H("Open"), `data-id="${r.id}"`, "quiet")}${button("remove-card", H("Remove"), `data-id="${r.id}"`, "quiet")}</li>`).join("") || M("<li>Nothing saved yet.</li>")}</ul>${role() === "host" ? ui`<h3>Start from a template</h3><div class="stack">${templates.map((t) => button("use-card-template", escape(t.name), `data-id="${t.id}"`)).join("")}</div>` : ""}`,
     );
     state.cardPrivateTemplates =
       role() === "host"
@@ -783,8 +789,10 @@ export function featureTools(ctx) {
         true,
       );
     },
-    adminPanel: () =>
-      ui`<section class="panel"><h2>Shared design & pages</h2><div class="row">${button("global-defaults", H("Edit global defaults"))}${button("preview-guest", H("Preview guest experience"))}${button("cards", H("Cards & templates"))}</div><p>Content, formatting and layout are separate. Preview never submits guest data.</p>${(state.data.deletions || []).length ? ui`<h3>Account cleanup</h3><ul>${state.data.deletions.map((job) => ui`<li>${escape(job.email || job.label || "Deleted household")}: ${escape(job.phase)} ${job.error ? escape(job.error) : ""}</li>`).join("")}</ul>` : ""}</section>`,
+    cleanupPanel: () =>
+      (state.data.deletions || []).length
+        ? ui`<section class="panel"><h2>Account cleanup</h2><ul>${state.data.deletions.map((job) => ui`<li>${escape(job.email || job.label || "Deleted household")}: ${escape(job.phase)} ${job.error ? escape(job.error) : ""}</li>`).join("")}</ul></section>`
+        : "",
     cardEditorPage,
     mountCardEditor() {
       document.body.classList.toggle("card-tools-open", !!state.cardToolsOpen);
@@ -863,9 +871,14 @@ export function featureTools(ctx) {
         return true;
       }
       if (action === "card-editor-back") {
-        state.view = state.cardReturnView || "home";
         state.actionEvent = null;
-        render();
+        if (role() === "admin" && state.cardReturnView === "management") {
+          state.view = "home";
+          await cards();
+        } else {
+          state.view = state.cardReturnView || "home";
+          render();
+        }
         return true;
       }
       if (action === "add-card-variable") {
@@ -984,45 +997,7 @@ export function featureTools(ctx) {
     },
     async submit(form, kind) {
       const fd = new FormData(form);
-      if (kind === "ui-settings") {
-        const ui = { copy: {}, design: {}, layouts: {} };
-        for (const [key, value] of Object.entries(editingUI.draftCopy))
-          if (value !== key) ui.copy[key] = value;
-        const d = readDesign(form, editingUI.ui.design),
-          uploaded = await fileData(form.elements.backgroundUpload);
-        if (uploaded) d.backgroundImage = uploaded;
-        for (const [key, value] of Object.entries(d))
-          if (
-            value !== editingUI.ui.design[key] ||
-            key in (editingUI.overrides.design || {})
-          )
-            ui.design[key] = value;
-        for (const [key, value] of Object.entries(editingUI.draftLayouts))
-          if (JSON.stringify(value) !== JSON.stringify(layouts[key]))
-            ui.layouts[key] = value;
-        const data =
-          editingUI.scope === "global"
-            ? ui
-            : {
-                ui,
-                resetDesign: fd.has("resetDesign"),
-                ...(editingUI.scope === "household"
-                  ? { content: { name: fd.get("contentName") } }
-                  : {
-                      content: {
-                        title: fd.get("contentTitle"),
-                        description: fd.get("contentDescription"),
-                      },
-                    }),
-              };
-        await api(editingUI.path, {
-          method: "PUT",
-          version: editingUI.version,
-          data,
-        });
-        await saved("Page settings saved.");
-        return true;
-      }
+      if (kind === "ui-settings") return true; // Only the shared toolbar Save persists defaults.
       if (kind === "choose-scope") {
         await uiEditor(
           fd.get("previewEvent") ? "event" : "household",
@@ -1064,8 +1039,11 @@ export function featureTools(ctx) {
           version: key ? editingCard.version : undefined,
           data: editingCard,
         });
-        state.view = state.cardReturnView || "home";
+        const returnTemplates =
+          role() === "admin" && state.cardReturnView === "management";
+        state.view = returnTemplates ? "home" : state.cardReturnView || "home";
         await saved("Card saved. Source templates remain unchanged.");
+        if (returnTemplates) await cards();
         return true;
       }
       if (kind === "reminders") {

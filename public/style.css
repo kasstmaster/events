@@ -195,7 +195,8 @@ main {
   border: 1px solid var(--border-color);
   border-radius: 22px;
   padding: 25px;
-  box-shadow: 0 6px 28px #243c3010;
+  box-shadow: 0 6px 28px
+    color-mix(in srgb, var(--border-color) 12%, transparent);
 }
 .panel {
   margin-bottom: 22px;
@@ -418,10 +419,11 @@ dialog {
   border-radius: 22px;
   background: var(--panel);
   color: var(--ink);
-  box-shadow: 0 20px 80px #18332c44;
+  box-shadow: 0 20px 80px
+    color-mix(in srgb, var(--border-color) 28%, transparent);
 }
 dialog::backdrop {
-  background: #19382b80;
+  background: color-mix(in srgb, var(--border-color) 45%, transparent);
   backdrop-filter: blur(4px);
 }
 .dialog-head {
@@ -546,7 +548,8 @@ dialog::backdrop {
 }
 #notice:not(:empty) {
   padding: 12px 18px;
-  box-shadow: 0 4px 20px #0002;
+  box-shadow: 0 4px 20px
+    color-mix(in srgb, var(--border-color) 22%, transparent);
 }
 .skip {
   position: absolute;
@@ -1288,7 +1291,8 @@ body.card-editor-active {
     width: min(360px, 88vw);
     transform: translateX(100%);
     visibility: hidden;
-    box-shadow: -8px 0 20px #0002;
+    box-shadow: -8px 0 20px
+      color-mix(in srgb, var(--border-color) 22%, transparent);
   }
   .card-tools-open .card-editor-page .card-controls {
     transform: none;
@@ -1456,7 +1460,8 @@ body.card-editor-active {
   padding: 6px;
   background: var(--panel);
   border: 1px solid var(--border-color);
-  box-shadow: 0 8px 24px #0002;
+  box-shadow: 0 8px 24px
+    color-mix(in srgb, var(--border-color) 22%, transparent);
   border-radius: 10px;
 }
 .browse-menu [role="menuitem"] {
@@ -1547,4 +1552,511 @@ body.card-editor-active {
   background: var(--status-background);
   color: var(--status-color);
   border-color: var(--accent-color);
+}
+
+/* Fixed shared chrome; content offsets follow measured toolbar heights. */
+.top-shell {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 40;
+  max-width: none;
+  margin: 0;
+  padding: env(safe-area-inset-top) max(12px, env(safe-area-inset-right)) 0
+    max(12px, env(safe-area-inset-left));
+  display: block;
+  background: var(--panel);
+  border-bottom: var(--border-width) var(--border-style) var(--border-color);
+}
+.top-primary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+}
+.top-primary .brand {
+  flex: none;
+  font-size: calc(var(--text-size) * 1.45);
+}
+#top-navigation {
+  flex: 1;
+  min-width: 0;
+}
+.top-shell .app-topbar {
+  position: static;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  min-width: 0;
+}
+.top-shell .app-topbar .browse-heading h1 {
+  font-size: calc(var(--title-size) * 0.75);
+}
+.top-shell .event-summary {
+  padding: 4px 0 10px;
+}
+main {
+  padding-top: calc(var(--top-height, 110px) + 18px);
+  padding-bottom: calc(
+    var(--bottom-height, 100px) + env(safe-area-inset-bottom) + 26px
+  );
+}
+.toolbar {
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  flex-wrap: nowrap;
+  justify-content: space-evenly;
+  gap: 2px;
+  z-index: 40;
+  background: var(--panel);
+}
+.toolbar .nav-control {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 2px;
+  max-width: 130px;
+}
+.toolbar .nav-control span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
+}
+.top-shell button,
+.top-shell summary,
+.toolbar .nav-control,
+.app-topbar .nav-control {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--ink);
+}
+.toolbar .nav-control[aria-current="page"],
+.browse-menu[open] summary {
+  background: var(--panel);
+  text-decoration: underline;
+}
+.top-shell :is(button, summary):focus-visible,
+.toolbar button:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: -3px;
+}
+.top-shell .browse-menu {
+  padding: 0;
+  border: 0;
+  margin: 0;
+}
+.top-shell .browse-menu svg {
+  stroke-width: 2.8;
+}
+.appearance-active #top-navigation,
+.appearance-active .event-summary {
+  display: none;
+}
+.appearance-categories,
+.appearance-actions,
+.appearance-controls {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.appearance-categories {
+  padding-bottom: 4px;
+}
+.appearance-categories button,
+.appearance-actions button {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 4px;
+  overflow-wrap: anywhere;
+}
+.appearance-categories [aria-pressed="true"] {
+  text-decoration: underline;
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.appearance-actions {
+  border-top: var(--border-width) var(--border-style) var(--border-color);
+}
+.appearance-controls {
+  max-height: 28vh;
+  overflow: auto;
+  padding: 8px 0;
+}
+.appearance-controls label {
+  flex: 1;
+  min-width: 100px;
+  margin: 0;
+}
+.appearance-options {
+  position: relative;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.appearance-options summary {
+  cursor: pointer;
+  min-height: 36px;
+  font-size: var(--text-size);
+}
+.appearance-options[open] {
+  max-height: 24vh;
+  overflow: auto;
+}
+.appearance-error {
+  display: block;
+}
+.inline-contact {
+  list-style: none;
+  padding: 16px;
+  border-bottom: var(--border-width) var(--border-style) var(--border-color);
+}
+.inline-contact form {
+  max-width: 850px;
+  margin: auto;
+}
+.inline-management[open] {
+  position: static;
+  display: block;
+  inset: auto;
+  margin: 0;
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  box-shadow: none;
+}
+.inline-management .dialog-body {
+  max-height: none;
+  overflow: visible;
+  padding: 16px;
+}
+.inline-management .dialog-head {
+  position: static;
+}
+.inline-management .dialog-foot {
+  position: static;
+}
+@media (max-width: 600px) {
+  .toolbar .nav-control span {
+    font-size: calc(var(--text-size) * 0.75);
+  }
+  .top-primary .brand {
+    font-size: calc(var(--text-size) * 1.2);
+  }
+  .appearance-categories button {
+    font-size: var(--text-size);
+  }
+  .top-shell .browse-heading h1 {
+    font-size: calc(var(--title-size) * 0.6);
+  }
+}
+/* Five appearance categories. Text and surfaces are classified independently.
+   Card SVGs and the selected-item card editor retain their separate document design. */
+body {
+  font-style: var(--text-style);
+  font-weight: var(--text-weight);
+}
+body
+  :is(
+    p,
+    span,
+    b,
+    strong,
+    label,
+    legend,
+    dt,
+    dd,
+    li,
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    code
+  ) {
+  color: var(--ink);
+  font-family: var(--body-font);
+  font-style: var(--text-style);
+  font-weight: var(--text-weight);
+}
+body
+  :is(
+    .eyebrow,
+    .pill,
+    .connection,
+    .small,
+    .muted,
+    .brand,
+    .totals,
+    .totals strong,
+    .totals span,
+    .browse-category,
+    .browse-open,
+    .family-item-title,
+    .form-error
+  ) {
+  color: var(--ink);
+  font-family: var(--body-font);
+  font-style: var(--text-style);
+  font-weight: var(--text-weight);
+  font-size: var(--text-size);
+}
+body :is(h1, h2, h3, h4, h5, h6),
+body .private-notes h2 {
+  color: var(--heading);
+  font-family: var(--title-font);
+  font-style: var(--title-style);
+  font-weight: var(--title-weight);
+}
+body
+  :is(
+    .hero > p:not(.eyebrow),
+    .event-hero > p:not(.eyebrow),
+    .event-details,
+    .event-meta b,
+    .event-meta span,
+    .event-deadline b,
+    .event-deadline span,
+    .card > p.muted
+  ) {
+  color: var(--description-color);
+  font-family: var(--description-font);
+  font-size: var(--description-size);
+  font-style: var(--description-style);
+  font-weight: var(--description-weight);
+}
+body
+  :is(
+    .panel,
+    .card,
+    dialog,
+    .dialog-head,
+    .dialog-foot,
+    .browse-content,
+    .browse-category,
+    .browse-menu > div,
+    .browse-menu button,
+    .private-notes,
+    .private-notes textarea,
+    .pill,
+    .toolbar,
+    .top-shell,
+    input,
+    select,
+    textarea,
+    button,
+    .button,
+    .family-item,
+    .address-options,
+    .preview,
+    .status,
+    .layout-list
+  ) {
+  background-color: var(--panel);
+  border-color: var(--border-color);
+  border-width: var(--border-width);
+  border-style: var(--border-style);
+}
+body .brand,
+body .brand span,
+body .toolbar .nav-control,
+body .toolbar .nav-control span,
+body .top-shell :is(button, summary),
+body .browse-row-actions .nav-control,
+body .browse-row-icon {
+  color: var(--ink);
+}
+body .toolbar .nav-control,
+body .top-shell :is(button, summary),
+body button.quiet,
+body .browse-open {
+  border: 0;
+  background: transparent;
+}
+body .browse-row,
+body .browse-category,
+body .family-item {
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
+  border-radius: 0;
+}
+body .browse-row input[type="checkbox"],
+body input[type="checkbox"] {
+  accent-color: var(--ink);
+}
+body :is(button, a, input, select, textarea):focus-visible {
+  outline-color: var(--ink);
+}
+body .private-notes {
+  font-family: var(--body-font);
+  color: var(--ink);
+}
+@media print {
+  .top-shell,
+  .toolbar {
+    display: none !important;
+  }
+  main {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+.nav-control svg {
+  width: calc(var(--text-size) * 1.3);
+  height: calc(var(--text-size) * 1.3);
+}
+body #notice,
+body .address-options {
+  background: var(--panel);
+  color: var(--ink);
+  border-color: var(--border-color);
+}
+body .browse-menu [aria-checked="true"] {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+/* Category sizes override historical element-specific fixed sizes. */
+body
+  :is(#app, #editor)
+  :is(
+    p,
+    span,
+    b,
+    strong,
+    label,
+    legend,
+    dt,
+    dd,
+    li,
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    code
+  ) {
+  font-size: inherit;
+}
+body :is(#app, #editor) h1 {
+  font-size: var(--title-size);
+}
+body :is(#app, #editor) h2 {
+  font-size: calc(var(--title-size) * 0.8);
+}
+body :is(#app, #editor) :is(h3, h4, h5, h6) {
+  font-size: calc(var(--title-size) * 0.62);
+}
+body #app .top-shell h1 {
+  font-size: calc(var(--title-size) * 0.75);
+}
+body
+  :is(#app, #editor)
+  :is(
+    .hero > p:not(.eyebrow),
+    .event-hero > p:not(.eyebrow),
+    .event-details,
+    .event-meta b,
+    .event-meta span,
+    .event-deadline b,
+    .event-deadline span,
+    .card > p.muted
+  ) {
+  font-size: var(--description-size);
+}
+body #app .toolbar .nav-control {
+  font-size: calc(var(--text-size) * 0.85);
+}
+body #app .brand {
+  font-size: calc(var(--text-size) * 1.45);
+}
+@media (max-width: 600px) {
+  body #app .toolbar .nav-control {
+    font-size: calc(var(--text-size) * 0.75);
+  }
+  body #app .brand {
+    font-size: calc(var(--text-size) * 1.2);
+  }
+}
+.top-shell .nav-control {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.top-shell .nav-control span {
+  position: static;
+  width: auto;
+  height: auto;
+  clip-path: none;
+  overflow: visible;
+}
+.card-editor-active #main {
+  padding-top: calc(var(--top-height, 100px) + 18px);
+  padding-bottom: calc(var(--bottom-height, 0px) + 26px);
+}
+.card-editor-active .card-controls {
+  top: var(--top-height, 100px);
+  max-height: calc(
+    100dvh - var(--top-height, 100px) - var(--bottom-height, 0px)
+  );
+}
+/* The logo and category selector share level one; actions and controls span below. */
+.top-shell.appearance-active {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+}
+.appearance-active .top-primary,
+.appearance-active #appearance-toolbar {
+  display: contents;
+}
+.appearance-active .brand {
+  grid-column: 1;
+  grid-row: 1;
+}
+.appearance-active .appearance-categories {
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 64px;
+}
+.appearance-active
+  :is(.appearance-actions, .appearance-controls, .appearance-error) {
+  grid-column: 1 / -1;
+}
+.appearance-actions .appearance-options {
+  flex: 0 1 auto;
+}
+.appearance-categories {
+  max-height: 26dvh;
+  overflow-y: auto;
+}
+.appearance-categories button {
+  flex: 1 0 max(110px, 7em);
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.appearance-actions button {
+  flex: 1 0 64px;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.appearance-actions .appearance-options {
+  max-width: 100%;
+}
+@media (max-width: 600px) {
+  body #app .toolbar .nav-control {
+    font-size: max(10px, calc(var(--text-size) * 0.7));
+  }
+}
+html {
+  scroll-padding-top: calc(var(--top-height, 100px) + 12px);
+  scroll-padding-bottom: calc(var(--bottom-height, 100px) + 12px);
+}
+#main :is(input, select, textarea, button, a) {
+  scroll-margin-top: calc(var(--top-height, 100px) + 12px);
+  scroll-margin-bottom: calc(var(--bottom-height, 100px) + 12px);
 }

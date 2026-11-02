@@ -1,5 +1,28 @@
 // Updated visible navigation for synthetic browser suites only.
 export async function clickNavigation(page, label) {
+  if (
+    (await page.locator(".appearance-categories").count()) &&
+    ["Save", "Cancel"].includes(label)
+  ) {
+    await page
+      .locator(
+        `#appearance-toolbar [data-action=appearance-${label.toLowerCase()}]`,
+      )
+      .first()
+      .click();
+    return;
+  }
+  if (
+    ["Sign Out", "Sign out"].includes(label) &&
+    !(await page.locator("#main [data-action=logout]").count())
+  ) {
+    await page.locator(".toolbar [data-action=settings]").click();
+  }
+  const inlineGuest = page.locator("form[data-form=guest]");
+  if ((await inlineGuest.count()) && ["Save", "Cancel"].includes(label)) {
+    await inlineGuest.getByRole("button", { name: label, exact: true }).click();
+    return;
+  }
   const dialog = page.locator("#editor[open]");
   const inDialog = await dialog.count();
   let name = label;
@@ -7,6 +30,8 @@ export async function clickNavigation(page, label) {
     name =
       {
         "Sign out": "Sign Out",
+        "Family Workspace": "Family",
+        "Edit global defaults": "Defaults",
         "Create event": "Create Event",
         "Edit event": "Edit Event",
         "Text reminders": "Text Reminders",
@@ -29,7 +54,7 @@ export async function clickNavigation(page, label) {
     return;
   }
   const scope = inDialog
-    ? page.getByRole("dialog")
+    ? dialog
     : name === "RSVP"
       ? page.locator("#main")
       : page;
@@ -38,11 +63,24 @@ export async function clickNavigation(page, label) {
     exact: true,
   });
   if (await button.count()) {
+    // Fixed chrome is not included in Playwright's geometric visibility check.
+    // Scroll content controls as a user would before clicking them.
+    if (
+      !(await button
+        .first()
+        .evaluate((el) => !!el.closest(".top-shell,.toolbar")))
+    )
+      await button
+        .first()
+        .evaluate((el) => el.scrollIntoView({ block: "center" }));
     await button.first().click();
     return;
   }
   const menuOnly = [
     "Create Event",
+    "Edit event details",
+    "Household details",
+    "Preview guest experience",
     "Cards & Templates",
     "Household link and QR",
     "Create list",
@@ -84,7 +122,7 @@ export async function clickNavigation(page, label) {
         .count())
     ) {
       await page.getByRole("button", { name: "Home", exact: true }).click();
-      await page.locator(".hero [data-action=family-workspace]").waitFor();
+      await page.locator(".hero h1").waitFor();
     }
     if (
       ["RSVPs", "Text Reminders", "Cards", "Preview Invitation"].includes(
@@ -101,7 +139,7 @@ export async function clickNavigation(page, label) {
       name.startsWith("Create ") ||
       name === "＋ Add adult or child" ||
       name === "Cards & templates";
-    if (name === "＋ Add adult or child") name = "Create contact";
+    if (name === "＋ Add adult or child") name = "Add Guest";
     if (name === "Cards & templates") name = "Cards & Templates";
     await page
       .getByLabel(create ? "Create" : "Sorting and options", { exact: true })
@@ -114,6 +152,14 @@ export async function clickNavigation(page, label) {
         { name, exact: true },
       )
       .click();
+    if (["Hide Completed", "Show All"].includes(name))
+      await page
+        .getByRole("menuitem", {
+          name: name === "Hide Completed" ? "Show All" : "Hide Completed",
+          exact: true,
+          includeHidden: true,
+        })
+        .waitFor({ state: "attached" });
     return;
   }
   await button.click();

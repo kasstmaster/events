@@ -65,6 +65,7 @@ export function exampleState(view, ui) {
   };
   const guestView = [
     "guestHome",
+    "guestSettings",
     "guestEvent",
     "guestEventUnanswered",
   ].includes(view);
@@ -80,7 +81,9 @@ export function exampleState(view, ui) {
             customItems: [],
           };
   }
-  const familyView = view.startsWith("family") && view !== "familyLogin";
+  const familyView =
+    (view.startsWith("family") && view !== "familyLogin") ||
+    view === "hostSettings";
   const kid = view.startsWith("familyKid");
   const familyMembers = [
     { id: "example-owner", name: "Alex", role: "owner" },
@@ -187,29 +190,37 @@ export function exampleState(view, ui) {
     session: {
       role: anonymous
         ? null
-        : familyView
-          ? "family"
-          : view === "admin"
-            ? "admin"
-            : guestView
-              ? "guest"
-              : "host",
+        : view === "hostSettings"
+          ? "host"
+          : familyView
+            ? "family"
+            : view.startsWith("admin")
+              ? "admin"
+              : guestView
+                ? "guest"
+                : "host",
     },
     publicHousehold: ["login", "guestLoginSuffix", "familyLogin"].includes(view)
       ? household
       : null,
     view:
-      view === "contacts"
-        ? "contacts"
-        : view === "registration"
-          ? "register"
-          : view === "hostLogin"
-            ? "login"
-            : view === "familyLogin"
-              ? "family-login"
-              : familyView
-                ? "family"
-                : "home",
+      view === "adminApprovals"
+        ? "admin-approvals"
+        : view === "adminHosts"
+          ? "admin-hosts"
+          : ["adminSettings", "guestSettings"].includes(view)
+            ? "settings"
+            : view === "contacts"
+              ? "contacts"
+              : view === "registration"
+                ? "register"
+                : view === "hostLogin"
+                  ? "login"
+                  : view === "familyLogin"
+                    ? "family-login"
+                    : familyView
+                      ? "family"
+                      : "home",
     event: [
       "event",
       "guestEvent",
@@ -243,6 +254,8 @@ export function exampleState(view, ui) {
     familyData: familyView ? family : null,
     exampleRecord:
       {
+        hostSettings: "__settings__",
+        familySettings: "__settings__",
         familyList: "example-list",
         familyRecord: "example-record",
         familyChore: "example-chore",

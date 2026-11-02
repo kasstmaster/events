@@ -184,7 +184,7 @@ export function familyTools(ctx) {
     });
     let content = "";
     if (selected === "__settings__")
-      content = `<ul class="browse-rows">${row({ title: C("Notification settings"), action: "family-preferences", symbol: "settings" })}${row({ title: C("Change Password"), action: "family-password", symbol: "edit" })}${manager() ? row({ title: C("Family Members"), action: "family-members", symbol: "contacts" }) : ""}${state.session.role === "host" ? row({ title: C("Back to household home"), action: "home", symbol: "home" }) : ""}</ul>`;
+      content = `<ul class="browse-rows">${row({ title: C("Notification settings"), action: "family-preferences", symbol: "settings" })}${row({ title: C("Change Password"), action: "family-password", symbol: "edit" })}${manager() ? row({ title: C("Family Members"), action: "family-members", symbol: "contacts" }) : ""}${row({ title: C("Sign Out"), action: "logout", symbol: "logout" })}</ul>`;
     else if (search) {
       const found = ordered(
         d.records.filter((r) =>
@@ -224,23 +224,7 @@ export function familyTools(ctx) {
       content = renderRows(rows);
     }
     const notifications = d.notifications.filter((n) => !n.read);
-    return `<div class="browse-shell">${header}${showSearch ? searchBox("family", search, escape, "Search Lists, Tasks, Records and Chores") : ""}<div class="browse-content">${notifications.length ? `<details class="browse-notifications"><summary>${H("In-app notifications")} (${notifications.length})</summary><ul class="browse-rows">${notifications.map((n) => row({ title: escape(n.title), action: "family-notification", id: n.id, controls: action("family-read", "Mark read", n.id) })).join("")}</ul></details>` : ""}${content}<p id="family-save-status" class="connection" role="status">${escape(C(saveStatus))}</p>${d.pendingHistory ? "<p>Older task history is still being prepared in bounded batches.</p>" : ""}</div>${bottom(
-      [
-        {
-          action: "family-root",
-          label: "Home",
-          icon: "home",
-          current: selected !== "__settings__",
-        },
-        {
-          action: "family-settings",
-          label: "Settings",
-          icon: "settings",
-          current: selected === "__settings__",
-        },
-        { action: "logout", label: "Sign Out", icon: "logout" },
-      ],
-    )}</div>`;
+    return `<div class="browse-shell">${header}${showSearch ? searchBox("family", search, escape, "Search Lists, Tasks, Records and Chores") : ""}<div class="browse-content">${notifications.length ? `<details class="browse-notifications"><summary>${H("In-app notifications")} (${notifications.length})</summary><ul class="browse-rows">${notifications.map((n) => row({ title: escape(n.title), action: "family-notification", id: n.id, controls: action("family-read", "Mark read", n.id) })).join("")}</ul></details>` : ""}${content}<p id="family-save-status" class="connection" role="status">${escape(C(saveStatus))}</p>${d.pendingHistory ? "<p>Older task history is still being prepared in bounded batches.</p>" : ""}</div></div>`;
   }
   function recordControls(r) {
     if (!canManageRecord(r)) return "";
@@ -641,12 +625,6 @@ export function familyTools(ctx) {
     refresh,
     saving,
     async action(actionName, target) {
-      if (actionName === "home" && state.session.role === "family") {
-        selected = "";
-        state.view = "family";
-        render();
-        return true;
-      }
       if (!actionName.startsWith("family-")) return false;
       const key = target.dataset.id;
       if (actionName === "family-section") {

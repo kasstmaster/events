@@ -276,10 +276,8 @@ try {
     await page.getByLabel("Household web address", { exact: true }).count(),
     0,
   );
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Save", exact: true })
-    .click();
+  await page.getByText("Formatting options", { exact: true }).click();
+  await page.locator("[data-action=appearance-save]").click();
   await page.getByText("Appearance saved.", { exact: true }).waitFor();
   await page.goto("https://dubois.ilymmd.com/");
   await page.getByRole("heading", { name: "Dubois", exact: true }).waitFor();

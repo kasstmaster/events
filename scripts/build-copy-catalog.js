@@ -2,8 +2,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { parsers } from "prettier/plugins/babel";
 import {
-  designControls,
-  roleDefaults,
+  appearanceCategories,
   layoutLabels,
   viewLabels,
 } from "../public/ui-system.js";
@@ -26,16 +25,10 @@ const add = (value) => {
       catalog.add(key);
   }
 };
-designControls(roleDefaults, {
-  field: (label) => {
-    add(label);
-    return "";
-  },
-  select: (label) => {
-    add(label);
-    return "";
-  },
-});
+for (const category of appearanceCategories) add(category);
+for (const category of ["Titles", "Description", "Text"])
+  for (const action of ["font", "color", "style", "size"])
+    add(category + " " + action);
 function walk(node, parent, fn) {
   if (!node || typeof node !== "object") return;
   if (node.type) fn(node, parent);
@@ -51,6 +44,7 @@ for (const file of [
   "public/family-ui.js",
   "public/address-picker.js",
   "public/browse-ui.js",
+  "public/appearance-editor.js",
   "server/family-api.js",
   "server/family-permissions.js",
   "server/family-tasks.js",
@@ -100,6 +94,20 @@ for (const file of [
   });
 }
 for (const key of [
+  "Family",
+  "Defaults",
+  "Approvals",
+  "Hosts",
+  "Templates",
+  "Add Guest",
+  "Edit Global Defaults",
+  "Edit event details",
+  "Household details",
+  "Color",
+  "Image",
+  "Style",
+  "Size",
+  "Border",
   "Lists",
   "Tasks",
   "Records",

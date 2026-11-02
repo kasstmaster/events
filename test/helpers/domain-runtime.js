@@ -100,6 +100,7 @@ export async function domainRuntime({
                   "default-examples.js",
                   "address-picker.js",
                   "browse-ui.js",
+                  "appearance-editor.js",
                 ].includes(file)
               )
                 return new Response("Missing", { status: 404 });

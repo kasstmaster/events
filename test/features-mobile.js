@@ -1,3 +1,4 @@
+import { setAppearance, saveAppearance } from "./helpers/appearance.js";
 import { clickNavigation } from "./helpers/navigation.js";
 // Isolated synthetic records, no production or messaging requests.
 import assert from "node:assert/strict";
@@ -84,7 +85,7 @@ async function device(width) {
   return { context, page };
 }
 const click = clickNavigation;
-const dialog = (page) => page.getByRole("dialog");
+const dialog = (page) => page.locator("#editor[open], form[data-form=guest]");
 async function login(page, email) {
   await page.goto(origin);
   await page.getByLabel("Email address", { exact: true }).fill(email);
@@ -107,7 +108,7 @@ try {
   );
   const example = admin.page.frameLocator("#page-example-frame");
   await example.locator("h1").dblclick();
-  await admin.page.getByLabel("Title color", { exact: true }).fill("#334455");
+  await setAppearance(admin.page, "Titles", "Color", "Titles color", "#334455");
   const aboveTitle = example.locator(
     "[data-layout=introText] > [data-layout-item=eyebrow]",
   );
@@ -158,6 +159,12 @@ try {
     "familyTasks",
     "familyKidTasks",
     "admin",
+    "adminApprovals",
+    "adminHosts",
+    "adminSettings",
+    "hostSettings",
+    "guestSettings",
+    "familySettings",
     "eventInformation",
     "eventButtons",
     "toolbar",
@@ -226,6 +233,7 @@ try {
   await admin.page
     .getByLabel("Example page", { exact: true })
     .selectOption("event");
+  await example.locator("[data-action=edit-event]").waitFor();
   await admin.page
     .frameLocator("#page-example-frame")
     .locator('[data-default-copy="When"]')
@@ -238,9 +246,7 @@ try {
     .locator("[data-layout=event] > [data-layout-item=menus]")
     .dblclick({ position: { x: 5, y: 5 } });
   await click(admin.page, "Move up");
-  await dialog(admin.page)
-    .getByRole("button", { name: "Save", exact: true })
-    .click();
+  await saveAppearance(admin.page);
   await dialog(admin.page).waitFor({ state: "hidden" });
   assert.equal(
     store.get("ui", "defaults", "platform").copy.When,
@@ -259,11 +265,11 @@ try {
     await h.page
       .locator(".toolbar [data-action]")
       .evaluateAll((els) => els.map((el) => el.dataset.action)),
-    ["home", "addresses", "household", "share", "logout"],
+    ["home", "family-workspace", "addresses", "household", "share", "settings"],
   );
   assert.equal(await h.page.locator("header [data-action=logout]").count(), 0);
   assert.equal(
-    await h.page.locator(".toolbar [data-action=logout] svg").count(),
+    await h.page.locator(".toolbar [data-action=settings] svg").count(),
     1,
   );
   assert.equal(
@@ -291,66 +297,47 @@ try {
     0,
   );
   await click(h.page, "Edit House");
-  for (const [label, value] of [
-    ["Border color", "#123456"],
-    ["Text above title color", "#345678"],
-    ["Toolbar color", "#456789"],
-    ["Toolbar background", "#eeeeee"],
-    ["Button color", "#234567"],
-    ["Button text color", "#ffffff"],
-    ["Private notes color", "#567890"],
-    ["Attendance / needed information color", "#654321"],
-  ])
-    await h.page.getByLabel(label, { exact: true }).fill(value);
-  await h.page
-    .getByLabel("Private notes font", { exact: true })
-    .selectOption("Georgia");
-  h.page.once("dialog", (d) => d.dismiss());
-  await click(h.page, "Reset to default colors");
-  assert.equal(
-    await h.page.getByLabel("Border color", { exact: true }).inputValue(),
+  await setAppearance(h.page, "Text", "Color", "Text color", "#456789");
+  await setAppearance(
+    h.page,
+    "Containers",
+    "Background",
+    "Containers background",
+    "#eeeeee",
+  );
+  await setAppearance(
+    h.page,
+    "Containers",
+    "Border",
+    "Containers border color",
     "#123456",
   );
-  await dialog(h.page)
-    .getByRole("button", { name: "Save", exact: true })
-    .click();
-  await dialog(h.page).waitFor({ state: "hidden" });
+  await h.page.getByText("Formatting options", { exact: true }).click();
+  h.page.once("dialog", (d) => d.dismiss());
+  await click(h.page, "Reset to Defaults");
   assert.equal(
     await h.page
-      .locator(".hero .eyebrow")
-      .evaluate((el) => getComputedStyle(el).color),
-    "rgb(52, 86, 120)",
+      .getByLabel("Containers border color", { exact: true })
+      .inputValue(),
+    "#123456",
   );
-  assert.equal(
-    await h.page
-      .locator(".private-notes textarea")
-      .evaluate((el) => getComputedStyle(el).color),
-    "rgb(86, 120, 144)",
-  );
-  assert.equal(
-    await h.page
-      .locator(".toolbar .nav-control")
-      .first()
-      .evaluate((el) => getComputedStyle(el).color),
-    "rgb(69, 103, 137)",
-  );
-  assert.equal(
-    await h.page
-      .locator(".toolbar")
-      .evaluate((el) => getComputedStyle(el).backgroundColor),
-    "rgb(238, 238, 238)",
-  );
+  await saveAppearance(h.page);
+  for (const selector of [
+    ".hero .eyebrow",
+    ".private-notes textarea",
+    ".toolbar .nav-control",
+  ])
+    assert.equal(
+      await h.page
+        .locator(selector)
+        .first()
+        .evaluate((el) => getComputedStyle(el).color),
+      "rgb(69, 103, 137)",
+    );
   await click(h.page, "Edit House");
+  await h.page.getByText("Formatting options", { exact: true }).click();
   h.page.once("dialog", (d) => d.accept());
-  await click(h.page, "Reset to default colors");
-  assert.equal(
-    await h.page.getByLabel("Border color", { exact: true }).inputValue(),
-    "#d2dbd4",
-  );
-  assert.equal(
-    await h.page.getByLabel("Private notes font", { exact: true }).inputValue(),
-    "Georgia",
-  );
+  await click(h.page, "Reset to Defaults");
   await click(h.page, "Cancel");
   await h.page
     .getByLabel("Notes", { exact: true })
@@ -426,19 +413,14 @@ try {
     .fill("Private event note");
   await h.page.getByLabel("Casey Example", { exact: true }).check();
   await h.page.getByLabel("Jordan Other", { exact: true }).check();
-  await h.page.getByText("Event appearance", { exact: true }).click();
-  const imageY = await h.page
-      .getByLabel("Background image (optional, up to 2 MB)", { exact: true })
-      .evaluate((el) => el.getBoundingClientRect().top),
-    colorY = await h.page
-      .getByLabel("Background color", { exact: true })
-      .evaluate((el) => el.getBoundingClientRect().top);
-  assert.ok(imageY < colorY);
-  await h.page.getByLabel("Title color", { exact: true }).fill("#773322");
   await dialog(h.page)
     .getByRole("button", { name: "Create event", exact: true })
     .click();
   await dialog(h.page).waitFor({ state: "hidden" });
+  await click(h.page, "Edit Event");
+  await setAppearance(h.page, "Titles", "Color", "Titles color", "#773322");
+  await saveAppearance(h.page);
+
   assert.equal(
     await h.page
       .getByRole("button", { name: "Edit event appearance", exact: true })
@@ -450,19 +432,18 @@ try {
     await h.page
       .locator(".event-summary .totals")
       .evaluate((el) => getComputedStyle(el).color),
-    "rgb(101, 67, 33)",
+    "rgb(69, 103, 137)",
   );
   assert.equal(await h.page.locator("[data-action=delete-event]").count(), 0);
   await click(h.page, "Edit event");
-  await h.page.getByText("Event appearance", { exact: true }).click();
+  await h.page.getByText("Formatting options", { exact: true }).click();
+  await click(h.page, "Copy Formatting");
   await h.page
     .getByLabel("Copy formatting from", { exact: true })
-    .selectOption("household");
-  await click(h.page, "Copy formatting");
-  assert.equal(
-    await h.page.getByLabel("Toolbar color", { exact: true }).inputValue(),
-    "#456789",
-  );
+    .selectOption("0");
+  await h.page.locator("[data-action=appearance-copy]").click();
+  await click(h.page, "Cancel");
+  await click(h.page, "Edit event details");
   h.page.once("dialog", (d) => d.dismiss());
   await click(h.page, "Delete event");
   assert.equal(await dialog(h.page).isVisible(), true);
