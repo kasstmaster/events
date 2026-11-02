@@ -1,5 +1,7 @@
 # Shared navigation and workspace
 
+Toolbar orders and editing interactions below describe the preceding release. See [fixed toolbars and inline editing](fixed-toolbars-inline-editing.md) for the current navigation, five-category editor and inline Contacts.
+
 Family Workspace and Contacts use `public/browse-ui.js` for their actual topbar, bottom navigation, menus, compact rows, search and sorting. Colors, type and borders resolve through existing household formatting roles; the reference screenshots do not supply a fixed theme. Safe-area padding keeps the last row clear of the fixed footer. Event content retains its previous layout and artwork.
 
 ## Navigation

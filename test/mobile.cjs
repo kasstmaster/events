@@ -65,7 +65,9 @@ const { existsSync, mkdirSync } = require("node:fs");
     await page.getByLabel("Password", { exact: true }).fill(password);
     await click(page, "Sign in");
   }
-  const dialog = (page) => page.getByRole("dialog");
+  const dialog = (page) => page.locator("#editor[open], form[data-form=guest]");
+  const { setAppearance, saveAppearance } =
+    await import("./helpers/appearance.js");
   const noOverflow = async (page) =>
     assert.ok(
       await page.evaluate(
@@ -76,6 +78,7 @@ const { existsSync, mkdirSync } = require("node:fs");
   try {
     const admin = await device();
     await login(admin.page, "admin@example.test");
+    await click(admin.page, "Approvals");
     await admin.page
       .getByRole("heading", { name: "Approved emails", exact: true })
       .waitFor();
@@ -108,14 +111,21 @@ const { existsSync, mkdirSync } = require("node:fs");
       .click();
     await dialog(alpha.page).waitFor({ state: "hidden" });
     await click(alpha.page, "Edit House");
-    await alpha.page
-      .getByLabel("Background color", { exact: true })
-      .fill("#e6edf7");
-    await alpha.page.getByLabel("Title color", { exact: true }).fill("#314c78");
-    await dialog(alpha.page)
-      .getByRole("button", { name: "Save", exact: true })
-      .click();
-    await dialog(alpha.page).waitFor({ state: "hidden" });
+    await setAppearance(
+      alpha.page,
+      "Background",
+      "Color",
+      "Background color",
+      "#e6edf7",
+    );
+    await setAppearance(
+      alpha.page,
+      "Titles",
+      "Color",
+      "Titles color",
+      "#314c78",
+    );
+    await saveAppearance(alpha.page);
     await click(alpha.page, "Create event");
     await alpha.page.getByLabel("Event title").fill("Summer around the table");
     await alpha.page
@@ -166,15 +176,21 @@ const { existsSync, mkdirSync } = require("node:fs");
       .waitFor();
     await noOverflow(alpha.page);
     await click(alpha.page, "Edit Event");
-    await alpha.page.getByText("Event appearance", { exact: true }).click();
-    await alpha.page
-      .getByLabel("Background color", { exact: true })
-      .fill("#fff1eb");
-    await alpha.page.getByLabel("Title color", { exact: true }).fill("#8f3829");
-    await dialog(alpha.page)
-      .getByRole("button", { name: "Save event", exact: true })
-      .click();
-    await dialog(alpha.page).waitFor({ state: "hidden" });
+    await setAppearance(
+      alpha.page,
+      "Background",
+      "Color",
+      "Background color",
+      "#fff1eb",
+    );
+    await setAppearance(
+      alpha.page,
+      "Titles",
+      "Color",
+      "Titles color",
+      "#8f3829",
+    );
+    await saveAppearance(alpha.page);
     await click(alpha.page, "Home");
     await click(alpha.page, "Household link and QR");
     const link = await alpha.page.locator(".share-link").textContent();
@@ -290,7 +306,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       .waitFor();
     await click(alpha.page, "✕");
     await click(alpha.page, "View Event");
-    await click(alpha.page, "Edit event");
+    await click(alpha.page, "Edit event details");
     await alpha.page
       .getByLabel("Registry title")
       .first()
@@ -311,7 +327,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       await secondDevice.page.locator(".registry-button").allTextContents(),
       ["Amazon Registry", "Our wedding wishes"],
     );
-    await click(alpha.page, "Edit event");
+    await click(alpha.page, "Edit event details");
     await alpha.page
       .getByRole("button", { name: "Remove registry", exact: true })
       .first()

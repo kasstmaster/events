@@ -252,7 +252,14 @@ try {
   await mkdir("test-results", { recursive: true });
   stage("host home, per-event actions and native share");
   const p = await page(owner, 1440);
-  await footer(p, ["Home", "Contacts", "Edit House", "Share", "Sign Out"]);
+  await footer(p, [
+    "Home",
+    "Family",
+    "Contacts",
+    "Edit House",
+    "Share",
+    "Settings",
+  ]);
   await p.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
   assert.equal(
     await p
@@ -357,7 +364,14 @@ try {
   stage("shared Contacts rows, search, menus and formatting");
   await click(p, "Contacts");
   await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
-  await footer(p, ["Home", "Contacts", "Edit House", "Share", "Sign Out"]);
+  await footer(p, [
+    "Home",
+    "Family",
+    "Contacts",
+    "Edit House",
+    "Share",
+    "Settings",
+  ]);
   assert.equal(await p.locator(".browse-row").count(), 1);
   await click(p, "Search");
   await p.getByRole("searchbox").fill("absent");
@@ -375,12 +389,19 @@ try {
   stage(
     "four workspace sections, nested lists, sorting, completion and separate edit",
   );
-  await click(p, "Home");
-  await click(p, "Family Workspace");
+  await click(p, "Family");
+  await click(p, "Family");
   await p
     .getByRole("heading", { name: "Family Workspace", exact: true })
     .waitFor();
-  await footer(p, ["Home", "Settings", "Sign Out"]);
+  await footer(p, [
+    "Home",
+    "Family",
+    "Contacts",
+    "Edit House",
+    "Share",
+    "Settings",
+  ]);
   assert.deepEqual(
     await p
       .locator(".browse-rows > .browse-row .browse-open")
@@ -446,20 +467,20 @@ try {
   await p.getByRole("searchbox").fill("Private appliance");
   await click(p, "Private appliance");
   await p.getByText("Model 42", { exact: true }).waitFor();
-  await click(p, "Home");
+  await click(p, "Family");
   await click(p, "Tasks");
   await click(p, "Homework");
   await p
     .getByRole("checkbox", { name: "Complete this occurrence", exact: true })
     .count();
-  await click(p, "Home");
+  await click(p, "Family");
   await click(p, "Chores");
   await click(p, "Water plants");
   await p
     .getByText(/weekly/)
     .first()
     .waitFor();
-  await click(p, "Home");
+  await click(p, "Family");
   await click(p, "Settings");
   await p
     .getByRole("button", { name: "Family Members", exact: true })
@@ -467,7 +488,7 @@ try {
   await p
     .getByRole("button", { name: "Change Password", exact: true })
     .waitFor();
-  await click(p, "Home");
+  await click(p, "Family");
   for (const width of [390, 1440]) {
     await p.setViewportSize({ width, height: 900 });
     await p.locator(".browse-row").last().scrollIntoViewIfNeeded();
@@ -532,12 +553,19 @@ try {
   );
   stage("event-only toolbar changes preserve public content and guest RSVP");
   await click(p, "Settings");
-  await click(p, "Back to household home");
+  await click(p, "Home");
   const second = p.locator("article.card").filter({
     has: p.getByRole("heading", { name: "Dinner Two", exact: true }),
   });
   await second.getByRole("button", { name: "View Event", exact: true }).click();
-  await footer(p, ["Home", "Edit Event", "Print"]);
+  await footer(p, [
+    "Home",
+    "Family",
+    "Contacts",
+    "Edit Event",
+    "Share",
+    "Settings",
+  ]);
   assert.equal(await p.locator(".event-summary").count(), 1);
   assert.equal(
     await p
@@ -560,7 +588,7 @@ try {
   await guestCard("Dinner Two")
     .getByRole("button", { name: "View Event", exact: true })
     .click();
-  await footer(g, ["Home", "Print"]);
+  await footer(g, ["Home", "Print", "Settings"]);
   assert.equal(await g.locator(".event-summary").count(), 0);
   assert.equal(
     await g.getByRole("button", { name: "Edit Event", exact: true }).count(),

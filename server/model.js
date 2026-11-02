@@ -1,4 +1,8 @@
-import { roleDefaults, resolveUI } from "../public/ui-system.js";
+import {
+  roleDefaults,
+  resolveUI,
+  categoryDesign,
+} from "../public/ui-system.js";
 import { Buffer } from "node:buffer";
 import {
   randomBytes,
@@ -99,19 +103,29 @@ export function design(value = {}) {
       )
         fail(400, "Choose a supported font.");
       result[key] = val;
+    } else if (["titleStyle", "descriptionStyle", "textStyle"].includes(key)) {
+      if (!["normal", "bold", "italic", "boldItalic"].includes(val))
+        fail(400, "Choose a supported text style.");
+      result[key] = val;
+    } else if (key === "borderStyle") {
+      if (!["solid", "dashed", "dotted", "none"].includes(val))
+        fail(400, "Choose a supported border style.");
+      result[key] = val;
     } else {
       const [min, max] =
-        key === "opacity"
-          ? [35, 100]
-          : key === "titleSize"
-            ? [22, 64]
-            : [14, 28];
+        key === "borderWidth"
+          ? [0, 6]
+          : key === "opacity"
+            ? [35, 100]
+            : key === "titleSize"
+              ? [22, 64]
+              : [14, 28];
       if (!Number.isInteger(val) || val < min || val > max)
         fail(400, "Appearance value is out of range.");
       result[key] = val;
     }
   }
-  return result;
+  return categoryDesign(result);
 }
 export class Store {
   constructor(database) {

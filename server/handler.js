@@ -63,6 +63,7 @@ const files = new Map([
     "default-examples.js",
     "address-picker.js",
     "browse-ui.js",
+    "appearance-editor.js",
   ].map((file) => ["/" + file, [file, "text/javascript; charset=utf-8"]]),
 ]);
 const date = (value) => {

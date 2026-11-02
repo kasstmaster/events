@@ -122,7 +122,7 @@ try {
     host.household,
   );
   stage("shared lists, child access and independent device updates");
-  await click(owner.page, "Home");
+  await click(owner.page, "Family");
   await click(owner.page, "Create list");
   await owner.page.getByLabel("Title", { exact: true }).fill("Groceries");
   await owner.page
@@ -253,7 +253,7 @@ try {
         .textContent.includes("Connection paused"),
   );
   stage("private home documents");
-  await click(owner.page, "All household tools");
+  await click(owner.page, "Family");
   await click(owner.page, "Create home record");
   await owner.page.getByLabel("Title", { exact: true }).fill("Private washer");
   await owner.page
@@ -315,7 +315,7 @@ try {
   stage(
     "guest invite code, suffix recognition, custom RSVP and separate images",
   );
-  await click(owner.page, "Home");
+  await click(owner.page, "Family");
   const cookie = (await owner.context.cookies())
     .map((c) => c.name + "=" + c.value)
     .join(";");
@@ -357,7 +357,7 @@ try {
     deadline: "2000-01-01",
   });
   await click(owner.page, "Settings");
-  await click(owner.page, "Back to household home");
+  await click(owner.page, "Home");
   await click(owner.page, "Contacts");
   await click(owner.page, "＋ Add adult or child");
   await owner.page.getByLabel("First name", { exact: true }).fill("Casey");

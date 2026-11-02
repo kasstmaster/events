@@ -198,6 +198,9 @@ test(
         .getByRole("button", { name: "Create administrator", exact: true })
         .click();
       await page
+        .getByRole("button", { name: "Approvals", exact: true })
+        .click();
+      await page
         .getByRole("heading", { name: "Approved emails", exact: true })
         .waitFor();
       assert.ok(

@@ -1,5 +1,5 @@
 import { accessFor } from "./guest-access.js";
-import { fail, text, id } from "./model.js";
+import { fail, text, id, hashPassword, checkPassword } from "./model.js";
 import {
   uiConfig,
   hostUI,
@@ -60,6 +60,24 @@ export async function featureAPI({
           };
         }),
     );
+    return true;
+  }
+  if (path === "/api/admin/password" && method === "PUT") {
+    requireRole("admin");
+    const input = await body(req),
+      user = store.one("SELECT password FROM users WHERE id=?", session.user);
+    if (!(await checkPassword(input.currentPassword, user?.password)))
+      fail(403, "Current password is incorrect.");
+    const password = await hashPassword(input.password);
+    store.transaction(() => {
+      store.run(
+        "UPDATE users SET password=? WHERE id=?",
+        password,
+        session.user,
+      );
+      store.run("DELETE FROM sessions WHERE user=?", session.user);
+    });
+    json(res, { ok: true, signInAgain: true });
     return true;
   }
   if (path === "/api/admin/defaults") {
