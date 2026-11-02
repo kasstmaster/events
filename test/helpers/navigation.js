@@ -54,7 +54,7 @@ export async function clickNavigation(page, label) {
     return;
   }
   const scope = inDialog
-    ? page.getByRole("dialog")
+    ? dialog
     : name === "RSVP"
       ? page.locator("#main")
       : page;
@@ -63,6 +63,16 @@ export async function clickNavigation(page, label) {
     exact: true,
   });
   if (await button.count()) {
+    // Fixed chrome is not included in Playwright's geometric visibility check.
+    // Scroll content controls as a user would before clicking them.
+    if (
+      !(await button
+        .first()
+        .evaluate((el) => !!el.closest(".top-shell,.toolbar")))
+    )
+      await button
+        .first()
+        .evaluate((el) => el.scrollIntoView({ block: "center" }));
     await button.first().click();
     return;
   }

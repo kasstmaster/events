@@ -67,7 +67,7 @@ async function device(width = 390) {
   page.on("pageerror", (e) => errors.push(e.message));
   return { context, page };
 }
-const dialog = (page) => page.getByRole("dialog");
+const dialog = (page) => page.locator("#editor[open]");
 const click = clickNavigation;
 async function save(page) {
   await click(page, "Save");

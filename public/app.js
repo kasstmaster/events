@@ -595,6 +595,7 @@ function modal(title, content, form = "", save = C("Save")) {
     render();
   }
   dialog.classList.toggle("inline-management", !!inline);
+  dialog.setAttribute("role", inline ? "region" : "dialog");
   dialog.innerHTML = ui`<div class="dialog-head"><h2 id="dialog-title">${escape(title)}</h2>${button("close", "✕", 'aria-label="Close editor"', "quiet")}</div>${form ? ui`<form data-form="${form}">` : ""}<div class="dialog-body">${content}<p class="form-error" role="alert"></p></div>${form && form !== "ui-settings" ? ui`<div class="dialog-foot">${button("close", H("Cancel"))}<button>${save}</button></div>` : ""}${form ? "</form>" : ""}`;
   if (inline) {
     $("#main").append(dialog);
