@@ -52,7 +52,11 @@ store.put(
   },
   household.version,
 );
-const server = createApp({ store, origin });
+const server = createApp({
+  store,
+  origin,
+  env: { MEYER_HOST_EMAIL: "alpha@example.test" },
+});
 server.listen(3179, "127.0.0.1");
 await once(server, "listening");
 async function api(
@@ -170,6 +174,9 @@ const e1 = (
   await api(owner, "/api/host/events", {
     title: "Dinner One",
     description: "Keep this event design.",
+    time: "18:30",
+    uploadURL: "https://example.test/upload",
+    notes: "Host-only event notes",
     address: "123 Example Lane",
     date: "2089-06-12",
     deadline: "2089-06-01",
@@ -181,6 +188,7 @@ const e2 = (
   await api(owner, "/api/host/events", {
     title: "Dinner Two",
     description: "No potluck here.",
+    date: "2089-06-10",
     invited: [guest.id],
     menu: [],
   })
@@ -404,6 +412,24 @@ try {
   stage("shared Contacts rows, search, menus and formatting");
   await click(p, "Contacts");
   await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
+  assert.equal(
+    await p.getByRole("button", { name: "Sync AnyList", exact: true }).count(),
+    1,
+  );
+  await click(p, "Check sync status");
+  await p
+    .locator("#contacts-sync-status")
+    .getByText("No contact sync has been started.", { exact: true })
+    .waitFor();
+  const padding = await p
+    .locator(".browse-open")
+    .first()
+    .evaluate((el) => {
+      const s = getComputedStyle(el);
+      return [s.paddingTop, s.paddingBottom, s.paddingLeft, s.paddingRight];
+    });
+  assert.deepEqual(padding, ["8px", "8px", "8px", "8px"]);
+
   await footer(p, [
     "Home",
     "Family",
@@ -472,6 +498,15 @@ try {
     await p.setViewportSize({ width, height: 900 });
     await p.evaluate(() =>
       window.scrollTo(0, document.documentElement.scrollHeight),
+    );
+    await p.waitForFunction(
+      () =>
+        Math.abs(
+          document
+            .querySelector(".contacts-invite-tools")
+            .getBoundingClientRect().top -
+            document.querySelector(".top-shell").getBoundingClientRect().bottom,
+        ) < 2,
     );
     assert.ok(
       await p.evaluate(
@@ -603,7 +638,7 @@ try {
     return (
       input?.checked &&
       !input.disabled &&
-      document.querySelector("#family-save-status")?.textContent === "Saved"
+      document.querySelector("#family-save-status")?.textContent === ""
     );
   });
   await option(p, "Hide Completed");
@@ -767,6 +802,10 @@ try {
     .waitFor();
   const g = await page(guestCookie);
   await g.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
+  assert.deepEqual(await g.locator("article.card h2").allTextContents(), [
+    "Dinner Two",
+    "Dinner One",
+  ]);
   const guestCard = (title) =>
     g
       .locator("article.card")
@@ -774,6 +813,97 @@ try {
   await guestCard("Dinner Two")
     .getByRole("button", { name: "View Event", exact: true })
     .click();
+  await g.locator(".event-hero").waitFor();
+  assert.equal(
+    await p.locator("#main").innerHTML(),
+    await g.locator("#main").innerHTML(),
+    "Host and unanswered guest event bodies use identical markup",
+  );
+  assert.doesNotMatch(
+    await p.locator("#main").innerText(),
+    /invites you|Choose an administrator-provided template/,
+  );
+  await click(p, "RSVP");
+  await p
+    .getByRole("heading", { name: "Guest RSVP preview", exact: true })
+    .waitFor();
+  assert.equal(store.list("response", host.household).length, 0);
+  await click(p, "Close editor");
+  await p.locator("[data-event-edit=description]").dblclick();
+  assert.equal(
+    await p.getByLabel("Description", { exact: true }).inputValue(),
+    "No potluck here.",
+  );
+  await click(p, "Cancel");
+  await click(p, "Edit Event");
+  assert.equal(await p.locator(".appearance-categories button").count(), 5);
+  await p
+    .locator(".appearance-content-actions")
+    .getByRole("button", { name: "Table", exact: true })
+    .click();
+  await p.getByText("Table templates", { exact: true }).waitFor();
+  await p
+    .getByLabel("Table template name", { exact: true })
+    .fill("Reusable dinner");
+  await p
+    .getByRole("button", { name: "Save Table Template", exact: true })
+    .click();
+  await p.getByText("Table template saved.", { exact: true }).waitFor();
+  assert.equal(store.list("table-template", host.household).length, 1);
+  p.once("dialog", (d) => d.dismiss());
+  await p
+    .getByRole("button", { name: "Delete Table Template", exact: true })
+    .click();
+  assert.equal(store.list("table-template", host.household).length, 1);
+  await click(p, "Cancel");
+  await click(p, "Edit Event");
+  await p
+    .locator(".appearance-content-actions")
+    .getByRole("button", { name: "Template", exact: true })
+    .click();
+  await p
+    .getByRole("heading", { name: "Edit your card", exact: true })
+    .waitFor();
+  await click(p, "Close editor");
+  await p.getByRole("heading", { name: "Dinner Two", exact: true }).waitFor();
+  await click(p, "Home");
+  await p
+    .locator("article.card")
+    .filter({
+      has: p.getByRole("heading", { name: "Dinner One", exact: true }),
+    })
+    .getByRole("button", { name: "View Event", exact: true })
+    .click();
+  for (const name of [
+    "description",
+    "date",
+    "time",
+    "deadline",
+    "eventAddress",
+  ]) {
+    await p.locator(`#main [data-event-edit="${name}"]`).dblclick();
+    assert.equal(await p.locator("form[data-form=event]").count(), 1);
+    assert.equal(await p.evaluate(() => document.activeElement.name), name);
+    await click(p, "Cancel");
+  }
+  await p.locator('#main [data-menu-item="salad"]').dblclick();
+  await p.getByText("Table templates", { exact: true }).waitFor();
+  await click(p, "Cancel");
+  await click(p, "Edit Event");
+  await p.locator('[data-event-edit="uploadURL"]').dblclick();
+  assert.equal(
+    await p
+      .getByLabel("Photo / video upload link (optional)", { exact: true })
+      .inputValue(),
+    "https://example.test/upload",
+  );
+  await click(p, "Cancel");
+  await p.locator("#main").getByText("When", { exact: true }).dblclick();
+  assert.equal(
+    await p.locator("#editor[open]").count(),
+    0,
+    "Host cannot edit shared interface wording",
+  );
   await footer(g, ["Home", "Print", "Settings"]);
   assert.equal(await g.locator(".event-summary").count(), 0);
   assert.equal(

@@ -1389,7 +1389,7 @@ body.card-editor-active {
   background: transparent;
   color: var(--ink);
   border: 0;
-  padding: 8px 0;
+  padding: 8px;
   width: 100%;
   text-align: left;
   font-family: var(--body-font);
@@ -2164,4 +2164,73 @@ body #app .contacts-select-event {
     100dvh - var(--top-height, 100px) - var(--bottom-height, 100px) - 12px
   );
   overflow: auto;
+}
+
+/* Keep name/title text equally clear of the button on all four sides. */
+body #app .browse-open {
+  padding: 8px;
+}
+body #app input.address-not-found {
+  border: 2px solid #b42318;
+}
+body #app .address-missing {
+  color: #b42318;
+}
+.address-guest-id {
+  margin-inline-start: 12px;
+  white-space: nowrap;
+}
+.browse-category {
+  flex-wrap: wrap;
+}
+
+#family-save-status:empty {
+  display: none;
+}
+
+.appearance-content-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.appearance-content-actions button {
+  flex: 1;
+}
+
+@media (max-width: 600px) {
+  /* Keep the page title readable beside Gather and the accessible icon actions. */
+  .top-shell .app-topbar {
+    gap: 4px;
+  }
+  .top-shell .browse-top-actions {
+    gap: 2px;
+  }
+  .top-shell .app-topbar .nav-control span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}
+
+.admin-home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 100%;
+}
+
+body.editing-active
+  #app
+  :is(
+    .top-shell,
+    .toolbar,
+    .card-controls,
+    .browse-menu[open] > div,
+    .appearance-options[open]
+  ) {
+  background-color: var(--panel-solid);
+  opacity: 1;
+  backdrop-filter: none;
 }

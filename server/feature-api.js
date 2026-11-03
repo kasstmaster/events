@@ -30,6 +30,52 @@ export async function featureAPI({
     if (!record) fail(404, "Record not found.");
     return record;
   };
+  const tableTemplate = path.match(
+    /^\/api\/host\/table-templates(?:\/([a-zA-Z0-9-]+))?$/,
+  );
+  if (tableTemplate) {
+    requireRole("host");
+    const household = session.household,
+      key = tableTemplate[1];
+    if (method === "GET" && !key) {
+      json(res, store.list("table-template", household));
+      return true;
+    }
+    if ((method === "POST" && !key) || (method === "PUT" && key)) {
+      const input = await body(req);
+      const record = {
+        name: text(input.name, 160, true),
+        menu: validateEvent(
+          { title: "Table template", invited: [], menu: input.menu },
+          store,
+          household,
+        ).menu,
+      };
+      const saved = store.transaction(() => {
+        if (key) owned("table-template", key);
+        else if (store.list("table-template", household).length >= 50)
+          fail(409, "Use up to 50 table templates.");
+        return store.put(
+          "table-template",
+          key || id(),
+          household,
+          record,
+          key ? version(req) : undefined,
+        );
+      });
+      json(res, saved, key ? 200 : 201);
+      return true;
+    }
+    if (method === "DELETE" && key) {
+      store.transaction(() => {
+        owned("table-template", key);
+        store.remove("table-template", key, household, version(req));
+      });
+      json(res, { ok: true });
+      return true;
+    }
+    fail(405, "Method not allowed.");
+  }
   const inviteMatch = path.match(
     /^\/api\/host\/events\/([^/]+)\/invite-guests$/,
   );
@@ -162,15 +208,20 @@ export async function featureAPI({
       return true;
     }
   }
-  if (path === "/api/admin/preview" && method === "POST") {
+  if (
+    ["/api/admin/preview", "/api/host/preview"].includes(path) &&
+    method === "POST"
+  ) {
     // Preview reads use POST only to keep selected identifiers out of URLs; nothing is persisted.
-    requireRole("admin");
-    const input = await body(req),
-      household = owned(
-        "household",
-        text(input.household, 100, true),
-        input.household,
-      );
+    const hostPreview = path === "/api/host/preview";
+    requireRole(hostPreview ? "host" : "admin");
+    const input = await body(req);
+    if (hostPreview && input.household && input.household !== session.household)
+      fail(404, "Household not found.");
+    const householdId = hostPreview
+      ? session.household
+      : text(input.household, 100, true);
+    const household = owned("household", householdId, householdId);
     const events = store
       .list("event", household.id)
       .filter((e) => !input.event || e.id === input.event)

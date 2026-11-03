@@ -18,6 +18,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run format:check
+      - name: Install isolated AnyList reader dependencies
+        run: npm ci --ignore-scripts --prefix integrations/anylist
+      - name: Check read-only AnyList transport and protobuf decoding
+        run: node --test integrations/anylist/reader.test.js
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - name: Original phone workflow

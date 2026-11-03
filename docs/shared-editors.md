@@ -32,7 +32,7 @@ QR is optional and uses the existing household share destination, including opaq
 
 ## Contacts, notes and uploads
 
-Phone numbers extend existing guest/address records. SMS-eligible guests need their own explicit consent and an international E.164 phone number (for example `+12025550123`); children are never SMS recipients. Address records and guest/address relationships remain intact. Hosts record consent only after obtaining it from the recipient.
+Phone numbers extend existing guest/address records. A successful explicit RSVP by the signed-in adult records phone-scoped messaging enrollment; hosts do not select a consent checkbox. An international E.164 number on file is required (for example `+12025550123`); children and other skipped adults are never enrolled by that submission. Address records and guest/address relationships remain intact. One confirmation per adult/event includes STOP instructions, subject to the disabled-by-default provider and existing opt-outs. Disabled submissions do not become a future backlog.
 
 Household notes and event notes are host-private. They are absent from public/guest/preview APIs and card field inputs. Upload links accept only HTTP(S) external destinations and are navigation only; the server does not fetch them. Hosts configure Dropbox File Requests, Google Drive, OneDrive or another service's upload permissions themselves. An empty link removes the guest button.
 

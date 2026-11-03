@@ -1,3 +1,4 @@
+import { addressParts } from "./address-system.js";
 import { ui, C, H } from "./ui-runtime.js";
 export function addressPicker({
   state,
@@ -24,7 +25,7 @@ export function addressPicker({
       a = selected(),
       box = f.querySelector("#address-details");
     box.innerHTML = draft
-      ? ui`<fieldset><legend>${draft.id ? C("Edit shared address") : C("New shared address")}</legend>${draft.id ? "<p>Saving updates this address for everyone who uses it. Their invite code stays the same.</p>" : ""}${field(H("Address title"), "addressLabel", draft.label || "", "text", 'required maxlength="100"')}${area(H("Street / mailing address"), "addressLines", draft.lines || "", 'maxlength="500"')}${field(H("Address contact phone (optional)"), "addressPhone", draft.phone || "", "tel")}${button("address-cancel-edit", H("Cancel address changes"))}</fieldset>`
+      ? ui`<fieldset><legend>${draft.id ? C("Edit shared address") : C("New shared address")}</legend>${draft.id ? "<p>Saving updates this address for everyone who uses it. Their invite code stays the same.</p>" : ""}${field(H("Address title"), "addressLabel", draft.label || "", "text", 'required maxlength="100"')}${field(H("Street / PO Box"), "addressStreet", addressParts(draft).street, "text", 'maxlength="500" autocomplete="address-line1"')}${field(H("City"), "addressCity", addressParts(draft).city, "text", 'maxlength="100" autocomplete="address-level2"')}<div class="form-grid">${field(H("State"), "addressState", addressParts(draft).state, "text", 'maxlength="100" autocomplete="address-level1"')}${field(H("Zip Code"), "addressZip", addressParts(draft).zip, "text", 'maxlength="30" autocomplete="postal-code"')}</div>${field(H("Address contact phone (optional)"), "addressPhone", draft.phone || "", "tel")}${button("address-cancel-edit", H("Cancel address changes"))}</fieldset>`
       : a
         ? ui`<p><strong>${escape(a.label)}</strong></p><p class="event-details">${escape(a.lines)}</p>${button("address-edit-selected", H("Edit this address"))}${button("address-clear", H("Remove address from guest"))}`
         : "";
@@ -39,15 +40,22 @@ export function addressPicker({
             .filter((a) => norm(a.label + " " + a.lines).includes(value))
             .slice(0, 10)
         : [];
+    const missing = !!query.trim() && !matches.length;
+    f.elements.addressSearch.classList.toggle("address-not-found", missing);
+    f.elements.addressSearch.setAttribute("aria-invalid", String(missing));
     box.hidden = !query.trim();
     f.elements.addressSearch.setAttribute("aria-expanded", String(!box.hidden));
     box.innerHTML =
+      (missing
+        ? ui`<p class="address-missing" role="status">Not found</p>`
+        : "") +
       matches
         .map(
           (a) =>
             ui`<button type="button" role="option" data-action="address-select" data-id="${escape(a.id)}">${escape(a.label)}<span class="small">${escape(a.lines)}</span></button>`,
         )
-        .join("") + button("address-create", H("Continue with a new address"));
+        .join("") +
+      button("address-create", H("Create new address"));
   }
   return {
     markup(guest) {
@@ -68,9 +76,14 @@ export function addressPicker({
         suggestions();
         onChange(f);
       } else if (
-        ["addressLabel", "addressLines", "addressPhone"].includes(
-          event.target.name,
-        )
+        [
+          "addressLabel",
+          "addressStreet",
+          "addressCity",
+          "addressState",
+          "addressZip",
+          "addressPhone",
+        ].includes(event.target.name)
       )
         onChange(f);
     },
@@ -99,8 +112,8 @@ export function addressPicker({
       }
       if (action === "address-create") {
         draft = {
-          label: /^\d/.test(query) ? "" : query,
-          lines: /^\d/.test(query) ? query : "",
+          label: /^(?:\d|P\.?O\.?\s+Box\b)/i.test(query) ? "" : query,
+          lines: /^(?:\d|P\.?O\.?\s+Box\b)/i.test(query) ? query : "",
         };
         f.elements.address.value = "";
       }
@@ -114,6 +127,8 @@ export function addressPicker({
         const a = selected();
         f.elements.addressSearch.value = a?.label || "";
       }
+      f.elements.addressSearch.classList.remove("address-not-found");
+      f.elements.addressSearch.setAttribute("aria-invalid", "false");
       f.querySelector("#address-options").hidden = true;
       f.elements.addressSearch.setAttribute("aria-expanded", "false");
       details();
@@ -136,7 +151,10 @@ export function addressPicker({
         id: draft.id || "",
         version: draft.version,
         label: f.elements.addressLabel.value,
-        lines: f.elements.addressLines.value,
+        street: f.elements.addressStreet.value,
+        city: f.elements.addressCity.value,
+        state: f.elements.addressState.value,
+        zip: f.elements.addressZip.value,
         phone: f.elements.addressPhone.value,
       };
     },

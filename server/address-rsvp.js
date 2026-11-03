@@ -1,3 +1,4 @@
+import { recordRSVPNotification } from "./rsvp-notifications.js";
 import { fail } from "./model.js";
 export function addressAdults(store, event, session) {
   const guest = store.get("guest", session.guest, session.household);
@@ -26,7 +27,7 @@ export function addressEvent(store, event, session) {
   );
   return result;
 }
-export function saveAddressResponse(store, event, session, input) {
+export function saveAddressResponse(store, event, session, input, env = {}) {
   return store.transaction(() => {
     const current = store.get("event", event.id, session.household);
     if (!current?.invited.includes(session.guest))
@@ -51,7 +52,8 @@ export function saveAddressResponse(store, event, session, input) {
       Array.isArray(input.claims)
     )
       fail(400, "Invalid menu selections.");
-    let result;
+    let result,
+      ownSaved = false;
     for (const party of parties) {
       const own = party.guest === session.guest;
       const attendance = Object.fromEntries(
@@ -88,7 +90,9 @@ export function saveAddressResponse(store, event, session, input) {
         },
         { partial: true },
       );
+      if (own && attendance[session.guest]) ownSaved = true;
     }
+    if (ownSaved) recordRSVPNotification(store, env, current, session);
     return result || { ok: true };
   });
 }

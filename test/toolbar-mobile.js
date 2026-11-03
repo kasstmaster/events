@@ -401,6 +401,23 @@ try {
       .evaluate((el) => getComputedStyle(el).fontStyle),
     "italic",
   );
+  await click(p, "Edit House");
+  await editValue(p, "Containers", "Background", "Container opacity (%)", "35");
+  assert.equal(
+    await p
+      .locator("body")
+      .evaluate((el) => el.classList.contains("editing-active")),
+    true,
+  );
+  for (const selector of [".top-shell", ".toolbar"])
+    assert.match(
+      await p
+        .locator(selector)
+        .evaluate((el) => getComputedStyle(el).backgroundColor),
+      /^rgb\(/,
+      "Editing toolbars have an opaque background",
+    );
+  await click(p, "Cancel");
   stage("inline contacts: unsaved creation, address groups and scoped edits");
   await click(p, "Contacts");
   await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
@@ -457,14 +474,22 @@ try {
   await option(p, "Sort alphabetically");
   await p.waitForFunction(
     () =>
-      document.querySelector("[data-address-group]")?.textContent ===
+      document.querySelector("[data-address-title]")?.textContent ===
       "Alpha address",
   );
-  assert.deepEqual(await p.locator("[data-address-group]").allTextContents(), [
+  assert.deepEqual(await p.locator("[data-address-title]").allTextContents(), [
     "Alpha address",
     "No shared address",
     "Zulu",
   ]);
+  const addressHeading = p.locator("[data-address-group]").filter({
+    has: p.locator("[data-address-title]", { hasText: "Alpha address" }),
+  });
+  assert.match(await addressHeading.textContent(), /Guest ID · \d{4}/);
+  assert.equal(
+    await p.locator("[data-address-group] .address-guest-id").count(),
+    2,
+  );
   await home(p);
   const card = p.locator("article.card").filter({
     has: p.getByRole("heading", { name: "Dinner One", exact: true }),
@@ -620,6 +645,101 @@ try {
       .count(),
     0,
   );
+  stage(
+    "promoted host keeps normal pages and receives Home-only administrator tools",
+  );
+  await click(admin, "Hosts");
+  await admin
+    .locator("li")
+    .filter({ hasText: "alpha@example.test" })
+    .getByRole("button", { name: "Make administrator", exact: true })
+    .click();
+  await admin
+    .getByLabel("Confirm host email", { exact: true })
+    .fill("alpha@example.test");
+  await admin
+    .getByLabel("Your administrator password", { exact: true })
+    .fill(password);
+  await admin.getByRole("button", { name: "Save", exact: true }).click();
+  await admin
+    .getByText("Administrator tools enabled", { exact: true })
+    .waitFor();
+  const promotedCookie = (
+    await api(null, "/api/login", { email: "alpha@example.test", password })
+  ).cookie;
+  const promoted = await page(promotedCookie, 390);
+  await promoted
+    .getByRole("toolbar", { name: "Administrator tools", exact: true })
+    .waitFor();
+  assert.deepEqual(
+    await promoted.locator(".admin-home-actions button").allTextContents(),
+    ["Approvals", "Hosts", "Defaults", "Templates"],
+  );
+  await footer(promoted, [
+    "Home",
+    "Family",
+    "Contacts",
+    "Edit House",
+    "Share",
+    "Settings",
+  ]);
+  for (const width of [390, 1440]) {
+    await promoted.setViewportSize({ width, height: 900 });
+    await geometry(promoted);
+    await promoted.screenshot({
+      path: `test-results/promoted-host-home-${width}.png`,
+      fullPage: true,
+    });
+  }
+  await click(promoted, "Approvals");
+  await promoted
+    .getByRole("heading", { name: "Approved emails", exact: true })
+    .waitFor();
+  await footer(promoted, [
+    "Home",
+    "Family",
+    "Contacts",
+    "Edit House",
+    "Share",
+    "Settings",
+  ]);
+  await home(promoted);
+  await click(promoted, "Defaults");
+  await promoted.getByLabel("Example page", { exact: true }).waitFor();
+  await click(promoted, "Cancel");
+  await promoted
+    .getByRole("toolbar", { name: "Administrator tools", exact: true })
+    .waitFor();
+  await click(promoted, "Templates");
+  await promoted.getByText("Shared card templates", { exact: true }).waitFor();
+  await click(promoted, "Close editor");
+  await promoted
+    .getByRole("toolbar", { name: "Administrator tools", exact: true })
+    .waitFor();
+  await option(promoted, "Preview guest experience");
+  await promoted
+    .getByLabel("Event (optional)", { exact: true })
+    .selectOption(e1.id);
+  await promoted.getByRole("button", { name: "Preview", exact: true }).click();
+  await promoted
+    .getByRole("button", { name: "Exit read-only preview", exact: true })
+    .waitFor();
+  const responseCount = store.list("response", host.household).length;
+  await promoted.locator("main [data-action=rsvp]").click();
+  assert.equal(store.list("response", host.household).length, responseCount);
+  await click(promoted, "Exit read-only preview");
+  await promoted
+    .getByRole("toolbar", { name: "Administrator tools", exact: true })
+    .waitFor();
+  await promoted
+    .locator("article.card")
+    .filter({
+      has: promoted.getByRole("heading", { name: "Dinner One", exact: true }),
+    })
+    .getByRole("button", { name: "View Event", exact: true })
+    .click();
+  await promoted.locator(".event-hero").waitFor();
+  assert.equal(await promoted.locator(".admin-home-actions").count(), 0);
   const g = await page(guestCookie);
   await g.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
   await g

@@ -99,6 +99,7 @@ export async function domainRuntime({
                   "family-ui.js",
                   "default-examples.js",
                   "address-picker.js",
+                  "address-system.js",
                   "browse-ui.js",
                   "appearance-editor.js",
                 ].includes(file)

@@ -1,3 +1,18 @@
+import {
+  platformAdministrator,
+  verifyPlatformLogin,
+  grantPlatformAccess,
+  retireLegacyAdministrator,
+} from "./platform-access.js";
+import {
+  integrationCapabilities,
+  integrationHousehold,
+  sameSecret,
+  startAnyListSync,
+  importAnyList,
+  syncStatus,
+} from "./household-integrations.js";
+import { addressInput } from "./addresses.js";
 import { saveAddressResponse } from "./address-rsvp.js";
 import {
   identityAPI,
@@ -62,6 +77,7 @@ const files = new Map([
     "family-ui.js",
     "default-examples.js",
     "address-picker.js",
+    "address-system.js",
     "browse-ui.js",
     "appearance-editor.js",
   ].map((file) => ["/" + file, [file, "text/javascript; charset=utf-8"]]),
@@ -383,6 +399,18 @@ export function createHandler({
       }
       if (method !== "GET" && req.headers.origin !== origin)
         fail(403, "Please use the application’s own page to submit changes.");
+      if (path === "/api/integrations/anylist/import" && method === "POST") {
+        if (
+          householdHostname ||
+          !sameSecret(
+            req.headers["x-events-import-secret"],
+            env.ANYLIST_IMPORT_SECRET,
+          )
+        )
+          fail(403, "This integration is unavailable.");
+        json(res, importAnyList(store, env, await body(req), guestInput));
+        return;
+      }
       if (path === "/api/setup") {
         const required = !store.adminSetupComplete();
         const enabled =
@@ -450,6 +478,7 @@ export function createHandler({
             fail(403, "Household content requires an owner or administrator.");
           return;
         }
+        if (role === "admin" && platformAdministrator(store, session)) return;
         if (session.role !== role)
           fail(403, "This action is not available to your account.");
       };
@@ -597,6 +626,7 @@ export function createHandler({
                     ? "host"
                     : "family"
                   : session.role,
+                platformAdmin: platformAdministrator(store, session),
                 householdRole: ["host", "family"].includes(session.role)
                   ? familyMember(store, session).role
                   : null,
@@ -651,6 +681,7 @@ export function createHandler({
           (user.role !== "host" || user.household !== selected.id)
         )
           fail(401, "Unable to sign in with these details.");
+        verifyPlatformLogin(store, user);
         cookie(
           res,
           newSession({
@@ -755,6 +786,28 @@ export function createHandler({
 
       if (path.startsWith("/api/admin")) {
         requireRole("admin");
+        const promote = path.match(
+          /^\/api\/admin\/platform-access\/([a-zA-Z0-9-]+)$/,
+        );
+        if (promote && method === "POST") {
+          json(
+            res,
+            await grantPlatformAccess(
+              store,
+              session,
+              promote[1],
+              await body(req),
+            ),
+          );
+          return;
+        }
+        if (path === "/api/admin/retire-legacy" && method === "POST") {
+          json(
+            res,
+            await retireLegacyAdministrator(store, session, await body(req)),
+          );
+          return;
+        }
         if (path === "/api/admin" && method === "GET") {
           json(res, {
             approvals: store.all("SELECT email,created FROM approvals"),
@@ -762,8 +815,18 @@ export function createHandler({
             deletions: store.all(
               "SELECT household,email,label,phase,error FROM household_deletions",
             ),
-            hosts: store.all(
-              "SELECT id,email,household FROM users WHERE role='host'",
+            hosts: store
+              .all("SELECT id,email,household FROM users WHERE role='host'")
+              .map((host) => ({
+                ...host,
+                platformAdmin: platformAdministrator(store, {
+                  user: host.id,
+                  household: host.household,
+                  role: "host",
+                }),
+              })),
+            legacyAdministrators: store.all(
+              "SELECT email FROM users WHERE role='admin'",
             ),
           });
           return;
@@ -804,7 +867,9 @@ export function createHandler({
             guests: store
               .list("guest", household)
               .map((g) => guestContact(store, g, household)),
+            integrations: integrationCapabilities(store, env, household),
             savedMenu: store.list("menu-saved", household),
+            tableTemplates: store.list("table-template", household),
             addresses: store.list("address", household),
             events: store.list("event", household).map((e) => ({
               ...e,
@@ -816,6 +881,21 @@ export function createHandler({
             defaults: effectiveUI(store).design,
             ui: effectiveUI(store, store.household(household)),
           });
+          return;
+        }
+        if (
+          path === "/api/host/integrations/anylist" &&
+          ["GET", "POST"].includes(method)
+        ) {
+          if (integrationHousehold(store, env) !== household)
+            fail(403, "This integration is unavailable.");
+          json(
+            res,
+            method === "POST"
+              ? await startAnyListSync(store, env, household)
+              : syncStatus(store, household),
+            method === "POST" ? 202 : 200,
+          );
           return;
         }
         if (path === "/api/host/household" && method === "PUT") {
@@ -891,13 +971,7 @@ export function createHandler({
                 kind === "guest"
                   ? null
                   : kind === "address"
-                    ? {
-                        label: text(input.label, 100, true),
-                        lines: text(input.lines ?? "", 500),
-                        phone: contactPhone(
-                          input.phone ?? existing?.phone ?? "",
-                        ),
-                      }
+                    ? addressInput(input, existing || {})
                     : eventInput(input, store, household, existing);
             const saved = store.transaction(() => {
               let nextRecord = record;
@@ -915,11 +989,7 @@ export function createHandler({
                     "address",
                     key,
                     household,
-                    {
-                      label: text(draft.label, 100, true),
-                      lines: text(draft.lines || "", 500),
-                      phone: contactPhone(draft.phone || ""),
-                    },
+                    addressInput(draft, current || {}),
                     current ? draft.version : undefined,
                   );
                   address = savedAddress.id;
@@ -1048,6 +1118,7 @@ export function createHandler({
               event,
               { household: relation.household, guest: relation.guest },
               input,
+              env,
             ),
           );
           return;

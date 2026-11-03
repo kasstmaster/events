@@ -45,7 +45,12 @@ export function featureTools(ctx) {
     qrData = "",
     dragIndex = null,
     reminderVersion;
-  const role = () => state.session.role;
+  const role = () =>
+    state.session.role === "host" &&
+    state.session.platformAdmin &&
+    state.adminMode
+      ? "admin"
+      : state.session.role;
   const options = () => [
     ["", C("None")],
     ...state.data.events.map((e) => [e.id, e.title]),
@@ -354,7 +359,19 @@ export function featureTools(ctx) {
   }
 
   async function chooseScope(preview = false) {
-    const data = await api("/api/admin/households");
+    const data =
+      role() === "admin"
+        ? await api("/api/admin/households")
+        : [
+            {
+              id: state.data.household.id,
+              name: state.data.household.name,
+              events: state.data.events.map((e) => ({
+                id: e.id,
+                title: e.title,
+              })),
+            },
+          ];
     state.previewHouseholds = data;
     modal(
       preview ? C("Preview guest pages") : C("Choose an editing scope"),
@@ -720,7 +737,7 @@ export function featureTools(ctx) {
     state.editingReminders = data.reminders;
     modal(
       C("Reminders"),
-      ui`<p>${data.configured ? C("Messaging provider configured. Enabling a schedule can send real texts.") : C("Messaging is not enabled. Schedules can be saved and previewed, but no texts will send.")}</p><p>Only individually invited adults with an international phone number and recorded SMS consent are eligible. Opt-outs always win.</p><div id="reminder-rows">${data.reminders.map(reminderRow).join("")}</div>${button("add-reminder", H("Add reminder"))}${button("preview-reminders", H("Preview recipients"))}<div id="reminder-preview"></div><h3>Delivery status</h3><ul>${data.deliveries.map((d) => ui`<li>${escape(d.phone)}: ${escape(d.status === "sent" ? "Sent (provider-reported; delivery unconfirmed)" : d.status)}${d.error ? " · " + escape(d.error) : ""}</li>`).join("") || M("<li>No deliveries.</li>")}</ul><p class="small muted">Accepted means the provider accepted a request, not delivered. Unknown outcomes are not retried automatically.</p>`,
+      ui`<p>${data.configured ? C("Messaging provider configured. Enabling a schedule can send real texts.") : C("Messaging is not enabled. Schedules can be saved and previewed, but no texts will send.")}</p><p>RSVP messaging starts when an adult submits their response. Reminders use eligible invited adults with an international phone number on file. STOP opt-outs always win.</p><div id="reminder-rows">${data.reminders.map(reminderRow).join("")}</div>${button("add-reminder", H("Add reminder"))}${button("preview-reminders", H("Preview recipients"))}<div id="reminder-preview"></div><h3>Delivery status</h3><ul>${data.deliveries.map((d) => ui`<li>${escape(d.phone)}: ${escape(d.status === "sent" ? "Sent (provider-reported; delivery unconfirmed)" : d.status)}${d.error ? " · " + escape(d.error) : ""}</li>`).join("") || M("<li>No deliveries.</li>")}</ul><p class="small muted">Accepted means the provider accepted a request, not delivered. Unknown outcomes are not retried automatically.</p>`,
       "reminders",
     );
   }
@@ -1007,6 +1024,8 @@ export function featureTools(ctx) {
       }
       if (kind === "admin-preview") {
         state.preview = {
+          endpoint:
+            role() === "admin" ? "/api/admin/preview" : "/api/host/preview",
           household: fd.get("previewHousehold"),
           event:
             fd.get("previewEvent") === "__login__"

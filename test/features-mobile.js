@@ -132,7 +132,7 @@ try {
       el.outerHTML.replace(/ data-[^= ]+="[^"]*"| tabindex="[^"]*"/g, ""),
     );
   assert.ok(eventMetaStructure.includes("Where"));
-  assert.equal(await example.locator("[data-action=rsvp]").count(), 0);
+  assert.equal(await example.locator("[data-action=rsvp]").count(), 1);
   await example.locator("[data-action=edit-event]").waitFor();
   // Actual page components, scoped controls and all conditional sample sections.
   const requests = [];
@@ -181,7 +181,7 @@ try {
       await example.getByText("Where", { exact: true }).waitFor();
       assert.equal(
         await example.locator("[data-event-section=menus]").count(),
-        0,
+        1,
       );
       assert.equal(
         await example.locator("[data-action=edit-event]").count(),
@@ -352,12 +352,45 @@ try {
     .fill("+15551234567");
   await h.page
     .getByLabel("Shared address (optional)", { exact: true })
-    .fill("Example home");
-  await click(h.page, "Continue with a new address");
+    .fill("PO Box 12, Sample City, CA 90210");
+  assert.equal(
+    await h.page.locator("[name=addressSearch]").getAttribute("aria-invalid"),
+    "true",
+  );
+  assert.equal(await h.page.getByText("Not found", { exact: true }).count(), 1);
+  assert.equal(
+    await h.page
+      .locator("[name=addressSearch]")
+      .evaluate((el) => getComputedStyle(el).borderTopColor),
+    "rgb(180, 35, 24)",
+  );
+  await h.page.screenshot({
+    path: "test-results/address-search-not-found-phone.png",
+  });
+  await click(h.page, "Create new address");
+  assert.equal(
+    await h.page.getByLabel("Street / PO Box", { exact: true }).inputValue(),
+    "PO Box 12",
+  );
+  assert.equal(
+    await h.page.getByLabel("City", { exact: true }).inputValue(),
+    "Sample City",
+  );
+  assert.equal(
+    await h.page.getByLabel("State", { exact: true }).inputValue(),
+    "CA",
+  );
+  assert.equal(
+    await h.page.getByLabel("Zip Code", { exact: true }).inputValue(),
+    "90210",
+  );
   await h.page
-    .getByLabel("Street / mailing address", { exact: true })
+    .getByLabel("Address title", { exact: true })
+    .fill("Example home");
+  await h.page
+    .getByLabel("Street / PO Box", { exact: true })
     .fill("123 Sample Avenue");
-  await h.page.getByRole("checkbox", { name: /consented/ }).check();
+  assert.equal(await h.page.locator("[name=smsConsent]").count(), 0);
   await dialog(h.page)
     .getByRole("button", { name: "Save", exact: true })
     .click();
@@ -379,14 +412,14 @@ try {
   await h.page.getByRole("option", { name: /Example home/ }).click();
   await click(h.page, "Edit this address");
   await h.page
-    .getByLabel("Street / mailing address", { exact: true })
+    .getByLabel("Street / PO Box", { exact: true })
     .fill("123 Sample Avenue, Unit 2");
   await click(h.page, "Save");
   await dialog(h.page).waitFor({ state: "hidden" });
   assert.equal(store.list("address", host.household).length, 1);
   assert.equal(
     store.list("address", host.household)[0].lines,
-    "123 Sample Avenue, Unit 2",
+    "123 Sample Avenue, Unit 2\nSample City, CA 90210",
   );
   const localCodes = store.all(
     "SELECT credential FROM guest_access_links WHERE household=?",
@@ -469,7 +502,7 @@ try {
   await click(h.page, "Preview recipients");
   await h.page
     .locator("#reminder-preview")
-    .getByText("Casey Example · +15551234567", { exact: true })
+    .getByText("No eligible recipients.", { exact: true })
     .waitFor();
   await dialog(h.page)
     .getByRole("button", { name: "Save", exact: true })
@@ -672,6 +705,12 @@ try {
   await guest.page.getByLabel("Jordan Other", { exact: true }).selectOption("");
   await click(guest.page, "RSVP");
   await dialog(guest.page).waitFor({ state: "hidden" });
+  assert.equal(
+    store.one(
+      "SELECT status FROM reminder_deliveries WHERE reminder='rsvp-confirmation'",
+    ).status,
+    "disabled",
+  );
   const jordan = store
     .list("guest", host.household)
     .find((g) => g.first === "Jordan");

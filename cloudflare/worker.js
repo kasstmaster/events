@@ -186,6 +186,7 @@ export class EventsDatabase extends DurableObject {
             "/family-ui.js",
             "/default-examples.js",
             "/address-picker.js",
+            "/address-system.js",
             "/browse-ui.js",
             "/appearance-editor.js",
             "/api/public/context",
