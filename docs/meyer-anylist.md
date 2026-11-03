@@ -1,0 +1,32 @@
+# Optional household AnyList contacts
+
+Events keeps one shared application and contact model. A private runtime setting selects the existing verified host email; only that host's household receives the Sync AnyList / Check sync status controls. Names, slugs and browser parameters never enable the integration. Other hosts, household members, guests and the platform administrator cannot invoke the host integration. An optional exact household ID also pins the target. Dropbox is unchanged; its requested integration was canceled.
+
+## Data and reconciliation
+
+The authenticated host starts a bounded job. Events dispatches only `kasstmaster/events`'s `sync-meyer-anylist.yml` on `main`. The job uses a small read-only HTTPS adapter and pinned `protobufjs@7.6.6` to read the selected Address Book. Its wire mapping follows the reference AnyList client; the vulnerable old client and its legacy dependencies are not installed. The adapter logs only fixed outcomes and never caches credentials. It never writes to AnyList or either Gatherings repository. Categories become address groups; category mailing text populates the shared structured address fields when recognized. Items become adults and nonempty note lines become their designated children, matching the reference Address Book convention. Suffixes are retained. Unsupported or ambiguous names are skipped. This unofficial adapter may need updates when AnyList changes.
+
+Stable source identifiers map to normal household-scoped address/contact IDs. The first import may adopt one exact, unique name within one exact matching address; duplicate candidates or records already mapped to another source are skipped, never merged. Subsequent linked updates retain IDs, address Guest IDs and website-owned notes/phones, invitations, responses, consent and identity relationships. Missing source records are retained. Person mappings use the globally stable AnyList item identifier across categories. A source or local address move or changed adult association is skipped for manual review rather than duplicating or silently relocating an existing person. Sync never grants event invitations or sends messages. Four-digit Guest IDs remain address credentials; internal person IDs remain necessary for separate RSVPs and relationships and are not displayed as Guest IDs.
+
+A job snapshots contact/address versions before dispatch. Any edit during the read rejects the whole import; the host must start a fresh sync. The import is transactional and idempotent per job. Errors, expired jobs and ambiguous matches never trigger destructive fallback. A running job expires after 15 minutes. Check sync status reports completion/conflict/failure without a permanent background connection banner. Starting a new sync is limited to six attempts per 15 minutes.
+
+The callback accepts only the Events canonical origin, the private import secret, a current job ID and the configured existing target household. It cannot choose another household. Secrets and provider tokens never reach browser payloads or logs. The reader disables credential-file caching and suppresses dependency diagnostics; workflow logs contain fixed outcomes only. No workflow artifact contains contact data. The whole reader runs in GitHub Actions; it is not bundled into the Worker or exposed as a public asset.
+
+## Secure activation after review
+
+The implementation is disabled until configured. Existing Gatherings secrets cannot be read or transferred through GitHub APIs. Configure the existing values privately in Events; never paste them into chat or source files.
+
+On the existing **events Worker** in the approved account:
+
+| Secret / runtime setting | Value                                                                                                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MEYER_HOST_EMAIL`       | The owner-confirmed existing Meyer host sign-in email. Resolve it against the server's verified registered host record; do not use a display name.               |
+| `MEYER_HOUSEHOLD_ID`     | Optional additional exact opaque household ID guard. A mismatch disables the integration.                                                                        |
+| `EVENTS_ACTIONS_TOKEN`   | Fine-grained GitHub credential limited to `kasstmaster/events`, with Actions read/write for workflow dispatch. No cross-repository or Contents write permission. |
+| `ANYLIST_IMPORT_SECRET`  | A new random value of at least 32 characters, also saved under the same name in Events' GitHub Actions secrets.                                                  |
+
+Under **kasstmaster/events → Settings → Secrets and variables → Actions**, add secrets `ANYLIST_EMAIL`, `ANYLIST_PASSWORD` and the matching `ANYLIST_IMPORT_SECRET`. Optionally set variable `ANYLIST_LIST_NAME`; the default is `Address Book`. Only the job receives the AnyList login. No state-repository token, new database, external storage, paid provider, new cron or Mac installation is required.
+
+The workflow and the complete `integrations/anylist/` reader directory must be reviewed and present on `main` before the button can dispatch it. Deploy the reviewed application merge through the existing manual release procedure; do not deploy main's older application tree. Keep automatic production/preview builds and SMS disabled. Preserve existing bindings, secrets, routes, cron and namespace/object names. Do not run the Gatherings sync as an Events workaround.
+
+Validation uses isolated fake households and mocked dispatch/import transport. Live AnyList authentication, a production sync and secure activation are separately unverified until the owner configures the settings and chooses Sync. Never manufacture live contacts or send real messages for verification.
