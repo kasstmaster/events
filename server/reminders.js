@@ -1,3 +1,5 @@
+import { sendText } from "./sms-provider.js";
+import { runRSVPNotifications, hasRSVPConsent } from "./rsvp-notifications.js";
 import { utcSchedule } from "../public/reminder-time.js";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { fail, text, id } from "./model.js";
@@ -54,7 +56,7 @@ export function reminderRecipients(store, household, event, reminder) {
         !g.parent &&
         event.invited.includes(g.id) &&
         g.phone &&
-        g.smsConsent === true &&
+        hasRSVPConsent(store, g, household) &&
         !store.one("SELECT phone FROM sms_optouts WHERE phone=?", g.phone) &&
         (reminder.kind === "rsvp"
           ? !attendance[g.id]
@@ -88,6 +90,7 @@ export async function runReminders(
     !env.TWILIO_FROM
   )
     return;
+  await runRSVPNotifications(store, env, { fetcher, now });
   const households = store.all("SELECT household FROM users WHERE role='host'");
   for (const { household } of households) {
     if (
@@ -164,45 +167,12 @@ export async function runReminders(
               status = "cancelled";
               error = null;
             } else {
-              const body = new URLSearchParams({
-                ...(env.SMS_WEBHOOK_URL
-                  ? { StatusCallback: env.SMS_WEBHOOK_URL }
-                  : {}),
-                To: guest.phone,
-                From: env.TWILIO_FROM,
-                Body: schedule.message + "\nReply STOP to opt out.",
-              });
-              const response = await fetcher(
-                `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(env.TWILIO_ACCOUNT_SID)}/Messages.json`,
-                {
-                  method: "POST",
-                  redirect: "error",
-                  signal: AbortSignal.timeout(10000),
-                  headers: {
-                    Authorization:
-                      "Basic " +
-                      Buffer.from(
-                        env.TWILIO_ACCOUNT_SID + ":" + env.TWILIO_AUTH_TOKEN,
-                      ).toString("base64"),
-                    "Content-Type": "application/x-www-form-urlencoded",
-                  },
-                  body,
-                },
-              );
-              if (response.ok) {
-                const result = await response.json();
-                if (typeof result.sid === "string") {
-                  status = "accepted";
-                  providerId = result.sid;
-                  error = null;
-                }
-              } else {
-                status = response.status >= 500 ? "unknown" : "failed";
-                error =
-                  response.status >= 500
-                    ? "delivery_unconfirmed"
-                    : "provider_rejected";
-              }
+              ({ status, providerId, error } = await sendText(
+                env,
+                guest.phone,
+                schedule.message,
+                fetcher,
+              ));
             }
           } catch {
             /* Outcome may be ambiguous. Never automatically retry an uncertain send. */

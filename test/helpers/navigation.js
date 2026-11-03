@@ -73,7 +73,11 @@ export async function clickNavigation(page, label) {
       await button
         .first()
         .evaluate((el) => el.scrollIntoView({ block: "center" }));
+    const leavingEvent =
+      name === "Home" && (await page.locator(".event-hero").count());
     await button.first().click();
+    if (leavingEvent)
+      await page.locator(".event-hero").waitFor({ state: "hidden" });
     return;
   }
   const menuOnly = [

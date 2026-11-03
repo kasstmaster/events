@@ -37,8 +37,9 @@ export function familyTools(ctx) {
     showSearch = false,
     addItemOpen = false;
   const itemDrafts = new Map();
-  let saveStatus = "Connected · showing server-confirmed data";
+  let saveStatus = "";
   function saving(value) {
+    value = ["Saved", "Saving…"].includes(value) ? "" : value;
     saveStatus = value;
     const el = document.querySelector("#family-save-status");
     if (el) el.textContent = value;

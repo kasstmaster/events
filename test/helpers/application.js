@@ -18,7 +18,7 @@ export async function application(t, env = {}) {
   });
   const request = async (
     path,
-    { method = "GET", data, cookie, version } = {},
+    { method = "GET", data, cookie, version, headers = {} } = {},
   ) => {
     const r = await fetch("http://127.0.0.1:" + server.address().port + path, {
       method,
@@ -27,6 +27,7 @@ export async function application(t, env = {}) {
         ...(cookie ? { Cookie: cookie } : {}),
         ...(data ? { "Content-Type": "application/json" } : {}),
         ...(version !== undefined ? { "If-Match": String(version) } : {}),
+        ...headers,
       },
       body: data ? JSON.stringify(data) : undefined,
     });

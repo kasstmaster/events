@@ -400,7 +400,7 @@ try {
     await guest.page
       .getByRole("heading", { name: "At the table", exact: true })
       .count(),
-    0,
+    1,
   );
   assert.equal(
     await guest.page.locator(".event-icon").getAttribute("src"),
