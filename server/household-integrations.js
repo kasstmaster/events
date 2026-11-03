@@ -28,7 +28,8 @@ export function integrationCapabilities(store, env, household) {
   return {
     anylist: true,
     anylistConfigured: !!(
-      env.EVENTS_ACTIONS_TOKEN && env.ANYLIST_IMPORT_SECRET?.length >= 32
+      (env.GITHUB_TOKEN || env.EVENTS_ACTIONS_TOKEN) &&
+      env.ANYLIST_IMPORT_SECRET?.length >= 32
     ),
   };
 }
@@ -74,6 +75,22 @@ export async function startAnyListSync(store, env, household, fetcher = fetch) {
     fail(403, "This integration is unavailable.");
   if (!integrationCapabilities(store, env, household).anylistConfigured)
     fail(503, "AnyList is not configured for this household yet.");
+  // Match Gatherings' operator setting names, but never dispatch its workflow.
+  if (
+    (env.GITHUB_WORKFLOW_REPOSITORY &&
+      env.GITHUB_WORKFLOW_REPOSITORY !== "kasstmaster/events") ||
+    (env.GITHUB_WORKFLOW_BRANCH && env.GITHUB_WORKFLOW_BRANCH !== "main")
+  )
+    fail(
+      503,
+      "Set GITHUB_WORKFLOW_REPOSITORY to kasstmaster/events and GITHUB_WORKFLOW_BRANCH to main on the events Worker.",
+    );
+  const token = String(env.GITHUB_TOKEN || env.EVENTS_ACTIONS_TOKEN).trim();
+  if (!token || /\s|[\x22\x27]/.test(token))
+    fail(
+      503,
+      "Save only the GitHub token value in the events Worker GITHUB_TOKEN secret, without Bearer, quotes or commands.",
+    );
   store.limit("anylist-sync:" + household, 6);
   const job = store.transaction(() => {
     if (syncStatus(store, household).state === "running")
@@ -88,13 +105,14 @@ export async function startAnyListSync(store, env, household, fetcher = fetch) {
       revision: revision(store, household),
     });
   });
+  let dispatchStatus = 0;
   try {
     const response = await fetcher(
       "https://api.github.com/repos/kasstmaster/events/actions/workflows/sync-meyer-anylist.yml/dispatches",
       {
         method: "POST",
         headers: {
-          Authorization: "Bearer " + env.EVENTS_ACTIONS_TOKEN,
+          Authorization: "Bearer " + token,
           Accept: "application/vnd.github+json",
           "Content-Type": "application/json",
           "X-GitHub-Api-Version": "2022-11-28",
@@ -105,18 +123,25 @@ export async function startAnyListSync(store, env, household, fetcher = fetch) {
         redirect: "error",
       },
     );
+    dispatchStatus = response.status;
     if (!response.ok) throw Error();
   } catch {
     store.put(
       "anylist-job",
       job.id,
       household,
-      { ...job, state: "failed" },
+      { ...job, state: "failed", dispatchStatus },
       job.version,
     );
     fail(
       503,
-      "Contact sync could not start. Check the Events workflow configuration.",
+      dispatchStatus === 401
+        ? "GitHub rejected contact sync. Check the events Worker GITHUB_TOKEN secret for an expired or revoked token."
+        : dispatchStatus === 403 || dispatchStatus === 404
+          ? "GitHub denied contact sync. Give the events Worker GITHUB_TOKEN access to kasstmaster/events with Actions read/write; confirm the sync workflow is enabled."
+          : dispatchStatus === 422
+            ? "GitHub could not dispatch contact sync. Confirm sync-meyer-anylist.yml is on Events main and accepts sync_id."
+            : "Contact sync could not start. GitHub is unavailable or the request was blocked. Check sync status before trying again.",
     );
   }
   return syncStatus(store, household);
