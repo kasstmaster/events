@@ -10,7 +10,7 @@ import { convertAddressBook } from "../integrations/anylist/convert.js";
 
 const configuration = () => ({
   MEYER_HOST_EMAIL: "alpha@example.test",
-  EVENTS_ACTIONS_TOKEN: "synthetic-actions-token",
+  GITHUB_TOKEN: "synthetic-actions-token",
   ANYLIST_IMPORT_SECRET: "synthetic-import-secret-for-isolated-tests-only",
 });
 const source = () => [
@@ -271,7 +271,7 @@ test("contact changes during sync reject the whole import and malformed batches 
       host.household.id,
       async () => new Response("private", { status: 401 }),
     ),
-    /could not start/,
+    /GitHub rejected contact sync/,
   );
   assert.equal(syncStatus(f.store, host.household.id).state, "failed");
 });
@@ -337,4 +337,92 @@ test("AnyList protobuf adapter reads categories and designated children without 
   assert.equal(result[0].people[0].suffix, "Jr.");
   assert.equal(result[0].people[1].parentId, "adult");
   assert.equal(result[0].people[1].last, "Example");
+});
+
+test("Gatherings variable names keep dispatch Events-only and retain legacy token compatibility", async (t) => {
+  for (const legacy of [false, true]) {
+    const env = configuration();
+    if (legacy) {
+      env.EVENTS_ACTIONS_TOKEN = env.GITHUB_TOKEN;
+      delete env.GITHUB_TOKEN;
+    } else {
+      env.EVENTS_ACTIONS_TOKEN = "must-not-take-precedence";
+      env.GITHUB_TOKEN = "  synthetic-actions-token\n";
+    }
+    env.GITHUB_WORKFLOW_REPOSITORY = "kasstmaster/events";
+    env.GITHUB_WORKFLOW_BRANCH = "main";
+    const f = await application(t, { env }),
+      host = await f.host("Alpha");
+    await startAnyListSync(
+      f.store,
+      env,
+      host.household.id,
+      async (url, init) => {
+        assert.equal(
+          new URL(url).pathname,
+          "/repos/kasstmaster/events/actions/workflows/sync-meyer-anylist.yml/dispatches",
+        );
+        assert.ok(
+          init.headers.Authorization === "Bearer synthetic-actions-token",
+        );
+        return new Response(null, { status: 204 });
+      },
+    );
+  }
+});
+
+test("AnyList rejects copied Gatherings destinations and malformed credentials without transport or secret diagnostics", async (t) => {
+  for (const override of [
+    { GITHUB_WORKFLOW_REPOSITORY: "kasstmaster/themeyersgatherings" },
+    { GITHUB_WORKFLOW_BRANCH: "other" },
+    { GITHUB_TOKEN: "Bearer private-synthetic-value" },
+    { GITHUB_TOKEN: '"private-synthetic-value"' },
+  ]) {
+    const env = { ...configuration(), ...override },
+      f = await application(t, { env }),
+      host = await f.host("Alpha");
+    await assert.rejects(
+      startAnyListSync(f.store, env, host.household.id, async () => {
+        assert.fail("Invalid configuration must never dispatch");
+      }),
+      (error) => {
+        assert.equal(error.status, 503);
+        assert.ok(!error.message.includes("private-synthetic-value"));
+        return true;
+      },
+    );
+    assert.equal(syncStatus(f.store, host.household.id).state, "idle");
+  }
+});
+
+test("AnyList dispatch failures use fixed actionable messages and never store provider bodies or transport errors", async (t) => {
+  for (const status of [401, 403, 404, 422, 429, 500, 0]) {
+    const env = configuration(),
+      f = await application(t, { env }),
+      host = await f.host("Alpha");
+    await assert.rejects(
+      startAnyListSync(f.store, env, host.household.id, async () => {
+        if (!status) throw new Error("private-provider-diagnostic");
+        return new Response("private-provider-diagnostic", { status });
+      }),
+      (error) => {
+        assert.equal(error.status, 503);
+        assert.ok(!error.message.includes("private-provider-diagnostic"));
+        assert.match(
+          error.message,
+          status === 401
+            ? /rejected/
+            : status === 403 || status === 404
+              ? /Actions read\/write/
+              : status === 422
+                ? /sync_id/
+                : /unavailable/,
+        );
+        return true;
+      },
+    );
+    const jobs = f.store.list("anylist-job", host.household.id);
+    assert.equal(jobs[0].dispatchStatus, status);
+    assert.ok(!JSON.stringify(jobs).includes("private-provider-diagnostic"));
+  }
 });
