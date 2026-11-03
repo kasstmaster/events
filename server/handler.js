@@ -153,20 +153,24 @@ function guestInput(input, store, household, existing) {
     address,
   };
 }
-function eventInput(input, store, household, existing) {
+function eventInvitations(invited, store, household) {
   if (
-    !Array.isArray(input.invited) ||
-    input.invited.length > 10000 ||
-    new Set(input.invited).size !== input.invited.length
+    !Array.isArray(invited) ||
+    invited.length > 10000 ||
+    new Set(invited).size !== invited.length
   )
     fail(400, "Choose invited guests.");
   const guests = store.list("guest", household),
     available = new Map(guests.map((g) => [g.id, g]));
-  for (const key of input.invited) {
+  for (const key of invited) {
     const guest = available.get(key);
-    if (!guest || (guest.parent && !input.invited.includes(guest.parent)))
+    if (!guest || (guest.parent && !invited.includes(guest.parent)))
       fail(400, "Invite each child with their designated adult.");
   }
+  return invited;
+}
+function eventInput(input, store, household, existing) {
+  eventInvitations(input.invited, store, household);
   if (!Array.isArray(input.menu) || input.menu.length > 500)
     fail(400, "Invalid menu.");
   const menu = input.menu.map((item) => {
@@ -578,6 +582,7 @@ export function createHandler({
           version,
           json,
           validateEvent: eventInput,
+          validateInvited: eventInvitations,
           env,
         })
       )

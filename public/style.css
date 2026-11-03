@@ -2134,3 +2134,34 @@ body :is(#app, #editor) .event-overview > p.muted {
 #sync-status:empty {
   display: none;
 }
+.contacts-invite-tools {
+  position: sticky;
+  top: var(--top-height, 100px);
+  z-index: 20;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-bottom: var(--border-width) var(--border-style) var(--border-color);
+}
+.contacts-invite-tools .row {
+  flex-wrap: wrap;
+}
+.contacts-invite-status {
+  margin: 8px 0 0;
+}
+.contacts-event-picker {
+  max-height: 36dvh;
+  overflow: auto;
+  margin-top: 12px;
+  overscroll-behavior: contain;
+}
+body #app .contacts-select-event {
+  background: #1f7a3f;
+  border-color: #1f7a3f;
+  color: #fff;
+}
+.contacts-invite-tools {
+  max-height: calc(
+    100dvh - var(--top-height, 100px) - var(--bottom-height, 100px) - 12px
+  );
+  overflow: auto;
+}

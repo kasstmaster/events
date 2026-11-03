@@ -113,3 +113,5 @@ See [visual/address/card release operations](docs/visual-address-card-release.md
 See [shared navigation](docs/shared-navigation.md) for the common workspace/Contacts browsers, fixed role-specific toolbars and release verification.
 
 See [fixed toolbars and inline editing](docs/fixed-toolbars-inline-editing.md) for the five-category migration, inline Contacts, role-specific Settings and administrator management/defaults.
+
+In Contacts, **Invite Guests** enables multi-selection; **Uninvited Guests** filters contacts not invited to any saved event. The sticky green **Select Event** action opens the host's event picker. Choosing an event adds invitations without sending messages or changing existing responses. Child selection includes the designated adult, and Cancel clears the unsaved selection.

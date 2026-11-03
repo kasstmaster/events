@@ -48,7 +48,21 @@ const state = {
 };
 let contactSearch = "",
   contactSearchOpen = false,
-  contactPreferences = null;
+  contactPreferences = null,
+  contactInviteMode = false,
+  contactUninvited = false,
+  contactInviteEventsOpen = false,
+  contactInviteSaving = false,
+  contactInviteError = "";
+const contactInviteSelection = new Set();
+function resetContactInvites() {
+  contactInviteMode = false;
+  contactUninvited = false;
+  contactInviteEventsOpen = false;
+  contactInviteSaving = false;
+  contactInviteError = "";
+  contactInviteSelection.clear();
+}
 let noticeTimer;
 const notify = (message) => {
   $("#notice").textContent = message;
@@ -158,6 +172,7 @@ let loadGeneration = 0;
 const isEditing = () =>
   state.view === "card-editor" ||
   appearance.active() ||
+  contactInviteMode ||
   !!document.querySelector("form[data-form=guest]") ||
   $("#editor").open ||
   !!document.querySelector(".browse-menu[open]") ||
@@ -697,20 +712,40 @@ function guestEditor(guest = {}) {
   host.querySelector("input")?.focus();
   queueGuestMatches(document.querySelector("form[data-form=guest]"), 0);
 }
+function contactsInviteTools() {
+  return ui`<section class="contacts-invite-tools" aria-busy="${contactInviteSaving}" aria-label="${H("Guest invitations")}"><div class="row">${
+    contactInviteMode
+      ? button(
+          "contacts-select-event",
+          H("Select Event"),
+          `${!contactInviteSelection.size || contactInviteSaving ? "disabled" : ""}`,
+          "contacts-select-event",
+        )
+      : button("contacts-invite", H("Invite Guests"))
+  }
+    <button type="button" data-action="contacts-uninvited" aria-pressed="${contactUninvited}" ${contactInviteSaving ? "disabled" : ""}>${C("Uninvited Guests")}</button>
+    ${contactInviteMode ? button("contacts-invite-cancel", H("Cancel"), contactInviteSaving ? "disabled" : "") : ""}</div>
+    ${contactInviteMode ? ui`<p class="contacts-invite-status" role="status">${contactInviteSelection.size} ${C("contacts selected")}. ${C("Selecting a child also selects their designated adult.")}</p>` : ""}
+    ${contactInviteError ? ui`<p role="alert">${escape(contactInviteError)}</p>` : ""}
+    ${contactInviteEventsOpen ? ui`<div class="contacts-event-picker"><h2>Select Event</h2><p>Choose an event to add the selected guests. Existing invitations and responses stay saved. No messages are sent.</p><ul class="browse-rows">${state.data.events.map((event) => row({ title: escape(event.title), meta: escape(dateLabel(event.date)), action: "contacts-invite-event", id: event.id, symbol: "list", attributes: contactInviteSaving ? "inert" : "" })).join("") || M('<li class="browse-empty">Create an event from Home first.</li>')}</ul></div>` : ""}</section>`;
+}
 function contactsPage() {
   const guests = ordered(
-    state.data.guests.filter((g) =>
-      [
-        fullName(g),
-        g.phone,
-        g.notes,
-        ...[state.data.addresses.find((a) => a.id === g.address)].flatMap(
-          (a) => [a?.label, a?.lines],
-        ),
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(contactSearch.toLowerCase()),
+    state.data.guests.filter(
+      (g) =>
+        (!contactUninvited ||
+          !state.data.events.some((event) => event.invited.includes(g.id))) &&
+        [
+          fullName(g),
+          g.phone,
+          g.notes,
+          ...[state.data.addresses.find((a) => a.id === g.address)].flatMap(
+            (a) => [a?.label, a?.lines],
+          ),
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(contactSearch.toLowerCase()),
     ),
     "manual",
   );
@@ -730,7 +765,7 @@ function contactsPage() {
     entries.sort(
       ([a], [b]) => label(a).localeCompare(label(b)) || a.localeCompare(b),
     );
-  return ui`<div class="browse-shell">${topbar({ title: C("Contacts"), back: "home", search: "contacts-search", plus: [{ action: "add-guest", label: "Add Guest" }], sort: sorting("contacts-", contactPreferences?.contactSort) })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search contacts") : ""}<div class="browse-content"><ul class="browse-rows">${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
+  return ui`<div class="browse-shell">${topbar({ title: C("Contacts"), back: "home", search: "contacts-search", plus: contactInviteMode ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: sorting("contacts-", contactPreferences?.contactSort) })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search contacts") : ""}<div class="browse-content">${contactsInviteTools()}<ul class="browse-rows">${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
     entries
       .map(
         ([key, rows]) =>
@@ -753,31 +788,35 @@ function contactsPage() {
                       .join(" · "),
                   ),
                   symbol: "contacts",
-                  action: "edit-guest",
+                  action: contactInviteMode
+                    ? "contacts-toggle-invite"
+                    : "edit-guest",
                   id: g.id,
                   attributes:
+                    !contactInviteMode &&
                     contactPreferences?.contactSort !== "alpha"
                       ? `draggable="true" data-contact-row="${g.id}"`
                       : "",
-                  controls:
-                    tool("edit-guest", "Edit contact", g.id, "edit") +
-                    menu("Contact actions", "more", [
-                      ...(contactPreferences?.contactSort !== "alpha"
-                        ? [
-                            {
-                              action: "contacts-up",
-                              label: "Move up",
-                              id: g.id,
-                            },
-                            {
-                              action: "contacts-down",
-                              label: "Move down",
-                              id: g.id,
-                            },
-                          ]
-                        : []),
-                      { action: "delete-guest", label: "Remove", id: g.id },
-                    ]),
+                  controls: contactInviteMode
+                    ? ui`<label class="check"><input type="checkbox" data-contact-invite="${g.id}" aria-label="${H("Select")} ${escape(fullName(g))}" ${contactInviteSelection.has(g.id) ? "checked" : ""} ${contactInviteSaving ? "disabled" : ""}></label>`
+                    : tool("edit-guest", "Edit contact", g.id, "edit") +
+                      menu("Contact actions", "more", [
+                        ...(contactPreferences?.contactSort !== "alpha"
+                          ? [
+                              {
+                                action: "contacts-up",
+                                label: "Move up",
+                                id: g.id,
+                              },
+                              {
+                                action: "contacts-down",
+                                label: "Move down",
+                                id: g.id,
+                              },
+                            ]
+                          : []),
+                        { action: "delete-guest", label: "Remove", id: g.id },
+                      ]),
                 }) +
                 (state.editingGuest?.id === g.id
                   ? ui`<li class="inline-contact" data-contact-editor="${g.id}"></li>`
@@ -788,6 +827,29 @@ function contactsPage() {
       .join("") ||
     ui`<li class="browse-empty">${C("No matching contacts. Use the plus menu to add someone.")}</li>`
   }</ul></div></div>`;
+}
+function toggleContactInvite(key, checked = !contactInviteSelection.has(key)) {
+  if (contactInviteSaving) return;
+  const checkboxFocus = document.activeElement?.matches(
+    "[data-contact-invite]",
+  );
+  const guest = state.data.guests.find((g) => g.id === key);
+  if (!guest) return;
+  if (checked) {
+    contactInviteSelection.add(key);
+    if (guest.parent) contactInviteSelection.add(guest.parent);
+  } else {
+    contactInviteSelection.delete(key);
+    for (const child of state.data.guests.filter((g) => g.parent === key))
+      contactInviteSelection.delete(child.id);
+  }
+  contactInviteError = "";
+  if (!contactInviteSelection.size) contactInviteEventsOpen = false;
+  render();
+  const selector = checkboxFocus
+    ? `[data-contact-invite="${CSS.escape(key)}"]`
+    : `[data-action="contacts-toggle-invite"][data-id="${CSS.escape(key)}"]`;
+  document.querySelector(selector)?.focus({ preventScroll: true });
 }
 function guestList() {
   state.view = "contacts";
@@ -1296,6 +1358,7 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "settings") {
+      resetContactInvites();
       state.settingsOpen = true;
       if (["host", "family"].includes(state.session.role)) {
         await family.action("family-workspace", target);
@@ -1331,6 +1394,92 @@ document.addEventListener("click", async (event) => {
       else if (kind === "invitation") await tools.invitation();
       else await tools.action(kind, target);
       return;
+    }
+    if (
+      action.startsWith("contacts-invite") ||
+      [
+        "contacts-uninvited",
+        "contacts-select-event",
+        "contacts-toggle-invite",
+      ].includes(action)
+    ) {
+      if (state.preview || state.session.role !== "host") {
+        notify(C("This action is available only to the host."));
+        return;
+      }
+      if (contactInviteSaving) return;
+      if (action === "contacts-invite-cancel") {
+        resetContactInvites();
+        render();
+        return;
+      }
+      if (action === "contacts-invite" || action === "contacts-uninvited") {
+        contactInviteMode = true;
+        contactInviteEventsOpen = false;
+        contactInviteError = "";
+        contactUninvited =
+          action === "contacts-uninvited" ? !contactUninvited : false;
+        render();
+        return;
+      }
+      if (action === "contacts-toggle-invite") {
+        toggleContactInvite(key);
+        return;
+      }
+      if (action === "contacts-select-event") {
+        if (!contactInviteSelection.size) return;
+        contactInviteSaving = true;
+        render();
+        try {
+          state.data = await api("/api/host");
+          for (const id of contactInviteSelection)
+            if (!state.data.guests.some((g) => g.id === id))
+              contactInviteSelection.delete(id);
+          contactInviteEventsOpen = true;
+        } catch (error) {
+          contactInviteError = error.message;
+        } finally {
+          contactInviteSaving = false;
+          render();
+        }
+        return;
+      }
+      if (action === "contacts-invite-event") {
+        const event = state.data.events.find((e) => e.id === key);
+        if (!event || !contactInviteSelection.size) return;
+        contactInviteSaving = true;
+        contactInviteError = "";
+        render();
+        try {
+          const result = await api(
+            "/api/host/events/" + event.id + "/invite-guests",
+            {
+              method: "POST",
+              version: event.version,
+              data: { guestIds: [...contactInviteSelection] },
+            },
+          );
+          resetContactInvites();
+          await load();
+          notify(
+            result.added
+              ? C("Guests invited. No messages were sent.")
+              : C(
+                  "Selected guests are already invited. No messages were sent.",
+                ),
+          );
+        } catch (error) {
+          contactInviteError = error.message;
+          // Rebase the additive operation only; keep the selection and require a new click.
+          try {
+            state.data = await api("/api/host");
+          } catch {}
+        } finally {
+          contactInviteSaving = false;
+          if (contactInviteMode) render();
+        }
+        return;
+      }
     }
     if (action === "contacts-search") {
       contactSearchOpen = !contactSearchOpen;
@@ -1388,6 +1537,7 @@ document.addEventListener("click", async (event) => {
       render();
       return;
     }
+    if (action === "family-workspace") resetContactInvites();
     if (await family.action(action, target)) return;
     if (action === "guest-link-requests") {
       const requests = await api("/api/guest/link-requests");
@@ -1425,6 +1575,7 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "home") {
+      resetContactInvites();
       closeModal();
       state.event = null;
       state.settingsOpen = false;
@@ -1435,6 +1586,7 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "logout") {
+      resetContactInvites();
       state.editingGuest = null;
       state.settingsOpen = false;
       family.reset();
@@ -1447,6 +1599,7 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "open-event") {
+      resetContactInvites();
       state.actionEvent = null;
       state.view = "home";
       state.event = key;
@@ -1644,6 +1797,13 @@ document.addEventListener("input", (event) => {
     render();
     document.querySelector("[data-browse-search=contacts]")?.focus();
   }
+});
+document.addEventListener("change", (event) => {
+  if (event.target.matches("[data-contact-invite]"))
+    toggleContactInvite(
+      event.target.dataset.contactInvite,
+      event.target.checked,
+    );
 });
 let draggedContact = null;
 document.addEventListener("dragstart", (event) => {
