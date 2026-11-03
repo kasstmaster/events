@@ -26,6 +26,13 @@ export async function clickNavigation(page, label) {
       await page.getByRole("button", { name: target, exact: true }).waitFor();
     }
     await page.getByRole("button", { name: target, exact: true }).click();
+    await page
+      .getByRole("heading", {
+        name: label === "Contacts" ? "Contacts" : "Family Workspace",
+        level: 1,
+        exact: true,
+      })
+      .waitFor();
     return;
   }
   if (
