@@ -1088,16 +1088,6 @@ export function featureTools(ctx) {
         await saved("Account disabled. Owned routing cleanup is queued.");
         return true;
       }
-      if (kind === "household-notes") {
-        const h = state.data.household;
-        await api("/api/host/household", {
-          method: "PUT",
-          version: h.version,
-          data: { ...h, notes: fd.get("notes") },
-        });
-        await saved("Private notes saved.");
-        return true;
-      }
       return false;
     },
     input(event) {
