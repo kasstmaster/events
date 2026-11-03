@@ -7,6 +7,8 @@ on:
       - .github/workflows/validate-manual-release.yml
       - scripts/manual-events-release*.mjs
       - docs/manual-events-release.md
+      - .github/workflows/sync-meyer-anylist.yml
+      - integrations/anylist/**
 
 permissions:
   contents: read
@@ -23,7 +25,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node --test scripts/manual-events-release.test.mjs
+      - name: Install isolated read-only AnyList adapter
+        run: npm ci --ignore-scripts --prefix integrations/anylist
+      - name: Check AnyList transport and protobuf decoding
+        run: node --test integrations/anylist/reader.test.js
       - name: Check formatting and show corrections
         run: |
-          npx --no-install prettier --write scripts/manual-events-release*.mjs .github/workflows/deploy-events-manual.yml .github/workflows/validate-manual-release.yml docs/manual-events-release.md
+          npx --no-install prettier --write scripts/manual-events-release*.mjs .github/workflows/deploy-events-manual.yml .github/workflows/validate-manual-release.yml docs/manual-events-release.md .github/workflows/sync-meyer-anylist.yml integrations/anylist docs/meyer-anylist.md docs/contacts-event-admin-release.md
           git diff --exit-code

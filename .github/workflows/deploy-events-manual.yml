@@ -26,7 +26,7 @@ jobs:
       - name: Check out the exact approved release
         uses: actions/checkout@v4
         with:
-          ref: 461ba1dab5a116cceaf6eae2b3f976637c1ccf7b
+          ref: 0a1164572b7f65716e1a9cfbb634566fc30574da
           path: release
           persist-credentials: false
 
