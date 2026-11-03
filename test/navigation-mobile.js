@@ -285,17 +285,15 @@ try {
     assert.deepEqual(await card.getByRole("button").allTextContents(), [
       "View Event",
       "RSVPs",
-      "Text Reminders",
+      "Reminders",
       "Cards",
-      "Preview Invitation",
+      "Invitation",
     ]);
     await card.getByRole("button", { name: "RSVPs", exact: true }).click();
     await p.getByRole("dialog").getByText(title, { exact: true }).waitFor();
     assert.ok(requests.includes(`/api/host/events/${event.id}/dashboard`));
     await click(p, "Close editor");
-    await card
-      .getByRole("button", { name: "Text Reminders", exact: true })
-      .click();
+    await card.getByRole("button", { name: "Reminders", exact: true }).click();
     await p.getByRole("dialog").waitFor();
     await p
       .getByRole("dialog")
@@ -310,15 +308,57 @@ try {
       .waitFor();
     assert.equal(await p.locator('[name="cardEvent"]').inputValue(), event.id);
     await click(p, "Close editor");
-    await card
-      .getByRole("button", { name: "Preview Invitation", exact: true })
-      .click();
+    await card.getByRole("button", { name: "Invitation", exact: true }).click();
     await p
       .getByRole("heading", { name: "Edit your card", exact: true })
       .waitFor();
     assert.equal(await p.locator('[name="cardEvent"]').inputValue(), event.id);
     await click(p, "Close editor");
   }
+  for (const width of [390, 1440]) {
+    await p.setViewportSize({ width, height: 900 });
+    const cards = await p.evaluate(() =>
+      [...document.querySelectorAll(".host-event-choice")].map((choice) => {
+        const box = (el) => {
+          const r = el.getBoundingClientRect();
+          return { x: r.x, y: r.y, width: r.width, height: r.height };
+        };
+        return {
+          overview: box(choice.querySelector(".event-overview")),
+          actions: box(choice.querySelector(".event-home-actions")),
+          buttons: [
+            ...choice.querySelectorAll(".event-home-actions button"),
+          ].map(box),
+        };
+      }),
+    );
+    for (const { overview, actions, buttons } of cards) {
+      assert.ok(
+        overview.x + overview.width <= actions.x + 1,
+        "Details remain left of event actions",
+      );
+      let bottom = 0;
+      for (const box of buttons) {
+        assert.ok(box.y >= bottom);
+        assert.ok(Math.abs(box.x - actions.x) < 1);
+        bottom = box.y + box.height;
+      }
+    }
+    assert.ok(
+      await p.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    );
+    assert.doesNotMatch(
+      await p.locator("#main").innerText(),
+      /Updated .*syncs automatically|A familiar table\. A new memory\. Make room for your next gathering\./,
+    );
+    await p.screenshot({
+      path: `test-results/event-chooser-${width}.png`,
+      fullPage: true,
+    });
+  }
+  await p.setViewportSize({ width: 1440, height: 900 });
   await p.evaluate(() => {
     Object.defineProperty(navigator, "share", {
       configurable: true,
@@ -386,6 +426,115 @@ try {
     await p.locator(".app-topbar").evaluate((el) => getComputedStyle(el).color),
     "rgb(19, 75, 55)",
   );
+  stage(
+    "sticky contact invitations, multiple selection and additive event choice",
+  );
+  const inviteAdult = (
+    await api(owner, "/api/host/guests", { first: "Jordan", last: "New" })
+  ).body;
+  const inviteChild = (
+    await api(owner, "/api/host/guests", {
+      first: "Riley",
+      last: "New",
+      parent: inviteAdult.id,
+    })
+  ).body;
+  for (let i = 0; i < 20; i++)
+    await api(owner, "/api/host/guests", {
+      first: "Extra " + String(i).padStart(2, "0"),
+      last: "Contact",
+    });
+  await p.reload();
+  await click(p, "Contacts");
+  await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
+  await click(p, "Uninvited Guests");
+  assert.equal(
+    await p.getByRole("button", { name: "Casey Example", exact: true }).count(),
+    0,
+  );
+  assert.ok(
+    await p
+      .getByRole("button", { name: "Select Event", exact: true })
+      .isDisabled(),
+  );
+  await p.getByLabel("Select Riley New", { exact: true }).check();
+  assert.equal(
+    await p.getByLabel("Select Jordan New", { exact: true }).isChecked(),
+    true,
+  );
+  assert.equal(
+    await p
+      .getByRole("button", { name: "Select Event", exact: true })
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+    "rgb(31, 122, 63)",
+  );
+  for (const width of [390, 1440]) {
+    await p.setViewportSize({ width, height: 900 });
+    await p.evaluate(() =>
+      window.scrollTo(0, document.documentElement.scrollHeight),
+    );
+    assert.ok(
+      await p.evaluate(
+        () =>
+          Math.abs(
+            document
+              .querySelector(".contacts-invite-tools")
+              .getBoundingClientRect().top -
+              document.querySelector(".top-shell").getBoundingClientRect()
+                .bottom,
+          ) < 2,
+      ),
+    );
+    assert.ok(
+      await p.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    );
+    await p.screenshot({
+      path: `test-results/contact-invitations-${width}.png`,
+      fullPage: true,
+    });
+  }
+  await click(p, "Select Event");
+  await p.locator(".contacts-event-picker").waitFor();
+  await p
+    .locator(".contacts-event-picker")
+    .getByRole("button", { name: "Dinner Two", exact: true })
+    .click();
+  await p
+    .getByText("Guests invited. No messages were sent.", { exact: true })
+    .waitFor();
+  const invited = store.get("event", e2.id, host.household).invited;
+  assert.ok(
+    invited.includes(guest.id) &&
+      invited.includes(inviteAdult.id) &&
+      invited.includes(inviteChild.id),
+  );
+  assert.equal(
+    store.get("event", e1.id, host.household).invited.includes(inviteAdult.id),
+    false,
+  );
+  await click(p, "Uninvited Guests");
+  assert.equal(
+    await p.getByRole("button", { name: "Jordan New", exact: true }).count(),
+    0,
+  );
+  assert.equal(
+    await p.getByRole("button", { name: "Riley New", exact: true }).count(),
+    0,
+  );
+  await p
+    .locator(".contacts-invite-tools")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  const unchanged = store.get("event", e2.id, host.household).version;
+  await click(p, "Invite Guests");
+  await p.getByLabel("Select Casey Example", { exact: true }).check();
+  await p
+    .locator(".contacts-invite-tools")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  assert.equal(store.get("event", e2.id, host.household).version, unchanged);
   stage(
     "four workspace sections, nested lists, sorting, completion and separate edit",
   );
@@ -491,7 +640,13 @@ try {
   await click(p, "Family");
   for (const width of [390, 1440]) {
     await p.setViewportSize({ width, height: 900 });
-    await p.locator(".browse-row").last().scrollIntoViewIfNeeded();
+    // Polling replaces rows; scroll the current DOM atomically rather than
+    // retaining an element while Playwright waits for its layout to stabilize.
+    await p.evaluate(() =>
+      [...document.querySelectorAll(".browse-row")]
+        .at(-1)
+        ?.scrollIntoView({ block: "end" }),
+    );
     assert.ok(
       await p.evaluate(() => {
         const last = [...document.querySelectorAll(".browse-row")]
@@ -567,6 +722,37 @@ try {
     "Settings",
   ]);
   assert.equal(await p.locator(".event-summary").count(), 1);
+  for (const width of [390, 1440]) {
+    await p.setViewportSize({ width, height: 900 });
+    const aligned = await p.locator(".top-primary").evaluate((el) => {
+      const nodes = [
+        el.querySelector(".brand"),
+        el.querySelector(".event-summary"),
+        el.querySelector('summary[aria-label="Sorting and options"]'),
+        el.querySelector("[data-action=print]"),
+      ];
+      const centers = nodes.map((node) => {
+        const r = node.getBoundingClientRect();
+        return r.y + r.height / 2;
+      });
+      return Math.max(...centers) - Math.min(...centers) < 3;
+    });
+    assert.ok(
+      aligned,
+      "Gather, counts, options and Print share one toolbar row",
+    );
+    assert.ok(
+      await p.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    );
+    await p.screenshot({
+      path: `test-results/event-summary-row-${width}.png`,
+      fullPage: true,
+    });
+  }
+  await p.setViewportSize({ width: 390, height: 900 });
+
   assert.equal(
     await p
       .locator(

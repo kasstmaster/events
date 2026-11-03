@@ -22,6 +22,7 @@ export async function featureAPI({
   version,
   json,
   validateEvent,
+  validateInvited,
   env,
 }) {
   const owned = (kind, key, household = session.household) => {
@@ -29,6 +30,44 @@ export async function featureAPI({
     if (!record) fail(404, "Record not found.");
     return record;
   };
+  const inviteMatch = path.match(
+    /^\/api\/host\/events\/([^/]+)\/invite-guests$/,
+  );
+  if (inviteMatch && method === "POST") {
+    requireRole("host");
+    const input = await body(req),
+      expected = version(req);
+    if (
+      !Array.isArray(input.guestIds) ||
+      !input.guestIds.length ||
+      input.guestIds.length > 10000 ||
+      new Set(input.guestIds).size !== input.guestIds.length
+    )
+      fail(400, "Choose one or more contacts.");
+    const result = store.transaction(() => {
+      const event = owned("event", inviteMatch[1]);
+      if (event.version !== expected)
+        fail(
+          409,
+          "Event changed. Review the event list before inviting guests.",
+        );
+      const invited = [...new Set([...event.invited, ...input.guestIds])];
+      validateInvited(invited, store, session.household);
+      const added = invited.length - event.invited.length;
+      const saved = added
+        ? store.put(
+            "event",
+            event.id,
+            session.household,
+            { ...event, invited },
+            expected,
+          )
+        : event;
+      return { id: saved.id, version: saved.version, added };
+    });
+    json(res, result);
+    return true;
+  }
   if (path === "/api/interface" && method === "GET") {
     json(res, {
       ui: effectiveUI(store),

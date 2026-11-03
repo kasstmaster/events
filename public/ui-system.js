@@ -217,7 +217,7 @@ export const layoutLabels = {
   dashboard: "RSVP dashboard",
   logout: "Sign out",
   "edit-event": "Edit event",
-  invitation: "Invitation preview",
+  invitation: "Invitation",
   "delete-event": "Delete event",
   uploads: "Photo uploads",
   household: "Edit House",
@@ -226,7 +226,7 @@ export const layoutLabels = {
   addresses: "Contacts",
   share: "Share",
   cards: "Cards",
-  reminders: "Text reminders",
+  reminders: "Reminders",
 };
 export const viewLabels = {
   introText: "Introduction text (all pages)",

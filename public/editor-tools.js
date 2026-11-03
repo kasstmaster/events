@@ -719,7 +719,7 @@ export function featureTools(ctx) {
     reminderVersion = event.version;
     state.editingReminders = data.reminders;
     modal(
-      C("Text reminders"),
+      C("Reminders"),
       ui`<p>${data.configured ? C("Messaging provider configured. Enabling a schedule can send real texts.") : C("Messaging is not enabled. Schedules can be saved and previewed, but no texts will send.")}</p><p>Only individually invited adults with an international phone number and recorded SMS consent are eligible. Opt-outs always win.</p><div id="reminder-rows">${data.reminders.map(reminderRow).join("")}</div>${button("add-reminder", H("Add reminder"))}${button("preview-reminders", H("Preview recipients"))}<div id="reminder-preview"></div><h3>Delivery status</h3><ul>${data.deliveries.map((d) => ui`<li>${escape(d.phone)}: ${escape(d.status === "sent" ? "Sent (provider-reported; delivery unconfirmed)" : d.status)}${d.error ? " · " + escape(d.error) : ""}</li>`).join("") || M("<li>No deliveries.</li>")}</ul><p class="small muted">Accepted means the provider accepted a request, not delivered. Unknown outcomes are not retried automatically.</p>`,
       "reminders",
     );
