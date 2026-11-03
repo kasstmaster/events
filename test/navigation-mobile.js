@@ -234,7 +234,8 @@ async function page(cookie, width = 390) {
   return p;
 }
 async function click(p, name) {
-  await p.getByRole("button", { name, exact: true }).click();
+  const { clickNavigation } = await import("./helpers/navigation.js");
+  await clickNavigation(p, name);
 }
 async function option(p, name) {
   await p.locator('summary[aria-label="Sorting and options"]').click();
@@ -253,13 +254,41 @@ async function footer(p, names) {
     await p
       .locator(".toolbar .nav-control")
       .evaluateAll((es) => es.map((e) => e.getAttribute("aria-label"))),
-    names,
+    names.filter(
+      (name) =>
+        ![
+          "Family",
+          "Contacts",
+          "Edit House",
+          "Edit Event",
+          "Share",
+          "Settings",
+        ].includes(name),
+    ),
   );
 }
 try {
   await mkdir("test-results", { recursive: true });
   stage("host home, per-event actions and native share");
   const p = await page(owner, 1440);
+  await p.locator("[data-home-card]").first().waitFor();
+  assert.deepEqual(
+    await p
+      .locator("[data-home-card]")
+      .evaluateAll((els) => els.map((el) => el.dataset.homeCard)),
+    ["contacts", "family"],
+  );
+  assert.equal(
+    await p
+      .locator(
+        ".toolbar [data-action=family-workspace],.toolbar [data-action=addresses],.toolbar [data-action=household],.toolbar [data-action=share],.toolbar [data-action=settings]",
+      )
+      .count(),
+    0,
+  );
+  await option(p, "Edit House");
+  await click(p, "Cancel");
+
   await footer(p, [
     "Home",
     "Family",
@@ -651,6 +680,19 @@ try {
   await p.getByRole("searchbox").fill("Private appliance");
   await click(p, "Private appliance");
   await p.getByText("Model 42", { exact: true }).waitFor();
+  assert.doesNotMatch(
+    await p.locator("#main").innerText(),
+    /Private document notes/,
+  );
+  await click(p, "Edit");
+  assert.equal(await p.getByLabel("Notes", { exact: true }).count(), 0);
+  await click(p, "Save");
+  await p.locator("#editor[open]").waitFor({ state: "hidden" });
+  await p.getByText("Model 42", { exact: true }).waitFor();
+  assert.equal(
+    store.get("family-record", secret.id, host.household).notes,
+    "Private document notes",
+  );
   await click(p, "Family");
   await click(p, "Tasks");
   await click(p, "Homework");

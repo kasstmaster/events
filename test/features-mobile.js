@@ -133,7 +133,9 @@ try {
     );
   assert.ok(eventMetaStructure.includes("Where"));
   assert.equal(await example.locator("[data-action=rsvp]").count(), 1);
-  await example.locator("[data-action=edit-event]").waitFor();
+  await example
+    .locator("[data-action=edit-event]")
+    .waitFor({ state: "attached" });
   // Actual page components, scoped controls and all conditional sample sections.
   const requests = [];
   const observe = (request) => {
@@ -233,7 +235,9 @@ try {
   await admin.page
     .getByLabel("Example page", { exact: true })
     .selectOption("event");
-  await example.locator("[data-action=edit-event]").waitFor();
+  await example
+    .locator("[data-action=edit-event]")
+    .waitFor({ state: "attached" });
   await admin.page
     .frameLocator("#page-example-frame")
     .locator('[data-default-copy="When"]')
@@ -265,12 +269,12 @@ try {
     await h.page
       .locator(".toolbar [data-action]")
       .evaluateAll((els) => els.map((el) => el.dataset.action)),
-    ["home", "family-workspace", "addresses", "household", "share", "settings"],
+    ["home"],
   );
   assert.equal(await h.page.locator("header [data-action=logout]").count(), 0);
   assert.equal(
     await h.page.locator(".toolbar [data-action=settings] svg").count(),
-    1,
+    0,
   );
   assert.equal(
     await h.page
@@ -324,7 +328,7 @@ try {
   await saveAppearance(h.page);
   for (const selector of [
     ".hero .eyebrow",
-    ".private-notes textarea",
+    ".home-workspace-cards p",
     ".toolbar .nav-control",
   ])
     assert.equal(
@@ -339,10 +343,7 @@ try {
   h.page.once("dialog", (d) => d.accept());
   await click(h.page, "Reset to Defaults");
   await click(h.page, "Cancel");
-  await h.page
-    .getByLabel("Notes", { exact: true })
-    .fill("Private household note");
-  await click(h.page, "Save private notes");
+  assert.equal(await h.page.getByLabel("Notes", { exact: true }).count(), 0);
   await click(h.page, "Contacts");
   await click(h.page, "＋ Add adult or child");
   await h.page.getByLabel("First name", { exact: true }).fill("Casey");
@@ -441,9 +442,10 @@ try {
   await h.page
     .getByLabel("Photo / video upload link (optional)", { exact: true })
     .fill("https://example.test/upload");
-  await h.page
-    .getByLabel("Private event notes", { exact: true })
-    .fill("Private event note");
+  assert.equal(
+    await h.page.getByLabel("Private event notes", { exact: true }).count(),
+    0,
+  );
   await h.page.getByLabel("Casey Example", { exact: true }).check();
   await h.page.getByLabel("Jordan Other", { exact: true }).check();
   await dialog(h.page)
@@ -632,7 +634,7 @@ try {
   await h.page.getByRole("button", { name: "Save card", exact: true }).click();
   await h.page.locator("form[data-form=card]").waitFor({ state: "detached" });
   const event = store.list("event", host.household)[0];
-  assert.equal(event.notes, "Private event note");
+  assert.equal(event.notes, "");
   assert.equal(
     store.list("card", host.household)[0].context.recipient.name,
     "Casey Example",

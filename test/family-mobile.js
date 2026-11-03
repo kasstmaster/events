@@ -259,9 +259,10 @@ try {
   await owner.page
     .getByLabel("Model number", { exact: true })
     .fill("Synthetic model");
-  await owner.page
-    .getByLabel("Notes", { exact: true })
-    .fill("Owner warranty notes");
+  assert.equal(
+    await owner.page.getByLabel("Notes", { exact: true }).count(),
+    0,
+  );
   await save(owner.page);
   await click(owner.page, "Manage documents");
   await owner.page.getByLabel("Document", { exact: true }).setInputFiles({

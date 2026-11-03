@@ -226,7 +226,8 @@ async function page(cookie, width = 390) {
   return p;
 }
 async function click(p, name) {
-  await p.getByRole("button", { name, exact: true }).click();
+  const { clickNavigation } = await import("./helpers/navigation.js");
+  await clickNavigation(p, name);
 }
 async function option(p, name) {
   await p.locator('summary[aria-label="Sorting and options"]').click();
@@ -245,7 +246,17 @@ async function footer(p, names) {
     await p
       .locator(".toolbar .nav-control")
       .evaluateAll((es) => es.map((e) => e.getAttribute("aria-label"))),
-    names,
+    names.filter(
+      (name) =>
+        ![
+          "Family",
+          "Contacts",
+          "Edit House",
+          "Edit Event",
+          "Share",
+          "Settings",
+        ].includes(name),
+    ),
   );
 }
 async function editValue(p, category, action, label, value) {
@@ -360,7 +371,7 @@ try {
   );
   assert.equal(
     await p
-      .locator(".private-notes textarea")
+      .locator("[data-home-card=contacts]")
       .evaluate((el) => getComputedStyle(el).borderTopColor),
     "rgb(17, 34, 51)",
   );
@@ -440,7 +451,13 @@ try {
   await p.getByText("Guest saved.", { exact: true }).waitFor();
   assert.equal(store.list("guest", host.household).length, count + 1);
   await click(p, "Casey Example");
-  await p.getByLabel("Private guest notes", { exact: true }).fill("Draft only");
+  assert.equal(
+    await p.getByLabel("Private guest notes", { exact: true }).count(),
+    0,
+  );
+  await p
+    .getByLabel("Phone number (international)", { exact: true })
+    .fill("+15559990000");
   await p
     .locator(".inline-contact")
     .getByRole("button", { name: "Cancel", exact: true })
@@ -706,6 +723,20 @@ try {
   await home(promoted);
   await click(promoted, "Defaults");
   await promoted.getByLabel("Example page", { exact: true }).waitFor();
+  await promoted
+    .getByLabel("Example page", { exact: true })
+    .selectOption("hostHome");
+  await promoted
+    .frameLocator("#page-example-frame")
+    .locator("[data-home-card=contacts]")
+    .waitFor();
+  assert.equal(
+    await promoted
+      .frameLocator("#page-example-frame")
+      .locator("[data-home-card]")
+      .count(),
+    2,
+  );
   await click(promoted, "Cancel");
   await promoted
     .getByRole("toolbar", { name: "Administrator tools", exact: true })

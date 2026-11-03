@@ -271,7 +271,9 @@ try {
     cookie: session.cookie,
   });
   assert.equal(active.shareUrl, "https://dubois.ilymmd.com/");
-  await page.getByRole("button", { name: "Edit House", exact: true }).click();
+  await (
+    await import("./helpers/navigation.js")
+  ).clickNavigation(page, "Edit House");
   assert.equal(
     await page.getByLabel("Household web address", { exact: true }).count(),
     0,

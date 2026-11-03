@@ -191,7 +191,6 @@ export function familyTools(ctx) {
         d.records.filter((r) =>
           [
             r.title,
-            r.notes,
             r.instructions,
             r.model,
             r.serial,
@@ -411,7 +410,7 @@ export function familyTools(ctx) {
         .map(([k, v]) => `<dt>${escape(k)}</dt><dd>${escape(v)}</dd>`)
         .join(
           "",
-        )}</dl><p class="preserve-lines">${escape(r.notes)}</p><h2>${H("Maintenance history")}</h2>${(r.history || []).map((h) => row({ title: escape(h.date), meta: escape(h.notes), symbol: "task" })).join("")}${action("family-files", adult() ? "Manage documents" : "View documents", r.id)}${manager() ? action("family-maintenance", "Create linked maintenance chore", r.id) : ""}</div>`;
+        )}</dl><h2>${H("Maintenance history")}</h2>${(r.history || []).map((h) => row({ title: escape(h.date), symbol: "task" })).join("")}${action("family-files", adult() ? "Manage documents" : "View documents", r.id)}${manager() ? action("family-maintenance", "Create linked maintenance chore", r.id) : ""}</div>`;
     return `<div class="browse-detail">${controls}<p>${escape(r.instructions)}</p><p>${escape(r.assignees.map(name).join(", "))} · ${escape(r.repeat)} · ${escape(r.timezone)}</p>${r.linkedRecord ? action("family-open", "View linked home record", r.linkedRecord) : ""}${action("family-history", "View completion history", r.id)}${renderTasks(false, r.id)}</div>`;
   }
   function recordEditor(r = { type: "list" }) {
@@ -448,13 +447,13 @@ export function familyTools(ctx) {
     if (r.type === "list")
       fields = ui`${area(H("Categories · one per line, in manual order"), "categories", (r.categories || []).join("\n"))}<p>No categories are required. Reorder category lines to change their manual order.</p>`;
     if (r.type === "record")
-      fields = ui`${field(H("Model number"), "model", r.model || "")}${field(H("Serial number"), "serial", r.serial || "")}${field(H("Relevant date"), "date", r.date || "", "date")}${area(H("Notes"), "notes", r.notes || "")}${area(
+      fields = ui`${field(H("Model number"), "model", r.model || "")}${field(H("Serial number"), "serial", r.serial || "")}${field(H("Relevant date"), "date", r.date || "", "date")}${area(
         H("Custom details · one key: value per line"),
         "details",
         Object.entries(r.details || {})
           .map(([k, v]) => k + ": " + v)
           .join("\n"),
-      )}${area(H("Maintenance history · one date | notes per line"), "history", (r.history || []).map((h) => h.date + " | " + h.notes).join("\n"))}`;
+      )}`;
     if (["task", "chore"].includes(r.type))
       fields = ui`${area(H("Instructions"), "instructions", r.instructions || "")}<fieldset><legend>Assigned family members</legend>${data()
         .members.filter((m) => !m.disabled && (manager() || m.role !== "kid"))
@@ -988,13 +987,6 @@ export function familyTools(ctx) {
                 v.slice(v.indexOf(":") + 1).trim(),
               ]),
           );
-          input.history = value.history
-            .split("\n")
-            .filter((v) => v.includes("|"))
-            .map((v) => ({
-              date: v.split("|")[0].trim(),
-              notes: v.slice(v.indexOf("|") + 1).trim(),
-            }));
         }
         if (["task", "chore"].includes(input.type)) {
           input.assignees = fd.getAll("assignees");

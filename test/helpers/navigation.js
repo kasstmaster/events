@@ -1,5 +1,6 @@
 // Updated visible navigation for synthetic browser suites only.
 export async function clickNavigation(page, label) {
+  if (label === "Edit event") label = "Edit Event";
   if (
     (await page.locator(".appearance-categories").count()) &&
     ["Save", "Cancel"].includes(label)
@@ -13,10 +14,48 @@ export async function clickNavigation(page, label) {
     return;
   }
   if (
+    ["Contacts", "Family", "Family Workspace"].includes(label) &&
+    !(await page.locator("#editor[open]:not(.inline-management)").count())
+  ) {
+    const target =
+      label === "Contacts" ? "Open Contacts" : "Open Family Workspace";
+    if (
+      !(await page.getByRole("button", { name: target, exact: true }).count())
+    ) {
+      await page.locator(".toolbar [data-action=home]").click();
+      await page.getByRole("button", { name: target, exact: true }).waitFor();
+    }
+    await page.getByRole("button", { name: target, exact: true }).click();
+    await page
+      .getByRole("heading", {
+        name: label === "Contacts" ? "Contacts" : "Family Workspace",
+        level: 1,
+        exact: true,
+      })
+      .waitFor();
+    return;
+  }
+  if (
+    [
+      "Edit House",
+      "Edit Event",
+      "Share",
+      "Share Household Link",
+      "Settings",
+    ].includes(label) &&
+    !(await page.locator("#editor[open]:not(.inline-management)").count())
+  ) {
+    const name = label === "Share" ? "Share Household Link" : label;
+    await page.getByLabel("Sorting and options", { exact: true }).click();
+    await page.getByRole("menuitem", { name, exact: true }).click();
+    return;
+  }
+  if (
     ["Sign Out", "Sign out"].includes(label) &&
     !(await page.locator("#main [data-action=logout]").count())
   ) {
-    await page.locator(".toolbar [data-action=settings]").click();
+    await page.getByLabel("Sorting and options", { exact: true }).click();
+    await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
   }
   const inlineGuest = page.locator("form[data-form=guest]");
   if ((await inlineGuest.count()) && ["Save", "Cancel"].includes(label)) {
