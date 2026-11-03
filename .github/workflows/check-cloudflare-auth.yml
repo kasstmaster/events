@@ -11,47 +11,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
-      - name: Verify events Worker read access without deploying
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Check Events metadata access without exposing runtime settings
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          node <<'NODE'
-          const accountId = "37d068144865a0b725ee272bc7b2eb71";
-          const worker = "events";
-          const token = process.env.CLOUDFLARE_API_TOKEN;
-
-          function fail(message) {
-            console.error(message);
-            process.exitCode = 1;
-          }
-
-          if (!token || token.trim() !== token) {
-            fail("GitHub secret CLOUDFLARE_API_TOKEN is missing or has leading/trailing whitespace. No deployment attempted.");
-          } else {
-            const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${worker}/settings`;
-            try {
-              const response = await fetch(url, {
-                method: "GET",
-                headers: { Authorization: `Bearer ${token}` },
-                signal: AbortSignal.timeout(15000),
-              });
-              if (response.status === 401) {
-                fail("HTTP 401: Cloudflare rejected the saved credential. Check the token value, status and expiry.");
-              } else if (response.status === 403) {
-                fail("HTTP 403: Authentication may work, but the token lacks access to this account or Worker.");
-              } else if (!response.ok) {
-                fail(`Cloudflare read failed with HTTP ${response.status}. No deployment attempted.`);
-              } else {
-                const data = await response.json();
-                if (data.success !== true || !data.result) {
-                  fail("Cloudflare returned an unexpected response. No deployment attempted.");
-                } else {
-                  console.log("PASS: GitHub secret authenticates and can read the existing events Worker settings.");
-                  console.log("This check performed one GET request only. It did not deploy or change any Cloudflare resources.");
-                }
-              }
-            } catch {
-              fail("Cloudflare request failed or timed out; no credentials or response bodies were logged.");
-            }
-          }
-          NODE
+        run: node scripts/cloudflare-metadata-check.mjs
