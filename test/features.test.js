@@ -10,7 +10,7 @@ import {
   snapCardElement,
   cardBounds,
 } from "../public/card-system.js";
-import { effectiveUI } from "../server/features.js";
+import { effectiveUI, cardInput } from "../server/features.js";
 import {
   runReminders,
   verifyTwilio,
@@ -1067,4 +1067,60 @@ test("card snapping aligns item bounds with center and edges for every text alig
     assert.equal(cardBounds(item).left, 480);
     assert.equal(item.y, 0);
   }
+});
+
+test("QR color and transparency persist through templates/cards without changing the QR destination or legacy defaults", async (t) => {
+  const f = await fixture(t),
+    host = await f.host("Alpha"),
+    other = await f.host("Beta");
+  const design = newCard("Colored QR");
+  const qr = design.elements.find((e) => e.field === "qr");
+  qr.qrColor = "#1a5b7c";
+  qr.qrTransparent = true;
+  const template = await f.request("/api/admin/templates", {
+    method: "POST",
+    cookie: f.admin,
+    data: design,
+  });
+  assert.equal(template.status, 201);
+  assert.equal(
+    template.body.elements.find((e) => e.field === "qr").qrTransparent,
+    true,
+  );
+  const card = await f.request("/api/host/cards", {
+    method: "POST",
+    cookie: host.cookie,
+    data: { ...template.body, sourceTemplate: template.body.id },
+  });
+  assert.equal(card.status, 201);
+  assert.equal(
+    card.body.elements.find((e) => e.field === "qr").qrColor,
+    "#1a5b7c",
+  );
+  assert.equal(
+    (
+      await f.request("/api/host/cards/" + card.body.id, {
+        cookie: other.cookie,
+      })
+    ).status,
+    404,
+  );
+  const source = "data:image/svg+xml;base64,PHN2Zy8+";
+  const svg = renderCard(card.body, {}, source);
+  assert.match(svg, /data-qr-modules[^>]*fill="#1a5b7c"/);
+  assert.ok(svg.includes(source));
+  assert.doesNotMatch(svg, /data-qr-background/);
+  const legacy = newCard();
+  legacy.elements.find((e) => e.field === "qr").color = "#ffffff";
+  assert.equal(
+    cardInput(legacy).elements.find((e) => e.field === "qr").qrTransparent,
+    false,
+  );
+  assert.equal(
+    cardInput(legacy).elements.find((e) => e.field === "qr").qrColor,
+    "#000000",
+  );
+  assert.match(renderCard(legacy, {}, source), /data-qr-background/);
+  qr.qrTransparent = "false";
+  assert.throws(() => cardInput(design), /formatting/);
 });

@@ -639,11 +639,40 @@ try {
   await admin
     .getByRole("heading", { name: "Edit shared template", exact: true })
     .waitFor();
+  await admin.setViewportSize({ width: 1440, height: 900 });
+  await admin.getByLabel("Selected item", { exact: true }).selectOption("2");
+  await admin
+    .getByText("Example QR — replaced with the household link when used.", {
+      exact: true,
+    })
+    .waitFor();
+  assert.equal(
+    await admin.locator("#card-canvas [data-qr-modules]").count(),
+    1,
+  );
+  await admin.getByLabel("QR color", { exact: true }).fill("#125577");
+  await admin.getByLabel("Transparent QR background", { exact: true }).check();
+  await click(admin, "Add text above QR");
+  await admin
+    .locator("#card-fields fieldset:not([hidden]) [name=fieldText]")
+    .fill("Scan to see the invitation");
   await admin
     .getByRole("button", { name: "Save shared template", exact: true })
     .click();
   await admin.getByText("Shared card templates", { exact: true }).waitFor();
   assert.equal(store.list("template", "platform").length, 1);
+  const qrTemplate = store.list("template", "platform")[0];
+  assert.equal(
+    qrTemplate.elements.find((e) => e.field === "qr").qrColor,
+    "#125577",
+  );
+  assert.equal(
+    qrTemplate.elements.find((e) => e.field === "qr").qrTransparent,
+    true,
+  );
+  assert.ok(
+    qrTemplate.elements.some((e) => e.text === "Scan to see the invitation"),
+  );
   await click(admin, "Settings");
   await admin.getByRole("button", { name: "Sign Out", exact: true }).waitFor();
   for (const width of [390, 1440]) {
