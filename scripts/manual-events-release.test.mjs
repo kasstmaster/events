@@ -8,6 +8,7 @@ import {
   NAMESPACE,
   RELEASE,
   safeSettings,
+  settingsChanges,
   activeDeployment,
   run,
 } from "./manual-events-release.mjs";
@@ -139,6 +140,19 @@ test("checkpoint then verify uses GET only and excludes private settings", async
     version = "new";
     changed = true;
     await assert.rejects(run("verify", options), /settings changed/);
+    await run("inspect", options);
+    const inspection = await readFile(
+      file.replace(/\.json$/, "-inspection.json"),
+      "utf8",
+    );
+    assert.ok(
+      !inspection.includes("private-value") &&
+        !inspection.includes("synthetic-token"),
+    );
+    assert.deepEqual(JSON.parse(inspection).changes, [
+      "binding PRIVATE_VARIABLE changed",
+    ]);
+    assert.equal(JSON.parse(inspection).inspection_only, true);
     changed = false;
     await run("verify", options);
   } finally {
@@ -159,4 +173,39 @@ test("manual workflow checks out the same exact release as its checkpoint helper
     /npx wrangler deploy --name events --config wrangler\.jsonc/,
   );
   assert.doesNotMatch(workflow, /wrangler\.gateway|deploy.*--name (?!events)/);
+});
+
+test("runtime differences identify names only and never expose setting values", () => {
+  const before = {
+    compatibility_date: "2026-10-30",
+    compatibility_flags: [],
+    bindings: [
+      {
+        name: "EVENTS_ORIGIN",
+        type: "plain_text",
+        value_digest: "old-private-hash",
+      },
+    ],
+  };
+  const after = {
+    ...before,
+    bindings: [{ name: "GITHUB_TOKEN", type: "secret_text" }],
+  };
+  assert.deepEqual(settingsChanges(before, after), [
+    "binding EVENTS_ORIGIN removed",
+    "binding GITHUB_TOKEN added",
+  ]);
+  const changed = {
+    ...before,
+    bindings: [{ ...before.bindings[0], value_digest: "private-diagnostic" }],
+  };
+  assert.deepEqual(settingsChanges(before, changed), [
+    "binding EVENTS_ORIGIN changed",
+  ]);
+  assert.ok(
+    !JSON.stringify(settingsChanges(before, changed)).includes(
+      "private-diagnostic",
+    ),
+  );
+  assert.deepEqual(settingsChanges(before, before), []);
 });

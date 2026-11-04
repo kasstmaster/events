@@ -8,6 +8,7 @@ on:
       - scripts/manual-events-release*.mjs
       - scripts/cloudflare-metadata-check*.mjs
       - .github/workflows/check-cloudflare-auth.yml
+      - .github/workflows/inspect-events-settings.yml
       - docs/manual-events-release.md
       - .github/workflows/sync-meyer-anylist.yml
       - integrations/anylist/**
@@ -33,5 +34,5 @@ jobs:
         run: node --test integrations/anylist/reader.test.js
       - name: Check formatting and show corrections
         run: |
-          npx --no-install prettier --write scripts/manual-events-release*.mjs scripts/cloudflare-metadata-check*.mjs .github/workflows/check-cloudflare-auth.yml .github/workflows/deploy-events-manual.yml .github/workflows/validate-manual-release.yml docs/manual-events-release.md .github/workflows/sync-meyer-anylist.yml integrations/anylist docs/meyer-anylist.md docs/contacts-event-admin-release.md
+          npx --no-install prettier --write .github/workflows/inspect-events-settings.yml scripts/manual-events-release*.mjs scripts/cloudflare-metadata-check*.mjs .github/workflows/check-cloudflare-auth.yml .github/workflows/deploy-events-manual.yml .github/workflows/validate-manual-release.yml docs/manual-events-release.md .github/workflows/sync-meyer-anylist.yml integrations/anylist docs/meyer-anylist.md docs/contacts-event-admin-release.md
           git diff --exit-code
