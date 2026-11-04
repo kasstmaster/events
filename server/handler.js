@@ -66,6 +66,10 @@ const files = new Map([
   ],
   ["/app.js", ["app.js", "text/javascript; charset=utf-8"]],
   ["/style.css", ["style.css", "text/css; charset=utf-8"]],
+  [
+    "/card-qr-example.svg",
+    ["card-qr-example.svg", "image/svg+xml; charset=utf-8"],
+  ],
   ...[
     "editor-tools.js",
     "ui-system.js",
