@@ -27,6 +27,7 @@ export function integrationCapabilities(store, env, household) {
   if (integrationHousehold(store, env) !== household) return {};
   return {
     anylist: true,
+    anylistStatus: syncStatus(store, household),
     anylistConfigured: !!(
       (env.GITHUB_TOKEN || env.EVENTS_ACTIONS_TOKEN) &&
       env.ANYLIST_IMPORT_SECRET?.length >= 32

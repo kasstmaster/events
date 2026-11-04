@@ -139,6 +139,11 @@ test("AnyList is restricted to the configured verified host household, including
   );
   const job = await start(f, env, host);
   assert.equal(
+    (await f.request("/api/host", { cookie: host.cookie })).body.integrations
+      .anylistStatus.state,
+    "running",
+  );
+  assert.equal(
     (
       await f.request("/api/integrations/anylist/import", {
         method: "POST",

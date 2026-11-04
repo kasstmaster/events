@@ -479,11 +479,61 @@ try {
     await p.getByRole("button", { name: "Sync AnyList", exact: true }).count(),
     1,
   );
-  await click(p, "Check sync status");
-  await p
-    .locator("#contacts-sync-status")
-    .getByText("No contact sync has been started.", { exact: true })
-    .waitFor();
+  assert.equal(
+    await p
+      .getByRole("button", { name: "Check sync status", exact: true })
+      .count(),
+    0,
+  );
+  let manualStatusReads = 0;
+  const syncId = "synthetic-live-sync-job";
+  await p.route("**/api/host/integrations/anylist", async (route) => {
+    if (route.request().method() !== "POST") {
+      manualStatusReads++;
+      return route.continue();
+    }
+    store.put("anylist-job", syncId, host.household, {
+      state: "running",
+      started: Date.now(),
+      expires: Date.now() + 60000,
+    });
+    await route.fulfill({
+      status: 202,
+      json: { id: syncId, state: "running" },
+    });
+  });
+  await click(p, "Sync AnyList");
+  await p.getByRole("button", { name: "Syncing…", exact: true }).waitFor();
+  assert.equal(
+    await p.getByRole("button", { name: "Syncing…", exact: true }).isDisabled(),
+    true,
+  );
+  const currentGuest = store.get("guest", guest.id, host.household);
+  await api(
+    owner,
+    "/api/host/guests/" + guest.id,
+    { ...currentGuest, phone: "+15551230000" },
+    "PUT",
+    currentGuest.version,
+  );
+  const syncJob = store.get("anylist-job", syncId, host.household);
+  store.put(
+    "anylist-job",
+    syncId,
+    host.household,
+    { ...syncJob, state: "complete", updated: 1 },
+    syncJob.version,
+  );
+  await p.getByText(/Adult guest.*15551230000/).waitFor();
+  await p.getByText("Contacts synced.", { exact: true }).waitFor();
+  assert.equal(
+    await p
+      .getByRole("button", { name: "Sync AnyList", exact: true })
+      .isDisabled(),
+    false,
+  );
+  assert.equal(manualStatusReads, 0);
+  await p.unroute("**/api/host/integrations/anylist");
   const padding = await p
     .locator(".browse-open")
     .first()
@@ -528,6 +578,13 @@ try {
       parent: inviteAdult.id,
     })
   ).body;
+  store.put(
+    "guest",
+    inviteChild.id,
+    host.household,
+    { ...store.get("guest", inviteChild.id, host.household), position: -2048 },
+    inviteChild.version,
+  );
   for (let i = 0; i < 20; i++)
     await api(owner, "/api/host/guests", {
       first: "Extra " + String(i).padStart(2, "0"),
@@ -536,6 +593,24 @@ try {
   await p.reload();
   await click(p, "Contacts");
   await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
+  const rowKinds = await p
+    .locator(".browse-row[data-contact-kind]")
+    .evaluateAll((rows) => rows.map((row) => row.dataset.contactKind));
+  assert.ok(rowKinds.indexOf("child") > 0);
+  assert.ok(
+    rowKinds.slice(rowKinds.indexOf("child")).every((kind) => kind === "child"),
+  );
+  const childIcon = await p
+    .getByRole("button", { name: "Riley New", exact: true })
+    .locator("xpath=ancestor::li[1]")
+    .locator(".browse-row-icon path")
+    .getAttribute("d");
+  const adultIcon = await p
+    .getByRole("button", { name: "Jordan New", exact: true })
+    .locator("xpath=ancestor::li[1]")
+    .locator(".browse-row-icon path")
+    .getAttribute("d");
+  assert.notEqual(childIcon, adultIcon);
   await click(p, "Uninvited Guests");
   assert.equal(
     await p.getByRole("button", { name: "Casey Example", exact: true }).count(),

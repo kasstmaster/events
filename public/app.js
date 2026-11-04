@@ -256,6 +256,12 @@ async function load({ background = false } = {}) {
     // Never adopt newer versions behind an older unsaved form.
     if (generation !== loadGeneration || (background && isEditing())) return;
     const preserveScroll = background && state.session?.role === session.role;
+    const previousSync = state.data?.integrations?.anylistStatus;
+    const nextSync = data?.integrations?.anylistStatus;
+    const syncCompleted =
+      previousSync?.state === "running" &&
+      nextSync?.state === "complete" &&
+      previousSync.id === nextSync.id;
     if (familyData) state.familyData = familyData;
     Object.assign(state, {
       session,
@@ -265,6 +271,8 @@ async function load({ background = false } = {}) {
       lastSync: new Date(),
     });
     renderRefresh(preserveScroll);
+    if (syncCompleted && state.view === "contacts")
+      notify(C("Contacts synced."));
   } catch (error) {
     if (generation !== loadGeneration) return;
     if (background) {
@@ -780,6 +788,26 @@ function contactsInviteTools() {
     ${contactInviteError ? ui`<p role="alert">${escape(contactInviteError)}</p>` : ""}
     ${contactInviteEventsOpen ? ui`<div class="contacts-event-picker"><h2>Select Event</h2><p>Choose an event to add the selected guests. Existing invitations and responses stay saved. No messages are sent.</p><ul class="browse-rows">${state.data.events.map((event) => row({ title: escape(event.title), meta: escape(dateLabel(event.date)), action: "contacts-invite-event", id: event.id, symbol: "list", attributes: contactInviteSaving ? "inert" : "" })).join("") || M('<li class="browse-empty">Create an event from Home first.</li>')}</ul></div>` : ""}</section>`;
 }
+function anyListStatusMessage(status) {
+  return (
+    {
+      running: C("Syncing contacts…"),
+      conflict: C(
+        "Contacts changed while syncing. No import was applied. Start a new sync when editing is finished.",
+      ),
+      expired: C("Sync expired. Check configuration and start a new sync."),
+      failed: C(
+        "Sync failed. Check the Events AnyList configuration before trying again.",
+      ),
+    }[status?.state] || ""
+  );
+}
+function contactsSyncTools() {
+  if (!state.data.integrations?.anylist) return "";
+  const status = state.data.integrations.anylistStatus;
+  const running = status?.state === "running";
+  return ui`<section class="contacts-sync"><button type="button" data-action="contacts-anylist-sync" ${running ? "disabled" : ""} aria-busy="${running}">${running ? C("Syncing…") : C("Sync AnyList")}</button><p class="small" role="status" aria-live="polite" id="contacts-sync-status">${anyListStatusMessage(status)}</p></section>`;
+}
 function contactsPage() {
   const guests = ordered(
     state.data.guests.filter(
@@ -815,11 +843,12 @@ function contactsPage() {
     entries.sort(
       ([a], [b]) => label(a).localeCompare(label(b)) || a.localeCompare(b),
     );
-  return ui`<div class="browse-shell">${topbar({ title: C("Contacts"), back: "home", search: "contacts-search", plus: contactInviteMode ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: sorting("contacts-", contactPreferences?.contactSort) })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search contacts") : ""}<div class="browse-content">${contactsInviteTools()}${state.data.integrations?.anylist ? ui`<section class="contacts-sync"><button type="button" data-action="contacts-anylist-sync">Sync AnyList</button><button type="button" data-action="contacts-anylist-status">Check sync status</button><p class="small" role="status" id="contacts-sync-status"></p></section>` : ""}<ul class="browse-rows">${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
+  return ui`<div class="browse-shell">${topbar({ title: C("Contacts"), back: "home", search: "contacts-search", plus: contactInviteMode ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: sorting("contacts-", contactPreferences?.contactSort) })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search contacts") : ""}<div class="browse-content">${contactsInviteTools()}${contactsSyncTools()}<ul class="browse-rows">${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
     entries
       .map(
         ([key, rows]) =>
           ui`<li class="browse-category" data-address-group="${key}"><span data-address-title>${escape(label(key))}</span>${key && rows[0]?.inviteCode ? ui`<span class="address-guest-id">${C("Guest ID")} · <code>${escape(rows[0].inviteCode)}</code></span>` : ""}</li>${rows
+            .sort((a, b) => Number(!!a.parent) - Number(!!b.parent))
             .map(
               (g) =>
                 row({
@@ -837,16 +866,17 @@ function contactsPage() {
                       .filter(Boolean)
                       .join(" · "),
                   ),
-                  symbol: "contacts",
+                  symbol: g.parent ? "child" : "contacts",
                   action: contactInviteMode
                     ? "contacts-toggle-invite"
                     : "edit-guest",
                   id: g.id,
                   attributes:
-                    !contactInviteMode &&
+                    `data-contact-kind="${g.parent ? "child" : "adult"}" ` +
+                    (!contactInviteMode &&
                     contactPreferences?.contactSort !== "alpha"
                       ? `draggable="true" data-contact-row="${g.id}"`
-                      : "",
+                      : ""),
                   controls: contactInviteMode
                     ? ui`<label class="check"><input type="checkbox" data-contact-invite="${g.id}" aria-label="${H("Select")} ${escape(fullName(g))}" ${contactInviteSelection.has(g.id) ? "checked" : ""} ${contactInviteSaving ? "disabled" : ""}></label>`
                     : tool("edit-guest", "Edit contact", g.id, "edit") +
@@ -911,11 +941,22 @@ function addresses() {
   guestList();
 }
 async function moveContact(key, direction, target) {
-  const g = state.data.guests.find((g) => g.id === key),
-    rows = ordered(
+  const g = state.data.guests.find((g) => g.id === key);
+  if (!g) return;
+  if (target) {
+    const destination = state.data.guests.find((row) => row.id === target);
+    if (
+      !destination ||
+      (destination.address || "") !== (g.address || "") ||
+      !!destination.parent !== !!g.parent
+    )
+      return;
+  }
+  const rows = ordered(
       state.data.guests.filter(
         (candidate) =>
           candidate.id !== key &&
+          !!candidate.parent === !!g.parent &&
           (candidate.address || "") === (g.address || ""),
       ),
       "manual",
@@ -1561,32 +1602,27 @@ document.addEventListener("click", async (event) => {
         return;
       }
       target.disabled = true;
+      const syncHousehold = state.data.household.id;
       try {
         const result = await api("/api/host/integrations/anylist", {
           method: action === "contacts-anylist-sync" ? "POST" : "GET",
         });
-        if (result.state === "complete") await load();
-        const messages = {
-          idle: C("No contact sync has been started."),
-          running: C("Sync is running. Choose Check sync status shortly."),
-          complete: C(
-            "Sync complete. Existing invitations and responses were preserved.",
-          ),
-          conflict: C(
-            "Contacts changed while syncing. No import was applied. Start a new sync when editing is finished.",
-          ),
-          expired: C("Sync expired. Check configuration and start a new sync."),
-          failed: C(
-            "Sync failed. Check the Events AnyList configuration before trying again.",
-          ),
-        };
-        const message =
-          messages[result.state] || C("Check the sync configuration.");
-        const status = document.querySelector("#contacts-sync-status");
-        if (status) status.textContent = message;
-        notify(message);
+        if (
+          state.session?.role !== "host" ||
+          state.data?.household?.id !== syncHousehold
+        )
+          return;
+        state.data.integrations.anylistStatus = result;
+        if (result.state === "complete") await load({ background: true });
+        else if (!isEditing()) renderRefresh(true);
+        notify(
+          result.state === "complete"
+            ? C("Contacts synced.")
+            : anyListStatusMessage(result),
+        );
       } finally {
-        target.disabled = false;
+        target.disabled =
+          state.data.integrations?.anylistStatus?.state === "running";
       }
       return;
     }
