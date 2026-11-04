@@ -85,6 +85,35 @@ export function activeDeployment(result) {
   return { id: latest.id, version_id: latest.versions[0].version_id };
 }
 
+export function settingsChanges(before, after) {
+  const changes = [];
+  for (const key of ["compatibility_date", "compatibility_flags"])
+    if (JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+      changes.push(key + " changed");
+  const previous = new Map(
+    before.bindings.map((binding) => [binding.name, binding]),
+  );
+  const current = new Map(
+    after.bindings.map((binding) => [binding.name, binding]),
+  );
+  for (const name of [
+    ...new Set([...previous.keys(), ...current.keys()]),
+  ].sort()) {
+    const label = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name)
+      ? name
+      : "invalid-name";
+    if (!previous.has(name)) changes.push("binding " + label + " added");
+    else if (!current.has(name)) changes.push("binding " + label + " removed");
+    else if (
+      JSON.stringify(previous.get(name)) !== JSON.stringify(current.get(name))
+    )
+      changes.push("binding " + label + " changed");
+  }
+  if (!changes.length && JSON.stringify(before) !== JSON.stringify(after))
+    changes.push("snapshot representation changed");
+  return changes;
+}
+
 export async function run(
   mode,
   {
@@ -94,8 +123,8 @@ export async function run(
   } = {},
 ) {
   requireValue(
-    ["preflight", "verify"].includes(mode),
-    "Expected preflight or verify.",
+    ["preflight", "verify", "inspect"].includes(mode),
+    "Expected preflight, verify or inspect.",
   );
   requireValue(
     env.CLOUDFLARE_API_TOKEN,
@@ -203,6 +232,31 @@ export async function run(
       checkpoint.release === RELEASE && checkpoint.namespace_id === NAMESPACE,
       "Checkpoint does not match the approved release.",
     );
+    if (mode === "inspect") {
+      const changes = settingsChanges(checkpoint.settings, settings);
+      await writeFile(
+        file.replace(/\.json$/, "-inspection.json"),
+        JSON.stringify(
+          {
+            release: RELEASE,
+            after: deployment,
+            settings,
+            changes,
+            verified_at: new Date().toISOString(),
+            inspection_only: true,
+          },
+          null,
+          2,
+        ) + "\n",
+        { mode: 0o600 },
+      );
+      for (const change of changes)
+        console.log("Runtime difference: " + change);
+      console.log(
+        "Read-only inspection complete. It does not approve differences or deploy changes.",
+      );
+      return;
+    }
     requireValue(
       JSON.stringify(settings) === JSON.stringify(checkpoint.settings),
       "Runtime bindings, variables or compatibility settings changed. Inspect before any rollback.",
