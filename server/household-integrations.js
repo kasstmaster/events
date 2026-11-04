@@ -120,7 +120,8 @@ export async function startAnyListSync(store, env, household, fetcher = fetch) {
         },
         body: JSON.stringify({ ref: "main", inputs: { sync_id: job.id } }),
         signal: AbortSignal.timeout(20000),
-        redirect: "error",
+        // Cloudflare supports manual/follow only. Reject every redirect below.
+        redirect: "manual",
       },
     );
     dispatchStatus = response.status;

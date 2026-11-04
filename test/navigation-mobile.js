@@ -361,6 +361,7 @@ try {
           return { x: r.x, y: r.y, width: r.width, height: r.height };
         };
         return {
+          heading: box(choice.querySelector(".event-choice-heading")),
           overview: box(choice.querySelector(".event-overview")),
           actions: box(choice.querySelector(".event-home-actions")),
           buttons: [
@@ -369,7 +370,11 @@ try {
         };
       }),
     );
-    for (const { overview, actions, buttons } of cards) {
+    for (const { heading, overview, actions, buttons } of cards) {
+      assert.ok(heading.y + heading.height <= overview.y + 1);
+      assert.ok(heading.y + heading.height <= actions.y + 1);
+      assert.ok(heading.width >= overview.width + actions.width);
+
       assert.ok(
         overview.x + overview.width <= actions.x + 1,
         "Details remain left of event actions",
@@ -395,6 +400,35 @@ try {
       fullPage: true,
     });
   }
+  stage("background refresh retains the reader's scroll position");
+  await p.setViewportSize({ width: 390, height: 600 });
+  await p.evaluate(() => {
+    window.pageRefreshes = 0;
+    window.refreshObserver = new MutationObserver(() => window.pageRefreshes++);
+    window.refreshObserver.observe(document.querySelector("#app"), {
+      childList: true,
+    });
+    window.scrollTo(0, 300);
+    window.readingPosition = scrollY;
+  });
+  assert.ok(await p.evaluate(() => window.readingPosition > 100));
+  const eventBeforeRefresh = store.get("event", e1.id, household.id);
+  store.put(
+    "event",
+    e1.id,
+    household.id,
+    { ...eventBeforeRefresh, description: "Background update after scrolling" },
+    eventBeforeRefresh.version,
+  );
+  await p
+    .getByText("Background update after scrolling", { exact: true })
+    .waitFor();
+  await p.waitForFunction(() => window.pageRefreshes >= 2);
+  assert.ok(
+    await p.evaluate(() => Math.abs(scrollY - window.readingPosition) < 3),
+    "Background refresh must preserve scrolling while adopting new content",
+  );
+  await p.evaluate(() => window.refreshObserver.disconnect());
   await p.setViewportSize({ width: 1440, height: 900 });
   await p.evaluate(() => {
     Object.defineProperty(navigator, "share", {

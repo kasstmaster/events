@@ -2068,6 +2068,13 @@ html {
   gap: 12px;
   align-items: start;
 }
+.event-choice-heading {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.event-choice-heading .family-logo {
+  display: block;
+}
 .event-overview {
   min-width: 0;
   display: flex;

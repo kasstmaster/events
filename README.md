@@ -33,7 +33,7 @@ Text reminders are implemented but **disabled until a separately approved Twilio
 
 ### Synchronization and conflict handling
 
-Active pages re-fetch authorized server data every 3 seconds and on reconnection. Separate devices see saved changes without sharing browser storage. Polling pauses while an editor or input is active so it cannot erase an unsaved draft. Close the editor and reload the latest information after a conflict.
+Active pages re-fetch authorized server data every 3 seconds and on reconnection. Separate devices see saved changes without sharing browser storage. Polling pauses while an editor or input is active so it cannot erase an unsaved draft. Background refreshes preserve the current page scroll position while adopting updated server content. Close the editor and reload the latest information after a conflict.
 
 Host updates/deletions require the record version (`If-Match`). RSVPs have a version per adult/event. Stale writes return **409**; they never silently overwrite newer data. RSVP capacity validation and reservation run inside one SQLite transaction, so two guests cannot simultaneously claim the last quantity. Declining releases that adult’s items and children cannot attend without their designated adult. After the RSVP deadline (UTC calendar date), all guest RSVP edits are closed. Existing claims are preserved if a host later reduces a requested quantity.
 

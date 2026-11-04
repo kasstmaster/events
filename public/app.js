@@ -178,6 +178,13 @@ const isEditing = () =>
   $("#editor").open ||
   !!document.querySelector(".browse-menu[open]") ||
   document.activeElement?.matches("input,select,textarea");
+function renderRefresh(preserveScroll) {
+  // Replacing/reordering the page can temporarily shrink it and clamp scrolling.
+  // Capture at adoption time, after requests, so in-flight scrolling is retained.
+  const position = preserveScroll ? { left: scrollX, top: scrollY } : null;
+  render();
+  if (position) window.scrollTo({ ...position, behavior: "instant" });
+}
 async function load({ background = false } = {}) {
   if (background && isEditing()) return;
   const generation = ++loadGeneration;
@@ -212,7 +219,7 @@ async function load({ background = false } = {}) {
         lastSync: new Date(),
       });
       state.templates = [];
-      render();
+      renderRefresh(background);
       return;
     }
     const session = await api("/api/session");
@@ -248,6 +255,7 @@ async function load({ background = false } = {}) {
     // An editor may have opened while a background request was in flight.
     // Never adopt newer versions behind an older unsaved form.
     if (generation !== loadGeneration || (background && isEditing())) return;
+    const preserveScroll = background && state.session?.role === session.role;
     if (familyData) state.familyData = familyData;
     Object.assign(state, {
       session,
@@ -256,7 +264,7 @@ async function load({ background = false } = {}) {
       publicHousehold,
       lastSync: new Date(),
     });
-    render();
+    renderRefresh(preserveScroll);
   } catch (error) {
     if (generation !== loadGeneration) return;
     if (background) {
@@ -435,10 +443,11 @@ function eventCard(event) {
   const logo = event.invitingHousehold
     ? event.invitingHousehold.logo
     : state.data.household.logo;
-  const content = ui`${logo ? ui`<img class="family-logo" src="${escape(logo)}" alt="Family logo">` : M('<span class="eyebrow">You’re invited to gather</span>')}${event.invitingHousehold ? ui`<p class="eyebrow">${escape(event.invitingHousehold.name)}</p>` : ""}<p class="muted small">${escape(dateLabel(event.date))}</p><h2>${escape(event.title)}</h2><p class="muted">${escape(event.description.slice(0, 120))}</p><div class="row"><span class="pill">${event.totals.attending} attending</span>${event.response?.version ? M('<span class="pill">RSVP saved</span>') : ""}</div>${button("open-event", H("View Event"), `data-id="${event.invitationKey || event.id}"`)}`;
+  const heading = ui`<div class="event-choice-heading">${logo ? ui`<img class="family-logo" src="${escape(logo)}" alt="Family logo">` : M('<span class="eyebrow">You’re invited to gather</span>')}</div>`;
+  const content = ui`${event.invitingHousehold ? ui`<p class="eyebrow">${escape(event.invitingHousehold.name)}</p>` : ""}<p class="muted small">${escape(dateLabel(event.date))}</p><h2>${escape(event.title)}</h2><p class="muted">${escape(event.description.slice(0, 120))}</p><div class="row"><span class="pill">${event.totals.attending} attending</span>${event.response?.version ? M('<span class="pill">RSVP saved</span>') : ""}</div>${button("open-event", H("View Event"), `data-id="${event.invitationKey || event.id}"`)}`;
   if (state.session.role !== "host")
-    return ui`<article class="card event-choice"><div class="event-overview">${content}</div></article>`;
-  return ui`<article class="card host-event-choice"><div class="event-overview">${content}</div><div class="event-home-actions" role="group" aria-label="${H("Event actions")}">${[
+    return ui`<article class="card event-choice">${heading}<div class="event-overview">${content}</div></article>`;
+  return ui`<article class="card host-event-choice">${heading}<div class="event-overview">${content}</div><div class="event-home-actions" role="group" aria-label="${H("Event actions")}">${[
     ["dashboard", "RSVPs"],
     ["reminders", "Reminders"],
     ["cards", "Cards"],
