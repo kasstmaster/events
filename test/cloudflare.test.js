@@ -643,3 +643,91 @@ test(
     );
   },
 );
+
+test(
+  "AnyList dispatch uses Cloudflare-native fetch and refuses redirects without forwarding credentials",
+  { timeout: 30000 },
+  async () => {
+    const { Miniflare, convertV4MiniflareOptions } = await import("miniflare");
+    const { build } = await import("esbuild");
+    const bundle = await build({
+      stdin: {
+        resolveDir: process.cwd(),
+        sourcefile: "anylist-runtime-fixture.js",
+        contents: `
+        import { startAnyListSync, syncStatus } from './server/household-integrations.js';
+        export default { async fetch(request) {
+          const jobs = new Map();
+          const store = {
+            one(sql) { return sql.includes('FROM users') ? {id:'host',household:'household'} : null; },
+            list(kind) { return kind === 'anylist-job' ? [...jobs.values()] : []; },
+            limit() {}, transaction(fn) { return fn(); },
+            put(kind,id,household,data) { const record={...data,id,household,version:(jobs.get(id)?.version||0)+1};jobs.set(id,record);return record; }
+          };
+          const env = {MEYER_HOST_EMAIL:'host@example.test',GITHUB_TOKEN:'synthetic-token',ANYLIST_IMPORT_SECRET:'synthetic-import-secret-for-runtime-tests'};
+          try { await startAnyListSync(store,env,'household'); }
+          catch { /* Only fixed status/code leaves the fixture. */ }
+          return Response.json(syncStatus(store,'household'));
+        }};
+      `,
+      },
+      bundle: true,
+      write: false,
+      platform: "neutral",
+      format: "esm",
+      external: ["node:*"],
+    });
+    const config = parseConfig(
+      await (
+        await import("node:fs/promises")
+      ).readFile("wrangler.jsonc", "utf8"),
+    );
+    for (const providerStatus of [204, 302]) {
+      const mf = new Miniflare(
+        convertV4MiniflareOptions({
+          workers: [
+            {
+              name: "dispatcher",
+              modules: true,
+              compatibilityDate: config.compatibility_date,
+              compatibilityFlags: config.compatibility_flags,
+              script: bundle.outputFiles[0].text,
+              outboundService: "github-fixture",
+            },
+            {
+              name: "github-fixture",
+              modules: true,
+              compatibilityDate: config.compatibility_date,
+              script: `
+        let requests=0;
+        export default {fetch(request) {
+          if(new URL(request.url).pathname==='/request-count') return Response.json({requests});
+          requests++;
+          const valid=request.url==='https://api.github.com/repos/kasstmaster/events/actions/workflows/sync-meyer-anylist.yml/dispatches' && request.method==='POST' && request.headers.get('Authorization')==='Bearer synthetic-token';
+          if(!valid)return new Response(null,{status:500});
+          return new Response(null,{status:${providerStatus},headers:${providerStatus === 302 ? "{Location:'https://untrusted.example/credential-trap'}" : "{}"}});
+        }};`,
+            },
+          ],
+        }),
+      );
+      try {
+        const result = await (
+          await mf.dispatchFetch("http://localhost/")
+        ).json();
+        assert.equal(
+          result.state,
+          providerStatus === 204 ? "running" : "failed",
+        );
+        const provider = await mf.getWorker("github-fixture");
+        assert.equal(
+          (await (await provider.fetch("http://fixture/request-count")).json())
+            .requests,
+          1,
+        );
+      } finally {
+        await mf.dispose();
+      }
+    }
+  },
+);

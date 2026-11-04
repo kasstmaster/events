@@ -35,6 +35,7 @@ async function start(f, env, host) {
         "https://api.github.com/repos/kasstmaster/events/actions/workflows/sync-meyer-anylist.yml/dispatches",
       );
       assert.equal(init.method, "POST");
+      assert.equal(init.redirect, "manual");
       assert.equal(JSON.parse(init.body).ref, "main");
       return new Response(null, { status: 204 });
     },
@@ -396,7 +397,7 @@ test("AnyList rejects copied Gatherings destinations and malformed credentials w
 });
 
 test("AnyList dispatch failures use fixed actionable messages and never store provider bodies or transport errors", async (t) => {
-  for (const status of [401, 403, 404, 422, 429, 500, 0]) {
+  for (const status of [302, 401, 403, 404, 422, 429, 500, 0]) {
     const env = configuration(),
       f = await application(t, { env }),
       host = await f.host("Alpha");
