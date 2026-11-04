@@ -466,7 +466,7 @@ export function featureTools(ctx) {
         inviteCode: "0123",
       },
     };
-    qrData = role() === "host" ? await qrURL() : "";
+    qrData = await qrURL();
     notify("");
     if (state.view !== "card-editor") state.cardReturnView = state.view;
     document.querySelector("#editor").close();
@@ -474,9 +474,12 @@ export function featureTools(ctx) {
     render();
   }
   async function qrURL() {
-    const response = await fetch("/api/host/qr", {
-      credentials: "same-origin",
-    });
+    const response = await fetch(
+      role() === "host" ? "/api/host/qr" : "/card-qr-example.svg",
+      {
+        credentials: "same-origin",
+      },
+    );
     if (!response.ok) throw new Error("Could not load household QR.");
     return "data:image/svg+xml;base64," + btoa(await response.text());
   }
@@ -507,7 +510,7 @@ export function featureTools(ctx) {
             "field",
             cardFields.map((f) => [f, C(cardFieldLabels[f])]),
             e.field,
-          )}${area(H("Text / fallback"), "fieldText", e.field === "text" ? e.text : e.fallback)}<div class="form-grid">${["x", "y", "width", "height", "fontSize"].map((k) => field(C({ x: "Horizontal position", y: "Vertical position", width: "Box width", height: "Box height", fontSize: "Text size" }[k]), k, e[k], "number", `min="${k === "fontSize" ? 8 : 0}" max="2400" step="any"`)).join("")}${field(H("Text color"), "color", e.color, "color")}${select(
+          )}${e.field === "qr" ? ui`<label class="check"><input name="qrTransparent" type="checkbox" ${e.qrTransparent ? "checked" : ""}>Transparent QR background</label>${button("add-qr-text", H("Add text above QR"), `data-index="${index}"`, "quiet")}${role() === "admin" ? M('<p class="small">Example QR — replaced with the household link when used.</p>') : ""}` : ""}${area(H("Text / fallback"), "fieldText", e.field === "text" ? e.text : e.fallback)}<div class="form-grid">${["x", "y", "width", "height", "fontSize"].map((k) => field(C({ x: "Horizontal position", y: "Vertical position", width: "Box width", height: "Box height", fontSize: "Text size" }[k]), k, e[k], "number", `min="${k === "fontSize" ? 8 : 0}" max="2400" step="any"`)).join("")}${field(e.field === "qr" ? H("QR color") : H("Text color"), "color", e.field === "qr" ? e.qrColor || "#000000" : e.color, "color")}${select(
             H("Font"),
             "font",
             cardFonts.map((f) => [f, f]),
@@ -594,9 +597,16 @@ export function featureTools(ctx) {
             ]),
           ),
           font: value("font"),
-          color: value("color"),
+          color: value("field") === "qr" ? existing.color : value("color"),
           align: value("align"),
           bold: row.querySelector("[name=bold]").checked,
+          ...(value("field") === "qr"
+            ? {
+                qrColor: value("color"),
+                qrTransparent: !!row.querySelector("[name=qrTransparent]")
+                  ?.checked,
+              }
+            : {}),
         };
       },
     );
@@ -902,6 +912,28 @@ export function featureTools(ctx) {
         addCardVariable(key);
         return true;
       }
+      if (action === "add-qr-text") {
+        collectCard();
+        const qr = editingCard.elements[Number(target.dataset.index)];
+        if (qr?.field !== "qr") return true;
+        const text = {
+          ...newCard().elements[0],
+          id: crypto.randomUUID(),
+          field: "text",
+          text: String(C("Scan to view invitations")),
+          fallback: "",
+          x: qr.x + qr.width / 2,
+          y: Math.max(0, qr.y - 64),
+          width: qr.width,
+          height: 56,
+          fontSize: 18,
+          color: qr.qrColor || "#000000",
+        };
+        editingCard.elements.push(text);
+        selectedCardField = editingCard.elements.length - 1;
+        drawCardEditor();
+        return true;
+      }
       if (action === "add-card-field") {
         addCardVariable("text");
         return true;
@@ -1122,7 +1154,8 @@ export function featureTools(ctx) {
       const form = event.target.closest("form");
       if (form?.dataset.form === "card") {
         collectCard();
-        refreshCard();
+        if (event.target.name === "field") drawCardEditor();
+        else refreshCard();
       }
       if (event.target.matches("[data-copy-search]"))
         for (const label of document.querySelectorAll("[data-copy-key]"))

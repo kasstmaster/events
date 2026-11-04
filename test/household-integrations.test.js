@@ -427,3 +427,32 @@ test("AnyList dispatch failures use fixed actionable messages and never store pr
     assert.ok(!JSON.stringify(jobs).includes("private-provider-diagnostic"));
   }
 });
+
+test("GitHub rejection identifies the configured secret name without exposing its value", async (t) => {
+  for (const legacy of [false, true]) {
+    const env = configuration();
+    if (legacy) {
+      env.EVENTS_ACTIONS_TOKEN = env.GITHUB_TOKEN;
+      delete env.GITHUB_TOKEN;
+    }
+    const f = await application(t, { env }),
+      host = await f.host("Alpha");
+    await assert.rejects(
+      startAnyListSync(
+        f.store,
+        env,
+        host.household.id,
+        async () => new Response(null, { status: 401 }),
+      ),
+      (error) => {
+        assert.ok(
+          error.message.includes(
+            legacy ? "EVENTS_ACTIONS_TOKEN" : "GITHUB_TOKEN",
+          ),
+        );
+        assert.ok(!error.message.includes("synthetic-actions-token"));
+        return true;
+      },
+    );
+  }
+});

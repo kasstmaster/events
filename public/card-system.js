@@ -49,7 +49,7 @@ export function renderCard(card, context = {}, qr = "") {
     .map((e) => {
       if (e.field === "qr")
         return qr
-          ? `<svg data-card-element="${card.elements.indexOf(e)}" x="${e.x}" y="${e.y}" width="${e.width}" height="${e.height}" viewBox="0 0 120 120"><rect width="120" height="120" fill="#fff"/><image href="${escapeCard(qr)}" x="6" y="6" width="108" height="108"/></svg>`
+          ? `<svg data-card-element="${card.elements.indexOf(e)}" x="${e.x}" y="${e.y}" width="${e.width}" height="${e.height}" viewBox="0 0 120 120">${e.qrTransparent ? "" : '<rect data-qr-background width="120" height="120" fill="#fff"/>'}<defs><filter id="qr-invert-${card.elements.indexOf(e)}" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="-1 0 0 0 1 0 -1 0 0 1 0 0 -1 0 1 0 0 0 1 0"/></filter><mask id="qr-mask-${card.elements.indexOf(e)}" maskUnits="userSpaceOnUse" x="0" y="0" width="120" height="120" style="mask-type:luminance"><image href="${escapeCard(qr)}" x="6" y="6" width="108" height="108" filter="url(#qr-invert-${card.elements.indexOf(e)})"/></mask></defs><rect data-qr-modules width="120" height="120" fill="${escapeCard(e.qrColor || "#000000")}" mask="url(#qr-mask-${card.elements.indexOf(e)})"/></svg>`
           : "";
       const words = cardTextLines(
         populateField(e, context),

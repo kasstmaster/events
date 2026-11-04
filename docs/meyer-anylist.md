@@ -36,3 +36,7 @@ Validation uses isolated fake households and mocked dispatch/import transport. L
 ## Cloudflare dispatch compatibility
 
 Cloudflare native Fetch rejects `redirect: "error"` before sending a request. The dispatch uses `redirect: "manual"` and rejects non-success statuses, including every redirect. Native-runtime regression coverage bundles the actual dispatcher into workerd, intercepts all outbound requests with a synthetic provider, proves a 204 starts the job and a redirect fails after exactly one request. No real GitHub workflow, AnyList read or production import is invoked by these tests. Node-only mocked dispatch tests do not establish native Fetch compatibility.
+
+## GitHub credential rejection
+
+HTTP 401 from the fixed GitHub workflow-dispatch endpoint means GitHub rejected the configured credential value; it is distinct from a transport failure or the Cloudflare deployment credential. Error messages name the actual Worker secret selected: GITHUB_TOKEN takes precedence when present, otherwise EVENTS_ACTIONS_TOKEN. Neither value is returned or logged. A token's display name, a Cloudflare token or an AnyList password cannot authenticate GitHub. Configure the full active GitHub personal access token privately (without Bearer/quotes); existing stored values cannot be read back through APIs. Do not replace tokens or broaden permissions based on transport errors alone. HTTP 403/404 instead points to repository/workflow access and needs separate review.

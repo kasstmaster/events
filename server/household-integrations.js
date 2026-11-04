@@ -85,11 +85,14 @@ export async function startAnyListSync(store, env, household, fetcher = fetch) {
       503,
       "Set GITHUB_WORKFLOW_REPOSITORY to kasstmaster/events and GITHUB_WORKFLOW_BRANCH to main on the events Worker.",
     );
-  const token = String(env.GITHUB_TOKEN || env.EVENTS_ACTIONS_TOKEN).trim();
+  const tokenSetting = env.GITHUB_TOKEN
+    ? "GITHUB_TOKEN"
+    : "EVENTS_ACTIONS_TOKEN";
+  const token = String(env[tokenSetting]).trim();
   if (!token || /\s|[\x22\x27]/.test(token))
     fail(
       503,
-      "Save only the GitHub token value in the events Worker GITHUB_TOKEN secret, without Bearer, quotes or commands.",
+      `Save only the GitHub token value in the events Worker ${tokenSetting} secret, without Bearer, quotes or commands.`,
     );
   store.limit("anylist-sync:" + household, 6);
   const job = store.transaction(() => {
@@ -137,9 +140,9 @@ export async function startAnyListSync(store, env, household, fetcher = fetch) {
     fail(
       503,
       dispatchStatus === 401
-        ? "GitHub rejected contact sync. Check the events Worker GITHUB_TOKEN secret for an expired or revoked token."
+        ? `GitHub rejected contact sync (HTTP 401). Check the GitHub token saved in the events Worker ${tokenSetting} secret; it may be incorrect, expired or revoked.`
         : dispatchStatus === 403 || dispatchStatus === 404
-          ? "GitHub denied contact sync. Give the events Worker GITHUB_TOKEN access to kasstmaster/events with Actions read/write; confirm the sync workflow is enabled."
+          ? `GitHub denied contact sync. Give the events Worker ${tokenSetting} access to kasstmaster/events with Actions read/write; confirm the sync workflow is enabled.`
           : dispatchStatus === 422
             ? "GitHub could not dispatch contact sync. Confirm sync-meyer-anylist.yml is on Events main and accepts sync_id."
             : "Contact sync could not start. GitHub is unavailable or the request was blocked. Check sync status before trying again.",

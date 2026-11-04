@@ -525,6 +525,72 @@ try {
   await h.page
     .getByLabel("Recipient", { exact: true })
     .selectOption({ label: "Casey Example" });
+  await h.page.getByLabel("Selected item", { exact: true }).selectOption("2");
+  await h.page.getByLabel("QR color", { exact: true }).fill("#1a5b7c");
+  await h.page
+    .getByLabel("Card background color", { exact: true })
+    .fill("#e6d5c4");
+  await h.page.getByLabel("Transparent QR background", { exact: true }).check();
+  assert.equal(
+    await h.page.locator("#card-canvas [data-qr-background]").count(),
+    0,
+  );
+  assert.equal(
+    await h.page.locator("#card-canvas [data-qr-modules]").getAttribute("fill"),
+    "#1a5b7c",
+  );
+  const qrPixels = async () =>
+    h.page.evaluate(async () => {
+      const svg = document.querySelector("#card-canvas > svg").cloneNode(true);
+      svg
+        .querySelectorAll(".card-selection,[data-card-resize],.card-snap-guide")
+        .forEach((e) => e.remove());
+      const qr = svg.querySelector("[data-card-element='2']");
+      const x = Number(qr.getAttribute("x")),
+        y = Number(qr.getAttribute("y")),
+        w = Number(qr.getAttribute("width")),
+        h = Number(qr.getAttribute("height"));
+      const image = new Image();
+      image.src =
+        "data:image/svg+xml;base64," +
+        btoa(new XMLSerializer().serializeToString(svg));
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = Number(svg.getAttribute("width"));
+      canvas.height = Number(svg.getAttribute("height"));
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(image, 0, 0);
+      const pixels = ctx.getImageData(x, y, w, h).data;
+      let colored = 0;
+      for (let i = 0; i < pixels.length; i += 4)
+        if (pixels[i] === 26 && pixels[i + 1] === 91 && pixels[i + 2] === 124)
+          colored++;
+      return {
+        corner: [...ctx.getImageData(x + 1, y + 1, 1, 1).data],
+        colored,
+      };
+    });
+  const transparent = await qrPixels();
+  assert.deepEqual(transparent.corner, [230, 213, 196, 255]);
+  assert.ok(
+    transparent.colored > 100,
+    "PNG rendering must retain colored QR modules",
+  );
+  await h.page
+    .getByLabel("Transparent QR background", { exact: true })
+    .uncheck();
+  assert.deepEqual((await qrPixels()).corner, [255, 255, 255, 255]);
+  await h.page.getByLabel("Transparent QR background", { exact: true }).check();
+  await click(h.page, "Add text above QR");
+  await h.page
+    .locator("#card-fields fieldset:not([hidden]) [name=fieldText]")
+    .fill("Scan here for invitations");
+  assert.ok(
+    await h.page
+      .locator("#card-canvas")
+      .innerHTML()
+      .then((s) => s.includes("Scan here")),
+  );
   await h.page.getByLabel("Include QR code", { exact: true }).uncheck();
   await h.page.screenshot({
     path: "test-results/features-card-mobile.png",

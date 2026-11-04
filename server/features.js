@@ -99,7 +99,9 @@ export function cardInput(input) {
       !cardFields.includes(e.field) ||
       !cardFonts.includes(e.font) ||
       !["left", "center", "right"].includes(e.align) ||
-      !/^#[0-9a-f]{6}$/i.test(e.color)
+      !/^#[0-9a-f]{6}$/i.test(e.color) ||
+      (e.qrTransparent !== undefined && typeof e.qrTransparent !== "boolean") ||
+      (e.qrColor !== undefined && !/^#[0-9a-f]{6}$/i.test(e.qrColor))
     )
       fail(400, "Invalid card field or formatting.");
     const key = text(e.id || id(), 80, true);
@@ -133,6 +135,12 @@ export function cardInput(input) {
       color: e.color,
       bold: !!e.bold,
       align: e.align,
+      ...(e.field === "qr"
+        ? {
+            qrTransparent: e.qrTransparent === true,
+            qrColor: e.qrColor || "#000000",
+          }
+        : {}),
     };
   });
   return card;
