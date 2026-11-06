@@ -17,20 +17,20 @@ jobs:
 
     steps:
       - name: Check out workflow safety checks
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.workflow_sha }}
           path: operations
           persist-credentials: false
 
       - name: Check out the exact approved release
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
-          ref: d2c14b9cfe51947e2a6e51479299d0568d71c1eb
+          ref: 74aa29481c26337cc045f6b5cfdb1567dbadc8c2
           path: release
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -52,7 +52,7 @@ jobs:
 
       # A failed checkpoint upload stops the job before Wrangler can publish.
       - name: Save recovery checkpoint before deployment
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: events-recovery-${{ github.run_id }}-${{ github.run_attempt }}
           path: recovery/events-checkpoint.json
@@ -74,7 +74,7 @@ jobs:
 
       - name: Save post-deployment verification
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: events-verification-${{ github.run_id }}-${{ github.run_attempt }}
           path: recovery/*-after.json
