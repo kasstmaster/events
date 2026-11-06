@@ -611,10 +611,10 @@ try {
     .locator(".browse-row-icon path")
     .getAttribute("d");
   assert.notEqual(childIcon, adultIcon);
-  await click(p, "Uninvited Guests");
+  await click(p, "Invite Guests");
   assert.equal(
     await p.getByRole("button", { name: "Casey Example", exact: true }).count(),
-    0,
+    1,
   );
   assert.ok(
     await p
@@ -687,19 +687,36 @@ try {
     store.get("event", e1.id, host.household).invited.includes(inviteAdult.id),
     false,
   );
-  await click(p, "Uninvited Guests");
+  stage("confirmed uninviting from one chosen event");
+  await click(p, "Uninvite Guests");
+  await p.getByLabel("Select Jordan New", { exact: true }).check();
   assert.equal(
-    await p.getByRole("button", { name: "Jordan New", exact: true }).count(),
-    0,
+    await p.getByLabel("Select Riley New", { exact: true }).isChecked(),
+    true,
   );
-  assert.equal(
-    await p.getByRole("button", { name: "Riley New", exact: true }).count(),
-    0,
-  );
+  await click(p, "Select Event");
+  const beforeUninvite = store.get("event", e2.id, host.household);
+  p.once("dialog", (dialog) => dialog.dismiss());
   await p
-    .locator(".contacts-invite-tools")
-    .getByRole("button", { name: "Cancel", exact: true })
+    .locator(".contacts-event-picker")
+    .getByRole("button", { name: "Dinner Two", exact: true })
     .click();
+  assert.deepEqual(store.get("event", e2.id, host.household), beforeUninvite);
+  p.once("dialog", (dialog) => dialog.accept());
+  await p
+    .locator(".contacts-event-picker")
+    .getByRole("button", { name: "Dinner Two", exact: true })
+    .click();
+  await p
+    .getByText("Guests uninvited. No messages were sent.", { exact: true })
+    .waitFor();
+  const afterUninvite = store.get("event", e2.id, host.household);
+  assert.deepEqual(afterUninvite.invited, [guest.id]);
+  assert.deepEqual(store.get("event", e1.id, host.household).invited, [
+    guest.id,
+  ]);
+  assert.ok(store.get("guest", inviteAdult.id, host.household));
+  assert.ok(store.get("guest", inviteChild.id, host.household));
   const unchanged = store.get("event", e2.id, host.household).version;
   await click(p, "Invite Guests");
   await p.getByLabel("Select Casey Example", { exact: true }).check();
