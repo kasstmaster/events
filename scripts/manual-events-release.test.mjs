@@ -75,7 +75,7 @@ test("unauthorized API response stops without exposing body", async () => {
 test("checkpoint then verify uses GET only and excludes private settings", async () => {
   const directory = await mkdtemp(join(tmpdir(), "events-release-"));
   const file = join(directory, "checkpoint.json");
-  let version = "4e940278-b925-40ae-b123-afeb3910ed85",
+  let version = "50bec5ed-316e-4031-aa02-a23e489fa84b",
     changed = false,
     badMigration = false;
   const fetcher = async (url, options = {}) => {
