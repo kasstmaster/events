@@ -77,7 +77,7 @@ export async function featureAPI({
     fail(405, "Method not allowed.");
   }
   const inviteMatch = path.match(
-    /^\/api\/host\/events\/([^/]+)\/invite-guests$/,
+    /^\/api\/host\/events\/([^/]+)\/(invite|uninvite)-guests$/,
   );
   if (inviteMatch && method === "POST") {
     requireRole("host");
@@ -95,12 +95,21 @@ export async function featureAPI({
       if (event.version !== expected)
         fail(
           409,
-          "Event changed. Review the event list before inviting guests.",
+          "Event changed. Review the event list before changing invitations.",
         );
-      const invited = [...new Set([...event.invited, ...input.guestIds])];
-      validateInvited(invited, store, session.household);
-      const added = invited.length - event.invited.length;
-      const saved = added
+      const available = new Set(
+        store.list("guest", session.household).map((g) => g.id),
+      );
+      if (input.guestIds.some((key) => !available.has(key)))
+        fail(400, "Choose contacts in your household.");
+      const uninvite = inviteMatch[2] === "uninvite";
+      const selected = new Set(input.guestIds);
+      const invited = uninvite
+        ? event.invited.filter((key) => !selected.has(key))
+        : [...new Set([...event.invited, ...input.guestIds])];
+      validateInvited(invited, store, session.household, event);
+      const changed = Math.abs(invited.length - event.invited.length);
+      const saved = changed
         ? store.put(
             "event",
             event.id,
@@ -109,7 +118,11 @@ export async function featureAPI({
             expected,
           )
         : event;
-      return { id: saved.id, version: saved.version, added };
+      return {
+        id: saved.id,
+        version: saved.version,
+        [uninvite ? "removed" : "added"]: changed,
+      };
     });
     json(res, result);
     return true;

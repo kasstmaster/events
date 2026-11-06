@@ -50,14 +50,14 @@ let contactSearch = "",
   contactSearchOpen = false,
   contactPreferences = null,
   contactInviteMode = false,
-  contactUninvited = false,
+  contactUninvite = false,
   contactInviteEventsOpen = false,
   contactInviteSaving = false,
   contactInviteError = "";
 const contactInviteSelection = new Set();
 function resetContactInvites() {
   contactInviteMode = false;
-  contactUninvited = false;
+  contactUninvite = false;
   contactInviteEventsOpen = false;
   contactInviteSaving = false;
   contactInviteError = "";
@@ -782,11 +782,11 @@ function contactsInviteTools() {
         )
       : button("contacts-invite", H("Invite Guests"))
   }
-    <button type="button" data-action="contacts-uninvited" aria-pressed="${contactUninvited}" ${contactInviteSaving ? "disabled" : ""}>${C("Uninvited Guests")}</button>
+    <button type="button" data-action="contacts-uninvite" aria-pressed="${contactUninvite}" ${contactInviteSaving ? "disabled" : ""}>${C("Uninvite Guests")}</button>
     ${contactInviteMode ? button("contacts-invite-cancel", H("Cancel"), contactInviteSaving ? "disabled" : "") : ""}</div>
-    ${contactInviteMode ? ui`<p class="contacts-invite-status" role="status">${contactInviteSelection.size} ${C("contacts selected")}. ${C("Selecting a child also selects their designated adult.")}</p>` : ""}
+    ${contactInviteMode ? ui`<p class="contacts-invite-status" role="status">${contactInviteSelection.size} ${C("contacts selected")}. ${contactUninvite ? C("Selecting an adult also selects their children.") : C("Selecting a child also selects their designated adult.")}</p>` : ""}
     ${contactInviteError ? ui`<p role="alert">${escape(contactInviteError)}</p>` : ""}
-    ${contactInviteEventsOpen ? ui`<div class="contacts-event-picker"><h2>Select Event</h2><p>Choose an event to add the selected guests. Existing invitations and responses stay saved. No messages are sent.</p><ul class="browse-rows">${state.data.events.map((event) => row({ title: escape(event.title), meta: escape(dateLabel(event.date)), action: "contacts-invite-event", id: event.id, symbol: "list", attributes: contactInviteSaving ? "inert" : "" })).join("") || M('<li class="browse-empty">Create an event from Home first.</li>')}</ul></div>` : ""}</section>`;
+    ${contactInviteEventsOpen ? ui`<div class="contacts-event-picker"><h2>Select Event</h2><p>${contactUninvite ? C("Choose an event to uninvite the selected guests. Saved RSVPs are protected. No messages are sent.") : C("Choose an event to add the selected guests. Existing invitations and responses stay saved. No messages are sent.")}</p><ul class="browse-rows">${state.data.events.map((event) => row({ title: escape(event.title), meta: escape(dateLabel(event.date)), action: "contacts-invite-event", id: event.id, symbol: "list", attributes: contactInviteSaving ? "inert" : "" })).join("") || M('<li class="browse-empty">Create an event from Home first.</li>')}</ul></div>` : ""}</section>`;
 }
 function anyListStatusMessage(status) {
   return (
@@ -810,20 +810,17 @@ function contactsSyncTools() {
 }
 function contactsPage() {
   const guests = ordered(
-    state.data.guests.filter(
-      (g) =>
-        (!contactUninvited ||
-          !state.data.events.some((event) => event.invited.includes(g.id))) &&
-        [
-          fullName(g),
-          g.phone,
-          ...[state.data.addresses.find((a) => a.id === g.address)].flatMap(
-            (a) => [a?.label, a?.lines],
-          ),
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(contactSearch.toLowerCase()),
+    state.data.guests.filter((g) =>
+      [
+        fullName(g),
+        g.phone,
+        ...[state.data.addresses.find((a) => a.id === g.address)].flatMap(
+          (a) => [a?.label, a?.lines],
+        ),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(contactSearch.toLowerCase()),
     ),
     "manual",
   );
@@ -917,11 +914,18 @@ function toggleContactInvite(key, checked = !contactInviteSelection.has(key)) {
   if (!guest) return;
   if (checked) {
     contactInviteSelection.add(key);
-    if (guest.parent) contactInviteSelection.add(guest.parent);
+    if (!contactUninvite && guest.parent)
+      contactInviteSelection.add(guest.parent);
+    if (contactUninvite && !guest.parent)
+      for (const child of state.data.guests.filter((g) => g.parent === key))
+        contactInviteSelection.add(child.id);
   } else {
     contactInviteSelection.delete(key);
-    for (const child of state.data.guests.filter((g) => g.parent === key))
-      contactInviteSelection.delete(child.id);
+    if (contactUninvite) {
+      if (guest.parent) contactInviteSelection.delete(guest.parent);
+    } else
+      for (const child of state.data.guests.filter((g) => g.parent === key))
+        contactInviteSelection.delete(child.id);
   }
   contactInviteError = "";
   if (!contactInviteSelection.size) contactInviteEventsOpen = false;
@@ -1629,7 +1633,7 @@ document.addEventListener("click", async (event) => {
     if (
       action.startsWith("contacts-invite") ||
       [
-        "contacts-uninvited",
+        "contacts-uninvite",
         "contacts-select-event",
         "contacts-toggle-invite",
       ].includes(action)
@@ -1644,12 +1648,12 @@ document.addEventListener("click", async (event) => {
         render();
         return;
       }
-      if (action === "contacts-invite" || action === "contacts-uninvited") {
+      if (action === "contacts-invite" || action === "contacts-uninvite") {
         contactInviteMode = true;
         contactInviteEventsOpen = false;
         contactInviteError = "";
-        contactUninvited =
-          action === "contacts-uninvited" ? !contactUninvited : false;
+        contactUninvite = action === "contacts-uninvite";
+        contactInviteSelection.clear();
         render();
         return;
       }
@@ -1678,12 +1682,26 @@ document.addEventListener("click", async (event) => {
       if (action === "contacts-invite-event") {
         const event = state.data.events.find((e) => e.id === key);
         if (!event || !contactInviteSelection.size) return;
+        const uninvite = contactUninvite;
+        if (
+          uninvite &&
+          !confirm(
+            String(C("Uninvite the selected guests from")) +
+              " “" +
+              event.title +
+              "”? " +
+              String(C("Saved RSVPs are protected. No messages will be sent.")),
+          )
+        )
+          return;
         contactInviteSaving = true;
         contactInviteError = "";
         render();
         try {
           const result = await api(
-            "/api/host/events/" + event.id + "/invite-guests",
+            "/api/host/events/" +
+              event.id +
+              (uninvite ? "/uninvite-guests" : "/invite-guests"),
             {
               method: "POST",
               version: event.version,
@@ -1693,15 +1711,19 @@ document.addEventListener("click", async (event) => {
           resetContactInvites();
           await load();
           notify(
-            result.added
-              ? C("Guests invited. No messages were sent.")
-              : C(
-                  "Selected guests are already invited. No messages were sent.",
-                ),
+            uninvite
+              ? result.removed
+                ? C("Guests uninvited. No messages were sent.")
+                : C("Selected guests were not invited. No messages were sent.")
+              : result.added
+                ? C("Guests invited. No messages were sent.")
+                : C(
+                    "Selected guests are already invited. No messages were sent.",
+                  ),
           );
         } catch (error) {
           contactInviteError = error.message;
-          // Rebase the additive operation only; keep the selection and require a new click.
+          // Refresh versions while retaining selection; require a fresh click and confirmation.
           try {
             state.data = await api("/api/host");
           } catch {}

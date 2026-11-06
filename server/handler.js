@@ -173,7 +173,7 @@ function guestInput(input, store, household, existing) {
     address,
   };
 }
-function eventInvitations(invited, store, household) {
+function eventInvitations(invited, store, household, existing) {
   if (
     !Array.isArray(invited) ||
     invited.length > 10000 ||
@@ -187,10 +187,19 @@ function eventInvitations(invited, store, household) {
     if (!guest || (guest.parent && !invited.includes(guest.parent)))
       fail(400, "Invite each child with their designated adult.");
   }
+  if (existing) {
+    for (const response of store
+      .list("response", household)
+      .filter((r) => r.event === existing.id))
+      if (
+        Object.keys(response.attendance).some((key) => !invited.includes(key))
+      )
+        fail(409, "Guests with an RSVP must remain invited.");
+  }
   return invited;
 }
 function eventInput(input, store, household, existing) {
-  eventInvitations(input.invited, store, household);
+  eventInvitations(input.invited, store, household, existing);
   if (!Array.isArray(input.menu) || input.menu.length > 500)
     fail(400, "Invalid menu.");
   const menu = input.menu.map((item) => {
@@ -223,12 +232,6 @@ function eventInput(input, store, household, existing) {
     for (const response of store
       .list("response", household)
       .filter((r) => r.event === existing.id)) {
-      if (
-        Object.keys(response.attendance).some(
-          (key) => !input.invited.includes(key),
-        )
-      )
-        fail(409, "Guests with an RSVP must remain invited.");
       if (
         Object.keys(response.claims).some(
           (key) => !menu.some((m) => m.id === key),
