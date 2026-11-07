@@ -1677,6 +1677,14 @@ document.addEventListener("click", async (event) => {
       !(await appearance.leave())
     )
       return;
+
+    const detailsForm = document.querySelector(
+      ".inline-household-details[data-dirty=true]",
+    );
+    if (detailsForm && !target.closest(".inline-household-details")) {
+      if (!confirm(String(C("Discard unsaved details changes?")))) return;
+      detailsForm.dataset.dirty = "false";
+    }
     if (
       [
         "home",
@@ -1688,13 +1696,6 @@ document.addEventListener("click", async (event) => {
       ].includes(action)
     )
       state.settingsOpen = false;
-    const detailsForm = document.querySelector(
-      ".inline-household-details[data-dirty=true]",
-    );
-    if (detailsForm && !target.closest(".inline-household-details")) {
-      if (!confirm(String(C("Discard unsaved details changes?")))) return;
-      detailsForm.dataset.dirty = "false";
-    }
     const guestForm = document.querySelector("form[data-form=guest]");
     if (guestForm && !target.closest("form[data-form=guest]")) {
       if (action === "edit-guest" && key === state.editingGuest?.id) {

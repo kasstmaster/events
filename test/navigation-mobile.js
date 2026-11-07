@@ -1448,7 +1448,7 @@ try {
     unchangedDetailsVersion,
   );
   p.once("dialog", (d) => d.dismiss());
-  await p.getByRole("button", { name: "Back", exact: true }).click();
+  await p.locator(".toolbar [data-action=home]").click();
   assert.equal(await detailsName.inputValue(), "Unsaved household draft");
   p.once("dialog", (d) => d.accept());
   await p.getByRole("button", { name: "Back", exact: true }).click();
