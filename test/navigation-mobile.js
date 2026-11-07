@@ -933,6 +933,11 @@ try {
         .evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
       "Every count fits without a summary scrollbar",
     );
+    await p.waitForFunction(() =>
+      [...document.querySelectorAll(".event-summary .totals span")].every(
+        (el) => el.scrollWidth <= el.clientWidth + 1,
+      ),
+    );
     assert.ok(
       await p
         .locator(".event-summary .totals span")
@@ -1230,6 +1235,21 @@ try {
   );
   await option(p, "Custom");
   await p.getByLabel("Appearance categories", { exact: true }).waitFor();
+  await p
+    .getByLabel("Appearance categories", { exact: true })
+    .getByRole("button", { name: "Text", exact: true })
+    .click();
+  await p
+    .getByLabel("Appearance actions", { exact: true })
+    .getByRole("button", { name: "Font", exact: true })
+    .click();
+  await p.getByLabel("Text font", { exact: true }).selectOption("Verdana");
+  await p.waitForFunction(() =>
+    [...document.querySelectorAll(".event-summary .totals span")].every(
+      (el) => el.scrollWidth <= el.clientWidth + 1,
+    ),
+  );
+
   await click(p, "Cancel");
   stage(
     "Back follows visited pages, including Contacts and cross-section workspace navigation",

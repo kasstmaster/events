@@ -177,6 +177,7 @@ function applyDesign(settings = {}, target = document.documentElement) {
     "--background-image",
     d.backgroundImage ? `url("${d.backgroundImage}")` : "none",
   );
+  fitEventSummary();
 }
 let loadGeneration = 0;
 const isEditing = () =>
@@ -2357,7 +2358,33 @@ const guestAddresses = addressPicker({
 guestAddresses.bind();
 document.addEventListener("input", (event) => guestAddresses.input(event));
 let chromeObserver, observedTop, observedFooter;
+function fitEventSummary() {
+  const items = [
+    ...document.querySelectorAll(".top-shell .event-summary .totals > div"),
+  ];
+  if (!items.length) return;
+  for (const item of items) item.style.removeProperty("font-size");
+  const context = document.createElement("canvas").getContext("2d");
+  if (!context) return;
+  let ratio = 1;
+  const base = parseFloat(getComputedStyle(items[0]).fontSize);
+  for (const item of items) {
+    const available = item.getBoundingClientRect().width - 1;
+    for (const label of item.children) {
+      context.font = getComputedStyle(label).font;
+      const width = Math.max(
+        0,
+        ...label.textContent
+          .split(/\s+/)
+          .map((word) => context.measureText(word).width),
+      );
+      if (width) ratio = Math.min(ratio, Math.max(0, available) / width);
+    }
+  }
+  for (const item of items) item.style.fontSize = `${base * ratio}px`;
+}
 function measureChrome() {
+  fitEventSummary();
   document.body.classList.toggle(
     "editing-active",
     appearance.active() ||
@@ -2384,6 +2411,8 @@ function measureChrome() {
     observedFooter = footer;
   }
 }
+window.addEventListener("resize", measureChrome);
+document.fonts?.ready.then(measureChrome);
 const appearance = appearanceEditor({
   field,
   select,
