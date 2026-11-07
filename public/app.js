@@ -358,6 +358,7 @@ async function load({ background = false } = {}) {
       lastSync: new Date(),
     });
     if (!unchanged) renderRefresh(preserveScroll);
+    else $("#sync-status")?.replaceChildren();
     if (syncCompleted && state.view === "contacts")
       notify(C("Contacts synced."));
   } catch (error) {

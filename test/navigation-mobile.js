@@ -584,17 +584,22 @@ try {
     origin + "/h/" + household.slug,
   );
   stage("shared Contacts rows, search, menus and formatting");
-  let releasePreferences;
+  let releasePreferences, preferencesContinued;
+  const preferencesDone = new Promise(
+    (resolve) => (preferencesContinued = resolve),
+  );
   const preferencesGate = new Promise(
     (resolve) => (releasePreferences = resolve),
   );
   await p.route("**/api/family/preferences", async (route) => {
     await preferencesGate;
     await route.continue();
+    preferencesContinued();
   });
   await click(p, "Contacts");
   await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
   releasePreferences();
+  await preferencesDone;
   await p.unroute("**/api/family/preferences");
   assert.equal(
     await p
