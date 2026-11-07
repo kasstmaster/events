@@ -2674,11 +2674,17 @@ body #app .page-appearance-settings .mode-option {
 }
 .settings-details {
   margin-top: 20px;
+  padding: 0 16px;
 }
 @media (max-width: 480px) {
-  .settings-mode-row .mode-option {
+  body #app .settings-mode-row .mode-option {
     flex-direction: column;
     text-align: center;
     font-size: 13px;
   }
+}
+
+body #app .settings-mode-row .mode-option span {
+  font-size: inherit;
+  font-weight: inherit;
 }
