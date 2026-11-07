@@ -927,16 +927,21 @@ try {
   assert.equal(await p.locator(".event-summary").count(), 1);
   for (const width of [320, 390, 1440]) {
     await p.setViewportSize({ width, height: 900 });
+    // Viewport resize and the shared ResizeObserver finish on the next browser frame.
+    await p.waitForFunction(() => {
+      const summary = document.querySelector(".event-summary");
+      return (
+        summary.scrollWidth <= summary.clientWidth + 1 &&
+        [...summary.querySelectorAll(".totals span")].every(
+          (el) => el.scrollWidth <= el.clientWidth + 1,
+        )
+      );
+    });
     assert.ok(
       await p
         .locator(".event-summary")
         .evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
       "Every count fits without a summary scrollbar",
-    );
-    await p.waitForFunction(() =>
-      [...document.querySelectorAll(".event-summary .totals span")].every(
-        (el) => el.scrollWidth <= el.clientWidth + 1,
-      ),
     );
     assert.ok(
       await p
