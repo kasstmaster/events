@@ -88,6 +88,7 @@ export function design(value = {}) {
     else if (
       key.endsWith("Color") ||
       key.endsWith("Background") ||
+      key.endsWith("Surface") ||
       ["background", "container", "buttonText"].includes(key)
     ) {
       if (!/^#[0-9a-f]{6}$/i.test(val)) fail(400, "Choose a valid color.");
@@ -104,19 +105,28 @@ export function design(value = {}) {
       )
         fail(400, "Choose a supported font.");
       result[key] = val;
-    } else if (["titleStyle", "descriptionStyle", "textStyle"].includes(key)) {
+    } else if (
+      [
+        "titleStyle",
+        "descriptionStyle",
+        "textStyle",
+        "toolbarLabelStyle",
+        "buttonLabelStyle",
+      ].includes(key)
+    ) {
       if (!["normal", "bold", "italic", "boldItalic"].includes(val))
         fail(400, "Choose a supported text style.");
       result[key] = val;
-    } else if (key === "borderStyle") {
+    } else if (key === "borderStyle" || key.endsWith("BorderStyle")) {
       if (!["solid", "dashed", "dotted", "none"].includes(val))
         fail(400, "Choose a supported border style.");
       result[key] = val;
     } else {
       const [min, max] =
-        key === "borderWidth"
+        key === "borderWidth" || key.endsWith("BorderWidth")
           ? [0, 6]
-          : key === "containerImageOpacity"
+          : key === "containerImageOpacity" ||
+              ["toolbarOpacity", "buttonOpacity"].includes(key)
             ? [0, 100]
             : key === "opacity"
               ? [35, 100]

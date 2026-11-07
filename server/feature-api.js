@@ -227,7 +227,7 @@ export async function featureAPI({
   ) {
     // Preview reads use POST only to keep selected identifiers out of URLs; nothing is persisted.
     const hostPreview = path === "/api/host/preview";
-    requireRole(hostPreview ? "host" : "admin");
+    requireRole("admin");
     const input = await body(req);
     if (hostPreview && input.household && input.household !== session.household)
       fail(404, "Household not found.");

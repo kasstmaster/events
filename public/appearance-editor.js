@@ -28,9 +28,13 @@ export function appearanceEditor({
     Object.fromEntries(appearanceKeys.map((k) => [k, d[k]]));
   function controls() {
     const d = editing.draft,
-      prefix = { Titles: "title", Description: "description", Text: "text" }[
-        category
-      ];
+      prefix = {
+        Titles: "title",
+        Description: "description",
+        Text: "text",
+        Toolbars: "toolbarLabel",
+        Buttons: "buttonLabel",
+      }[category];
     if (action === "copy")
       return (
         select(
@@ -74,6 +78,47 @@ export function appearanceEditor({
             ["boldItalic", C("Bold italic")],
           ],
           d[prefix + "Style"],
+        );
+    }
+    if (["Toolbars", "Buttons"].includes(category)) {
+      const prefix = category === "Toolbars" ? "toolbar" : "button";
+      if (action === "Background")
+        return (
+          field(
+            H(category + " background"),
+            prefix + "Surface",
+            d[prefix + "Surface"],
+            "color",
+          ) +
+          field(
+            H(category + " opacity (%)"),
+            prefix + "Opacity",
+            d[prefix + "Opacity"],
+            "number",
+            'min="0" max="100"',
+          )
+        );
+      if (action === "Border")
+        return (
+          field(
+            H(category + " border color"),
+            prefix + "BorderColor",
+            d[prefix + "BorderColor"],
+            "color",
+          ) +
+          field(
+            H(category + " border width"),
+            prefix + "BorderWidth",
+            d[prefix + "BorderWidth"],
+            "number",
+            'min="0" max="6"',
+          ) +
+          select(
+            H(category + " border style"),
+            prefix + "BorderStyle",
+            ["solid", "dashed", "dotted", "none"].map((x) => [x, C(x)]),
+            d[prefix + "BorderStyle"],
+          )
         );
     }
     if (category === "Background") {
@@ -162,7 +207,9 @@ export function appearanceEditor({
         ? ["Color", "Image"]
         : category === "Containers"
           ? ["Background", "Image", "Border"]
-          : ["Font", "Color", "Style", "Size"];
+          : ["Toolbars", "Buttons"].includes(category)
+            ? ["Background", "Border", "Font", "Color", "Style", "Size"]
+            : ["Font", "Color", "Style", "Size"];
     const container = mount();
     const options = ui`<details class="appearance-options"><summary>${C("Formatting options")}</summary>${editing.sources.length ? button("action", "Copy Formatting", "copy") : ""}${button("reset", "Reset to Defaults")}${!category ? button("save", "Save") + button("cancel", "Cancel") : ""}</details>`;
     container.innerHTML = ui`<div class="appearance-categories" role="toolbar" aria-label="Appearance categories">${appearanceCategories.map((c) => ui`<button type="button" data-action="appearance-category" data-id="${c}" aria-pressed="${category === c}">${C(c)}</button>`).join("")}</div>${editing.contentActions?.length ? ui`<div class="appearance-content-actions" role="toolbar" aria-label="Event content">${editing.contentActions.map((item) => ui`<button type="button" data-action="${item.action}">${C(item.label)}</button>`).join("")}</div>` : ""}${category ? ui`<div class="appearance-actions" role="toolbar" aria-label="Appearance actions">${actions.map((a) => button("action", a, a)).join("")}${button("save", "Save")}${button("cancel", "Cancel")}${options}</div>` : ""}${action ? ui`<div class="appearance-controls" role="group" aria-label="Appearance controls">${controls()}</div>` : ""}<span class="appearance-error" role="alert"></span>`;

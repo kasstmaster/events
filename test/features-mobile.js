@@ -325,6 +325,7 @@ try {
       .inputValue(),
     "#123456",
   );
+  await setAppearance(h.page, "Toolbars", "Color", "Toolbars color", "#456789");
   await saveAppearance(h.page);
   for (const selector of [
     ".hero .eyebrow",

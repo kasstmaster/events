@@ -415,8 +415,8 @@ export function featureTools(ctx) {
     modal(
       role() === "admin"
         ? C("Shared card templates")
-        : C("Your cards & templates"),
-      ui`<p>One editor for invitations, thank-you cards and holiday cards. Use a desktop or larger tablet for detailed layout work.</p>${role() === "admin" ? "" : button("new-card", H("Create card / template"), "", "")}<h3>${role() === "admin" ? C("Shared templates") : C("Saved cards")}</h3><ul>${records.map((r) => ui`<li>${escape(r.name)} ${button("edit-card", H("Open"), `data-id="${r.id}"`, "quiet")}${button("remove-card", H("Remove"), `data-id="${r.id}"`, "quiet")}</li>`).join("") || M("<li>Nothing saved yet.</li>")}</ul>${role() === "host" ? ui`<h3>Start from a template</h3><div class="stack">${templates.map((t) => button("use-card-template", escape(t.name), `data-id="${t.id}"`)).join("")}</div>` : ""}`,
+        : C(selectedEvent() ? "Invitation Cards" : "Your cards & templates"),
+      ui`${role() === "host" && selectedEvent() ? button("event-template", H("Edit invitation")) : ""}<p>One editor for invitations, thank-you cards and holiday cards. Use a desktop or larger tablet for detailed layout work.</p>${role() === "admin" ? "" : button("new-card", H("Create card / template"), "", "")}<h3>${role() === "admin" ? C("Shared templates") : C("Saved cards")}</h3><ul>${records.map((r) => ui`<li>${escape(r.name)} ${button("edit-card", H("Open"), `data-id="${r.id}"`, "quiet")}${button("remove-card", H("Remove"), `data-id="${r.id}"`, "quiet")}</li>`).join("") || M("<li>Nothing saved yet.</li>")}</ul>${role() === "host" ? ui`<h3>Start from a template</h3><div class="stack">${templates.map((t) => button("use-card-template", escape(t.name), `data-id="${t.id}"`)).join("")}</div>` : ""}`,
     );
     state.cardPrivateTemplates =
       role() === "host"
@@ -832,6 +832,7 @@ export function featureTools(ctx) {
         return true;
       }
       if (action === "preview-guest") {
+        if (role() !== "admin" && !state.session.platformAdmin) return true;
         await chooseScope(true);
         return true;
       }

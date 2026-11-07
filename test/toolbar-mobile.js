@@ -328,7 +328,15 @@ try {
   assert.equal(await p.locator("#editor[open]").count(), 0);
   assert.deepEqual(
     await p.locator(".appearance-categories button").allTextContents(),
-    ["Background", "Titles", "Description", "Text", "Containers"],
+    [
+      "Background",
+      "Titles",
+      "Description",
+      "Text",
+      "Containers",
+      "Toolbars",
+      "Buttons",
+    ],
   );
   await editValue(p, "Background", "Color", "Background color", "#ddeeff");
   assert.equal(
@@ -343,7 +351,7 @@ try {
   await editValue(p, "Text", "Color", "Text color", "#123456");
   assert.equal(
     await p
-      .locator(".toolbar button")
+      .locator(".hero .eyebrow")
       .first()
       .evaluate((el) => getComputedStyle(el).color),
     "rgb(18, 52, 86)",
@@ -438,6 +446,66 @@ try {
     "none",
     "Editing toolbars stay solid",
   );
+  await editValue(
+    p,
+    "Toolbars",
+    "Background",
+    "Toolbars background",
+    "#dde0e3",
+  );
+  await editValue(p, "Buttons", "Background", "Buttons background", "#eef0f2");
+  await p.getByLabel("Buttons opacity (%)", { exact: true }).fill("100");
+  assert.equal(
+    await p
+      .locator(".top-shell")
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+    "rgb(221, 224, 227)",
+  );
+  assert.deepEqual(
+    await p
+      .getByRole("button", { name: "Open Contacts", exact: true })
+      .evaluate((el) => {
+        const canvas = document.createElement("canvas"),
+          ctx = canvas.getContext("2d");
+        ctx.fillStyle = getComputedStyle(el).backgroundColor;
+        ctx.fillRect(0, 0, 1, 1);
+        return [...ctx.getImageData(0, 0, 1, 1).data];
+      }),
+    [238, 240, 242, 255],
+  );
+  assert.equal(
+    await p
+      .locator(".toolbar button")
+      .first()
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+    "rgba(0, 0, 0, 0)",
+  );
+  assert.equal(
+    await p
+      .locator(".toolbar button")
+      .first()
+      .evaluate((el) => getComputedStyle(el).borderTopWidth),
+    "0px",
+  );
+  await p.getByText("Formatting options", { exact: true }).click();
+  const options = p.locator(".appearance-options");
+  assert.ok(
+    await options.evaluate((el) => {
+      const a = el.querySelector('[data-id="copy"]').getBoundingClientRect(),
+        b = el
+          .querySelector('[data-action="appearance-reset"]')
+          .getBoundingClientRect();
+      return b.top >= a.bottom;
+    }),
+  );
+  assert.equal(
+    await options
+      .locator("button")
+      .first()
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+    "rgba(0, 0, 0, 0)",
+  );
+  await p.getByText("Formatting options", { exact: true }).click();
   await geometry(p);
   await click(p, "Save");
   await p.getByText("Appearance saved.", { exact: true }).waitFor();
@@ -568,7 +636,7 @@ try {
     "Family",
     "Contacts",
     "Edit Event",
-    "Share",
+    "Share Invitation",
     "Settings",
   ]);
   assert.equal(await p.locator(".top-shell [data-action=print]").count(), 1);
@@ -863,7 +931,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: fixed shared chrome, landing Home, inline contacts/groups, five-category live drafts, Save/Cancel, event independence, administrator defaults and role permissions.",
+    "PASS: fixed shared chrome, landing Home, inline contacts/groups, seven-category live drafts, Save/Cancel, event independence, administrator defaults and role permissions.",
   );
 } catch (error) {
   console.error("Toolbar browser failed during " + phase, error);

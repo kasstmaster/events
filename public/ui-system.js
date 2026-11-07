@@ -1,5 +1,23 @@
 // Shared schema: content, role formatting and layout remain independent data.
 export const roleDefaults = {
+  toolbarSurface: "#fffdf9",
+  toolbarOpacity: 96,
+  toolbarBorderColor: "#d2dbd4",
+  toolbarBorderWidth: 1,
+  toolbarBorderStyle: "solid",
+  toolbarLabelColor: "#263c35",
+  toolbarLabelFont: "system-ui",
+  toolbarLabelSize: 17,
+  toolbarLabelStyle: "normal",
+  buttonSurface: "#fffdf9",
+  buttonOpacity: 96,
+  buttonBorderColor: "#d2dbd4",
+  buttonBorderWidth: 1,
+  buttonBorderStyle: "solid",
+  buttonLabelColor: "#263c35",
+  buttonLabelFont: "system-ui",
+  buttonLabelSize: 17,
+  buttonLabelStyle: "normal",
   background: "#f3eee8",
   backgroundImage: "",
   containerImage: "",
@@ -128,6 +146,23 @@ export function categoryDesign(value = {}) {
       for (const alias of aliases) result[alias] = value[source];
     }
   }
+  // Legacy layers retain their rendered appearance; new editors persist independent roles.
+  for (const prefix of ["toolbar", "button"]) {
+    const legacy = {
+      Surface: result.container,
+      Opacity: result.opacity,
+      BorderColor: result.borderColor,
+      BorderWidth: result.borderWidth,
+      BorderStyle: result.borderStyle,
+      LabelColor: result.textColor,
+      LabelFont: result.textFont,
+      LabelSize: result.textSize,
+      LabelStyle: result.textStyle,
+    };
+    for (const [suffix, fallback] of Object.entries(legacy))
+      if (!Object.hasOwn(result, prefix + suffix) && fallback !== undefined)
+        result[prefix + suffix] = fallback;
+  }
   return result;
 }
 export const appearanceCategories = [
@@ -136,8 +171,25 @@ export const appearanceCategories = [
   "Description",
   "Text",
   "Containers",
+  "Toolbars",
+  "Buttons",
 ];
+export const independentAppearanceKeys = ["toolbar", "button"].flatMap(
+  (prefix) =>
+    [
+      "Surface",
+      "Opacity",
+      "BorderColor",
+      "BorderWidth",
+      "BorderStyle",
+      "LabelColor",
+      "LabelFont",
+      "LabelSize",
+      "LabelStyle",
+    ].map((suffix) => prefix + suffix),
+);
 export const appearanceKeys = [
+  ...independentAppearanceKeys,
   "background",
   "backgroundImage",
   "titleColor",
@@ -257,6 +309,13 @@ export function appearancePreset(mode, defaults = roleDefaults) {
   const base = resolveUI({ design: defaults }).design;
   if (mode === "dark")
     Object.assign(base, {
+      ...Object.fromEntries(
+        ["toolbar", "button"].flatMap((p) => [
+          [p + "Surface", "#25282b"],
+          [p + "LabelColor", "#f0f2ef"],
+          [p + "BorderColor", "#59615d"],
+        ]),
+      ),
       background: "#151719",
       backgroundImage: "",
       container: "#25282b",

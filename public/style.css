@@ -2388,3 +2388,251 @@ body.editing-active
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+/* Independent surfaces and label styles; legacy categories migrate in ui-system. */
+body
+  :is(
+    .toolbar,
+    .top-shell,
+    .appearance-categories,
+    .appearance-actions,
+    .appearance-controls,
+    .appearance-content-actions,
+    .browse-menu > div,
+    .dialog-head,
+    .dialog-foot,
+    .card-controls
+  ) {
+  background-color: var(--toolbar-panel);
+  border-color: var(--toolbar-border-color);
+  border-width: var(--toolbar-border-width);
+  border-style: var(--toolbar-border-style);
+  color: var(--toolbar-label-color);
+  font-family: var(--toolbar-label-font);
+}
+body :is(#app, #editor) :is(button, .button) {
+  background-color: var(--button-panel);
+  border-color: var(--button-border-color);
+  border-width: var(--button-border-width);
+  border-style: var(--button-border-style);
+  color: var(--button-label-color);
+  font-family: var(--button-label-font);
+  font-size: var(--button-label-size);
+  font-weight: var(--button-label-weight);
+  font-style: var(--button-label-style);
+}
+body
+  :is(
+    button,
+    .button,
+    .toolbar,
+    .top-shell,
+    .appearance-categories,
+    .appearance-actions,
+    .appearance-controls,
+    .appearance-content-actions,
+    .browse-menu > div,
+    .dialog-head,
+    .dialog-foot,
+    .card-controls
+  )::before {
+  background-image: none;
+}
+body
+  #app
+  :is(.toolbar, .browse-menu, [role="menu"], .appearance-options)
+  :is(button, .button, summary) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: var(--toolbar-label-color);
+  font-family: var(--toolbar-label-font);
+  font-size: var(--toolbar-label-size);
+  font-weight: var(--toolbar-label-weight);
+  font-style: var(--toolbar-label-style);
+}
+body
+  #app
+  #appearance-toolbar
+  :is(
+    .appearance-categories,
+    .appearance-actions,
+    .appearance-controls,
+    .appearance-content-actions
+  )
+  > button {
+  background: var(--button-panel);
+  border: var(--button-border-width) var(--button-border-style)
+    var(--button-border-color);
+  color: var(--button-label-color);
+  font-family: var(--button-label-font);
+  font-size: var(--button-label-size);
+  font-weight: var(--button-label-weight);
+  font-style: var(--button-label-style);
+}
+body #app .mode-option {
+  font-weight: 700;
+}
+body.editing-active
+  #app
+  :is(
+    .top-shell,
+    .toolbar,
+    .card-controls,
+    .browse-menu[open] > div,
+    .appearance-options[open]
+  ) {
+  background-color: var(--toolbar-surface);
+}
+.appearance-options > button {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+.home-workspace-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+body
+  #app
+  .home-workspace-cards
+  > :is([data-home-card="contacts"], [data-home-card="cards"])
+  > p {
+  font-size: 0.75em;
+}
+body
+  #app
+  .home-workspace-cards
+  > :is([data-home-card="contacts"], [data-home-card="cards"]) {
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+body
+  #app
+  .home-workspace-cards
+  > :is([data-home-card="contacts"], [data-home-card="cards"])
+  :is(button, h2) {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.card-editor-header {
+  padding-top: 14px;
+}
+.address-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+.address-title-row [data-action="address-notes"] {
+  margin-left: auto;
+}
+.address-title-row [data-action="address-notes"] span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.contact-mailing-address {
+  display: block;
+  white-space: pre-wrap;
+  font-weight: normal;
+}
+.contacts-invite-tools > .row {
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+.contacts-invite-tools > .row > button,
+.contacts-invite-tools .contacts-sync button {
+  min-width: 0;
+  font-size: clamp(10px, 3vw, var(--button-label-size));
+  padding: 8px;
+}
+.contacts-invite-tools .contacts-sync {
+  display: contents;
+}
+.contacts-invite-tools .contacts-sync p {
+  flex-basis: 100%;
+}
+.contacts-invite-tools .contacts-sync p:empty {
+  display: none;
+}
+
+body #app :is(.toolbar, .top-shell) .nav-control span {
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.85em;
+}
+body #app .brand,
+body #app .brand span {
+  color: var(--toolbar-label-color);
+  font-family: var(--toolbar-label-font);
+}
+.appearance-options {
+  background-color: var(--toolbar-panel);
+}
+body #app .address-title-row [data-action="address-notes"] {
+  background: transparent;
+  border: 0;
+}
+
+.top-shell .event-summary .totals > div {
+  color: var(--toolbar-label-color);
+  font-family: var(--toolbar-label-font);
+  font-style: var(--toolbar-label-style);
+  font-weight: var(--toolbar-label-weight);
+  font-size: clamp(8px, 5cqw, var(--toolbar-label-size));
+}
+.top-shell .event-summary .totals :is(strong, span) {
+  color: inherit;
+  font-family: inherit;
+}
+body #app .brand {
+  font-size: calc(var(--toolbar-label-size) * 1.45);
+}
+body #app .top-shell #top-navigation .nav-control {
+  background: transparent;
+  border: 0;
+  color: var(--toolbar-label-color);
+  font-family: var(--toolbar-label-font);
+  font-size: var(--toolbar-label-size);
+}
+@media (max-width: 600px) {
+  body #app .brand {
+    font-size: calc(var(--toolbar-label-size) * 1.2);
+  }
+}
+@media (max-width: 480px) {
+  body #app .event-toolbar .brand {
+    font-size: calc(var(--toolbar-label-size) * 0.9);
+  }
+}
+body #app .contacts-select-event {
+  background: #1f7a3f;
+  color: #ffffff;
+  border-color: #1f7a3f;
+}
+body #app [role="menu"] button.mode-option {
+  font-weight: 700;
+}
+
+.address-title-row {
+  flex-wrap: nowrap;
+}
+.address-title-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#contacts-sync-status:empty {
+  display: none;
+}
+.nav-control svg {
+  width: calc(var(--button-label-size) * 1.3);
+  height: calc(var(--button-label-size) * 1.3);
+}
+:is(.toolbar, .top-shell #top-navigation) .nav-control svg,
+.browse-menu summary svg {
+  width: calc(var(--toolbar-label-size) * 1.3);
+  height: calc(var(--toolbar-label-size) * 1.3);
+}

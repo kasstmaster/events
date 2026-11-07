@@ -272,6 +272,7 @@ try {
   stage("host home, per-event actions and native share");
   const p = await page(owner, 1440);
   await p.locator("[data-home-card]").first().waitFor();
+  assert.equal(await p.locator("[data-action=preview-guest]").count(), 0);
   assert.deepEqual(
     await p
       .locator("[data-home-card]")
@@ -298,6 +299,18 @@ try {
     2,
   );
   await p.setViewportSize({ width: 390, height: 900 });
+  assert.ok(
+    await p
+      .locator(".home-workspace-cards")
+      .evaluate(
+        (el) =>
+          Math.abs(
+            el.children[0].getBoundingClientRect().top -
+              el.children[1].getBoundingClientRect().top,
+          ) < 2,
+      ),
+    "Contacts and Cards stay paired on phones",
+  );
   assert.equal(
     await p
       .locator(".home-events")
@@ -352,8 +365,7 @@ try {
       "View Event",
       "RSVPs",
       "Reminders",
-      "Cards",
-      "Invitation",
+      "Invitation Cards",
     ]);
     await card.getByRole("button", { name: "RSVPs", exact: true }).click();
     await p.getByRole("dialog").getByText(title, { exact: true }).waitFor();
@@ -367,14 +379,21 @@ try {
       .waitFor();
     assert.ok(requests.includes(`/api/host/events/${event.id}/reminders`));
     await click(p, "Close editor");
-    await card.getByRole("button", { name: "Cards", exact: true }).click();
+    await card
+      .getByRole("button", { name: "Invitation Cards", exact: true })
+      .click();
     await click(p, "Create card / template");
     await p
       .getByRole("heading", { name: "Edit your card", exact: true })
       .waitFor();
     assert.equal(await p.locator('[name="cardEvent"]').inputValue(), event.id);
     await click(p, "Close editor");
-    await card.getByRole("button", { name: "Invitation", exact: true }).click();
+    await card
+      .getByRole("button", { name: "Invitation Cards", exact: true })
+      .click();
+    await p
+      .getByRole("button", { name: "Edit invitation", exact: true })
+      .click();
     await p
       .getByRole("heading", { name: "Edit your card", exact: true })
       .waitFor();
@@ -950,7 +969,7 @@ try {
     "Family",
     "Contacts",
     "Edit Event",
-    "Share",
+    "Share Invitation",
     "Settings",
   ]);
   assert.equal(await p.locator(".event-summary").count(), 1);
@@ -1069,11 +1088,9 @@ try {
   );
   await click(p, "Cancel");
   await click(p, "Edit Event");
-  assert.equal(await p.locator(".appearance-categories button").count(), 5);
-  await p
-    .locator(".appearance-content-actions")
-    .getByRole("button", { name: "Menu", exact: true })
-    .click();
+  assert.equal(await p.locator(".appearance-categories button").count(), 7);
+  await click(p, "Cancel");
+  await click(p, "Edit event details");
   await p.getByText("Table templates", { exact: true }).waitFor();
   await p
     .getByLabel("Table template name", { exact: true })
@@ -1089,11 +1106,15 @@ try {
     .click();
   assert.equal(store.list("table-template", host.household).length, 1);
   await click(p, "Cancel");
-  await click(p, "Edit Event");
+  await click(p, "Home");
   await p
-    .locator(".appearance-content-actions")
-    .getByRole("button", { name: "Invitation", exact: true })
+    .locator("article.card")
+    .filter({
+      has: p.getByRole("heading", { name: "Dinner Two", exact: true }),
+    })
+    .getByRole("button", { name: "Invitation Cards", exact: true })
     .click();
+  await p.getByRole("button", { name: "Edit invitation", exact: true }).click();
   await p
     .getByRole("heading", { name: "Edit your card", exact: true })
     .waitFor();
@@ -1255,6 +1276,25 @@ try {
     })
     .getByRole("button", { name: "View Event", exact: true })
     .click();
+  await p.getByLabel("Sorting and options", { exact: true }).click();
+  assert.equal(
+    await p
+      .locator(
+        "#top-navigation [data-action=event-template],#top-navigation [data-action=event-table]",
+      )
+      .count(),
+    0,
+  );
+  assert.ok(
+    await p
+      .locator(".mode-option")
+      .evaluateAll(
+        (es) =>
+          es.length === 3 &&
+          es.every((el) => Number(getComputedStyle(el).fontWeight) >= 700),
+      ),
+  );
+  await p.getByLabel("Sorting and options", { exact: true }).click();
   await option(p, "Dark Mode");
   await p.waitForFunction(
     () => getComputedStyle(document.body).backgroundColor === "rgb(21, 23, 25)",
@@ -1267,7 +1307,7 @@ try {
   await p.waitForFunction(
     () => getComputedStyle(document.body).backgroundColor !== "rgb(21, 23, 25)",
   );
-  await option(p, "Custom");
+  await option(p, "Custom Colors Mode");
   await p.getByLabel("Appearance categories", { exact: true }).waitFor();
   await p
     .getByLabel("Appearance categories", { exact: true })
