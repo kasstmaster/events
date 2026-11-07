@@ -174,11 +174,11 @@ try {
     2,
   );
   await click(kid.page, "Hide Completed");
-  await kid.page.getByLabel("Sort", { exact: true }).click();
+  await kid.page.getByLabel("Sorting and options", { exact: true }).click();
   await kid.page
     .getByRole("menuitem", { name: "Show All", exact: true })
     .waitFor();
-  await kid.page.getByLabel("Sort", { exact: true }).click();
+  await kid.page.getByLabel("Sorting and options", { exact: true }).click();
   assert.equal(
     await kid.page
       .locator(".family-item-title")
