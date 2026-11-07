@@ -167,7 +167,7 @@ export function appearanceEditor({
             "opacity",
             d.opacity,
             "number",
-            'min="35" max="100"',
+            'min="0" max="100"',
           )
         );
       if (action === "Border")

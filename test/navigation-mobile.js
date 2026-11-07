@@ -238,6 +238,19 @@ async function click(p, name) {
   await clickNavigation(p, name);
 }
 async function option(p, name) {
+  if (
+    [
+      "Edit House",
+      "Edit Event",
+      "Light Mode",
+      "Dark Mode",
+      "Default Mode",
+      "Custom Colors Mode",
+    ].includes(name)
+  ) {
+    await click(p, name);
+    return;
+  }
   await p.locator('summary[aria-label="Sorting and options"]').click();
   await p
     .getByRole(
@@ -1092,6 +1105,20 @@ try {
   await click(p, "Cancel");
   await click(p, "Edit event details");
   await p.getByText("Table templates", { exact: true }).waitFor();
+  assert.ok(
+    await p.locator("form[data-form=event]").evaluate((form) => {
+      const sections = [
+        ...form.querySelectorAll(":scope > .dialog-body > fieldset"),
+      ].map((el) => el.querySelector("legend")?.textContent);
+      return (
+        sections.indexOf("Potluck & drinks") >= 0 &&
+        sections.indexOf("Potluck & drinks") <
+          sections.indexOf("Who’s invited?")
+      );
+    }),
+    "Potluck and drinks precede the invited-guest selector",
+  );
+
   await p
     .getByLabel("Table template name", { exact: true })
     .fill("Reusable dinner");
@@ -1266,8 +1293,9 @@ try {
       .attendance[guest.id],
     "yes",
   );
-  stage("event Light Mode, Dark Mode and Custom remain isolated");
-  const otherEventAppearance = store.get("event", e2.id, host.household).design;
+  stage(
+    "event Settings offers Default and Custom, independently from household mode choices",
+  );
   await click(p, "Home");
   await p
     .locator("article.card")
@@ -1276,36 +1304,23 @@ try {
     })
     .getByRole("button", { name: "View Event", exact: true })
     .click();
-  await p.getByLabel("Sorting and options", { exact: true }).click();
-  assert.equal(
-    await p
-      .locator(
-        "#top-navigation [data-action=event-template],#top-navigation [data-action=event-table]",
-      )
-      .count(),
-    0,
+  await click(p, "Settings");
+  assert.deepEqual(
+    await p.locator(".page-appearance-settings .mode-option").allTextContents(),
+    ["Default Mode", "Custom Colors Mode"],
   );
   assert.ok(
     await p
-      .locator(".mode-option")
-      .evaluateAll(
-        (es) =>
-          es.length === 3 &&
-          es.every((el) => Number(getComputedStyle(el).fontWeight) >= 700),
+      .locator(".page-appearance-settings .mode-option")
+      .evaluateAll((es) =>
+        es.every((el) => Number(getComputedStyle(el).fontWeight) >= 700),
       ),
   );
-  await p.getByLabel("Sorting and options", { exact: true }).click();
-  await option(p, "Dark Mode");
-  await p.waitForFunction(
-    () => getComputedStyle(document.body).backgroundColor === "rgb(21, 23, 25)",
-  );
+  await option(p, "Default Mode");
+  const defaultView = (await api(owner, "/api/host")).body;
   assert.deepEqual(
-    store.get("event", e2.id, host.household).design,
-    otherEventAppearance,
-  );
-  await option(p, "Light Mode");
-  await p.waitForFunction(
-    () => getComputedStyle(document.body).backgroundColor !== "rgb(21, 23, 25)",
+    defaultView.events.find((e) => e.id === e1.id).ui.design,
+    defaultView.ui.design,
   );
   await option(p, "Custom Colors Mode");
   await p.getByLabel("Appearance categories", { exact: true }).waitFor();
@@ -1357,6 +1372,145 @@ try {
   await p.getByRole("heading", { name: "Settings", exact: true }).waitFor();
   await p.getByRole("button", { name: "Back", exact: true }).click();
   await p.getByRole("heading", { name: "Homework", exact: true }).waitFor();
+  stage(
+    "household page modes share one scope and preserve custom event appearance",
+  );
+  const customEvent = store.get("event", e1.id, host.household);
+  assert.equal(
+    (
+      await api(
+        owner,
+        "/api/host/events/" + e1.id,
+        { ...customEvent, appearanceMode: "custom" },
+        "PUT",
+        customEvent.version,
+      )
+    ).status,
+    200,
+  );
+  const eventThemes = (await api(owner, "/api/host")).body.events.map((e) => [
+    e.id,
+    e.ui.design,
+  ]);
+  await click(p, "Home");
+  const offered = async () => {
+    await p.getByLabel("Sorting and options", { exact: true }).click();
+    assert.equal(await p.locator("#top-navigation .mode-option").count(), 0);
+    await p
+      .getByRole("menuitem", { name: "Household Link and QR", exact: true })
+      .waitFor();
+    await p.getByRole("menuitem", { name: "Settings", exact: true }).waitFor();
+    await p.getByLabel("Sorting and options", { exact: true }).click();
+    await click(p, "Settings");
+    assert.deepEqual(
+      await p
+        .locator(".page-appearance-settings .mode-option")
+        .allTextContents(),
+      ["Light Mode", "Dark Mode", "Custom Colors Mode"],
+    );
+    assert.ok(
+      await p
+        .locator(".inline-household-details")
+        .evaluate(
+          (form) =>
+            form.getBoundingClientRect().top >
+            document
+              .querySelector('[data-action="logout"]')
+              .getBoundingClientRect().bottom,
+        ),
+    );
+    await p.getByRole("button", { name: "Back", exact: true }).click();
+  };
+  await offered();
+  await click(p, "Settings");
+  const detailsName = p.getByLabel("Family household name", { exact: true });
+  const savedName = await detailsName.inputValue();
+  await detailsName.fill("Unsaved household draft");
+  const unchangedDetailsVersion = await p
+    .locator(".inline-household-details")
+    .getAttribute("data-version");
+  const remoteHousehold = store.get(
+    "household",
+    host.household,
+    host.household,
+  );
+  store.put(
+    "household",
+    host.household,
+    host.household,
+    { ...remoteHousehold, timezone: "America/Los_Angeles" },
+    remoteHousehold.version,
+  );
+  await p.waitForTimeout(3500);
+  assert.equal(await detailsName.inputValue(), "Unsaved household draft");
+  assert.equal(
+    await p.locator(".inline-household-details").getAttribute("data-version"),
+    unchangedDetailsVersion,
+  );
+  p.once("dialog", (d) => d.dismiss());
+  await p.getByRole("button", { name: "Back", exact: true }).click();
+  assert.equal(await detailsName.inputValue(), "Unsaved household draft");
+  p.once("dialog", (d) => d.accept());
+  await p.getByRole("button", { name: "Back", exact: true }).click();
+  await p.waitForTimeout(3500);
+  await click(p, "Settings");
+  await p
+    .locator(".inline-household-details")
+    .getByRole("button", { name: "Save", exact: true })
+    .click();
+  await p.getByText("Details saved.", { exact: true }).waitFor();
+  assert.equal((await api(owner, "/api/host")).body.household.name, savedName);
+  await p.getByRole("button", { name: "Back", exact: true }).click();
+  await option(p, "Dark Mode");
+  await p.waitForFunction(
+    () => getComputedStyle(document.body).backgroundColor === "rgb(21, 23, 25)",
+  );
+  await click(p, "Contacts");
+  await offered();
+  await option(p, "Light Mode");
+  await p.waitForFunction(
+    () => getComputedStyle(document.body).backgroundColor !== "rgb(21, 23, 25)",
+  );
+  await option(p, "Custom Colors Mode");
+  await p.getByLabel("Appearance categories", { exact: true }).waitFor();
+  await click(p, "Cancel");
+  await click(p, "Family Workspace");
+  await offered();
+  await click(p, "Settings");
+  assert.equal(
+    await p.locator(".page-appearance-settings .mode-option").count(),
+    3,
+  );
+  await p.getByRole("button", { name: "Back", exact: true }).click();
+  await click(p, "Home");
+  await p
+    .getByRole("button", { name: "Open Cards & Invites", exact: true })
+    .click();
+  await p
+    .getByRole("button", { name: "Create card / template", exact: true })
+    .click();
+  await p
+    .getByRole("heading", { name: "Edit your card", exact: true })
+    .waitFor();
+  await offered();
+  if (await p.getByRole("button", { name: "Tools", exact: true }).count())
+    await click(p, "Tools");
+  await p.getByLabel("Card name", { exact: true }).fill("Unsaved card draft");
+  await option(p, "Dark Mode");
+  assert.equal(
+    await p.getByLabel("Card name", { exact: true }).inputValue(),
+    "Unsaved card draft",
+  );
+  await click(p, "Close editor");
+  const themedEvents = (await api(owner, "/api/host")).body.events;
+  assert.deepEqual(
+    themedEvents.find((e) => e.id === e1.id).ui.design,
+    eventThemes.find(([id]) => id === e1.id)[1],
+  );
+  assert.equal(
+    themedEvents.find((e) => e.id === e2.id).ui.design.background,
+    "#151719",
+  );
   assert.deepEqual(errors, []);
   assert.equal(
     store.get("family-record", "legacy-retained", host.household).type,

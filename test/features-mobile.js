@@ -134,7 +134,7 @@ try {
   assert.ok(eventMetaStructure.includes("Where"));
   assert.equal(await example.locator("[data-action=rsvp]").count(), 1);
   await example
-    .locator("[data-action=edit-event]")
+    .locator("[data-action=event-details]")
     .waitFor({ state: "attached" });
   // Actual page components, scoped controls and all conditional sample sections.
   const requests = [];
@@ -186,7 +186,7 @@ try {
         1,
       );
       assert.equal(
-        await example.locator("[data-action=edit-event]").count(),
+        await example.locator("[data-action=event-details]").count(),
         0,
       );
       await example.locator(".rsvp-stack .registry-buttons").waitFor();
@@ -236,7 +236,7 @@ try {
     .getByLabel("Example page", { exact: true })
     .selectOption("event");
   await example
-    .locator("[data-action=edit-event]")
+    .locator("[data-action=event-details]")
     .waitFor({ state: "attached" });
   await admin.page
     .frameLocator("#page-example-frame")
