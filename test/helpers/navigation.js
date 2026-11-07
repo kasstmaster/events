@@ -2,6 +2,17 @@
 export async function clickNavigation(page, label) {
   if (label === "Edit event") label = "Edit Event";
   if (
+    ["Cards & Templates", "Cards & templates"].includes(label) &&
+    (await page
+      .getByRole("button", { name: "Open Cards & Invites", exact: true })
+      .count())
+  ) {
+    await page
+      .getByRole("button", { name: "Open Cards & Invites", exact: true })
+      .click();
+    return;
+  }
+  if (
     (await page.locator(".appearance-categories").count()) &&
     ["Save", "Cancel"].includes(label)
   ) {
@@ -52,7 +63,18 @@ export async function clickNavigation(page, label) {
           ? "Custom"
           : label;
     await page.getByLabel("Sorting and options", { exact: true }).click();
-    await page.getByRole("menuitem", { name, exact: true }).click();
+    await page
+      .getByRole("menuitem", {
+        name:
+          name === "Share Household Link" &&
+          (await page
+            .getByRole("menuitem", { name: "Share Guest Link", exact: true })
+            .count())
+            ? "Share Guest Link"
+            : name,
+        exact: true,
+      })
+      .click();
     return;
   }
   if (

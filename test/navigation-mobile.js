@@ -276,8 +276,38 @@ try {
     await p
       .locator("[data-home-card]")
       .evaluateAll((els) => els.map((el) => el.dataset.homeCard)),
-    ["contacts", "family"],
+    ["contacts", "cards", "family"],
   );
+  assert.ok(
+    await p.locator(".home-workspace-cards").evaluate((el) => {
+      const a = el
+          .querySelector('[data-home-card="contacts"]')
+          .getBoundingClientRect(),
+        b = el
+          .querySelector('[data-home-card="cards"]')
+          .getBoundingClientRect();
+      return Math.abs(a.top - b.top) < 2 && b.left > a.left;
+    }),
+  );
+  assert.equal(
+    await p
+      .locator(".home-events")
+      .evaluate(
+        (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+      ),
+    2,
+  );
+  await p.setViewportSize({ width: 390, height: 900 });
+  assert.equal(
+    await p
+      .locator(".home-events")
+      .evaluate(
+        (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+      ),
+    1,
+  );
+  await p.setViewportSize({ width: 1440, height: 900 });
+
   assert.equal(
     await p
       .locator(
@@ -309,7 +339,6 @@ try {
   await p.locator("summary[aria-label=Create]").click();
   assert.deepEqual(await p.getByRole("menuitem").allTextContents(), [
     "Create Event",
-    "Cards & Templates",
   ]);
   await p.locator("summary[aria-label=Create]").click();
   for (const [event, title] of [
@@ -1043,7 +1072,7 @@ try {
   assert.equal(await p.locator(".appearance-categories button").count(), 5);
   await p
     .locator(".appearance-content-actions")
-    .getByRole("button", { name: "Table", exact: true })
+    .getByRole("button", { name: "Menu", exact: true })
     .click();
   await p.getByText("Table templates", { exact: true }).waitFor();
   await p
@@ -1063,7 +1092,7 @@ try {
   await click(p, "Edit Event");
   await p
     .locator(".appearance-content-actions")
-    .getByRole("button", { name: "Template", exact: true })
+    .getByRole("button", { name: "Invitation", exact: true })
     .click();
   await p
     .getByRole("heading", { name: "Edit your card", exact: true })

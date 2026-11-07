@@ -404,8 +404,8 @@ function topActions(event) {
         role === "host"
           ? [
               { action: "event-details", label: "Edit event details" },
-              { action: "event-template", label: "Template" },
-              { action: "event-table", label: "Table" },
+              { action: "event-template", label: "Invitation" },
+              { action: "event-table", label: "Menu" },
               { action: "preview-guest", label: "Preview guest experience" },
             ]
           : [],
@@ -656,10 +656,7 @@ function render(target = $("#app"), example = false) {
         (role === "host"
           ? topbar({
               title: "",
-              plus: [
-                { action: "new-event", label: "Create Event" },
-                { action: "cards", label: "Cards & Templates" },
-              ],
+              plus: [{ action: "new-event", label: "Create Event" }],
               extra: state.session.platformAdmin
                 ? ui`<div class="admin-home-actions" role="toolbar" aria-label="Administrator tools">${button("admin-approvals", H("Approvals"))}${button("admin-hosts", H("Hosts"))}${button("global-defaults", H("Defaults"))}${button("admin-templates", H("Templates"))}</div>`
                 : "",
@@ -670,7 +667,7 @@ function render(target = $("#app"), example = false) {
               ],
             })
           : "") +
-        ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : H("Welcome,") + " " + escape(state.data.guest.first)}</p><h1>${escape(state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? button("guest-link-requests", H("Review shared guest links")) : ""}${state.data.events.length ? ui`<section class="grid" aria-label="Events">${(role === "guest" ? orderedInvitations(state.data.events) : state.data.events).map(eventCard).join("")}</section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
+        ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : H("Welcome,") + " " + escape(state.data.guest.first)}</p><h1>${escape(state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? button("guest-link-requests", H("Review shared guest links")) : ""}${state.data.events.length ? ui`<section class="grid home-events ${state.data.events.length > 1 ? "multiple-events" : "single-event"}" aria-label="Events">${(role === "guest" ? orderedInvitations(state.data.events) : state.data.events).map(eventCard).join("")}</section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
     }
   }
   target.innerHTML = ui`<header class="top-shell no-print ${event ? "event-toolbar" : ""}"><div class="top-primary"><a class="brand" href="/" data-action="home">gather<span>＊</span></a>${event ? eventSummary(event) : ""}<div id="top-navigation">${topActions(event)}</div></div><div id="appearance-toolbar"></div></header><main id="main">${content}${role && state.view !== "card-editor" ? '<p id="sync-status" class="connection" role="status" aria-live="polite"></p>' : ""}</main>${(state.view !== "card-editor" || role === "admin") && (role || state.preview) ? toolbar(event) : ""}`;
@@ -711,7 +708,10 @@ function render(target = $("#app"), example = false) {
                   { action: "edit-event", label: "Custom" },
                 ]
               : [{ action: "household", label: "Edit House" }]),
-            { action: "share", label: "Share Household Link" },
+            {
+              action: "share",
+              label: event ? "Share Guest Link" : "Share Household Link",
+            },
           ]
         : []),
       { action: "settings", label: "Settings" },
@@ -2440,8 +2440,8 @@ async function startAppearance(scope, globalOptions) {
     contentActions:
       scope === "event"
         ? [
-            { action: "event-template", label: "Template" },
-            { action: "event-table", label: "Table" },
+            { action: "event-template", label: "Invitation" },
+            { action: "event-table", label: "Menu" },
           ]
         : [],
     defaults: globalOptions?.defaults || state.data.defaults,
@@ -2676,7 +2676,7 @@ function applyLayoutDOM(event, role, target = $("#app")) {
     if (role === "host" && hero && !state.adminMode) {
       const cards = document.createElement("div");
       cards.className = "home-workspace-cards";
-      cards.innerHTML = ui`<section class="panel" data-home-card="contacts"><h2>Contacts</h2><p>Keep your guests and shared addresses together, then invite them to an event.</p>${button("addresses", H("Open Contacts"))}</section><section class="panel" data-home-card="family"><h2>Family Workspace</h2><p>Share lists, tasks, records and chores with your household.</p>${button("family-workspace", H("Open Family Workspace"))}</section>`;
+      cards.innerHTML = ui`<section class="panel" data-home-card="contacts"><h2>Contacts</h2><p>Keep your guests and shared addresses together, then invite them to an event.</p>${button("addresses", H("Open Contacts"))}</section><section class="panel" data-home-card="cards"><h2>${C("Cards & Invites")}</h2><p>Create invitations, cards and reusable templates.</p>${button("cards", H("Open Cards & Invites"))}</section><section class="panel" data-home-card="family"><h2>Family Workspace</h2><p>Share lists, tasks, records and chores with your household.</p>${button("family-workspace", H("Open Family Workspace"))}</section>`;
       if (events) events.before(cards);
       else hero.after(cards);
     }
