@@ -210,9 +210,45 @@ test("AnyList import is idempotent, keeps stable address/person IDs and preserve
   const kid = data.guests.find((g) => g.parent);
   assert.equal(kid.parent, original.id);
   assert.equal(kid.inviteCode, original.inviteCode);
+  const oldAddress = f.store.get(
+    "address",
+    original.address,
+    host.household.id,
+  );
+  f.store.put(
+    "address",
+    oldAddress.id,
+    host.household.id,
+    { ...oldAddress, street: oldAddress.lines, city: "", state: "", zip: "" },
+    oldAddress.version,
+  );
+  const repair = await start(f, env, host);
+  assert.equal(
+    (await deliver(f, env, repair, source())).body.state,
+    "complete",
+  );
+  const repaired = f.store.get("address", original.address, host.household.id);
+  assert.equal(repaired.id, oldAddress.id);
+  assert.equal(
+    repaired.city,
+    "Sample City",
+    "Unchanged source lines still repair previously unparsed address fields",
+  );
   const changed = source();
   changed[0].label = "Updated title";
-  changed[0].lines = "45 New St, New City, CA 90001";
+  changed[0].lines = "45 New St, New City CA 90001";
+  const privateAddress = f.store.get(
+    "address",
+    original.address,
+    host.household.id,
+  );
+  f.store.put(
+    "address",
+    privateAddress.id,
+    host.household.id,
+    { ...privateAddress, notes: "Private address note" },
+    privateAddress.version,
+  );
   changed[0].people[0].first = "Casey Updated";
   const next = await start(f, env, host);
   assert.equal((await deliver(f, env, next, changed)).body.state, "complete");
@@ -224,6 +260,10 @@ test("AnyList import is idempotent, keeps stable address/person IDs and preserve
   assert.equal(adult.inviteCode, original.inviteCode);
   assert.equal(adult.address, original.address);
   assert.equal(data.addresses[0].city, "New City");
+  assert.equal(data.addresses[0].street, "45 New St");
+  assert.equal(data.addresses[0].state, "CA");
+  assert.equal(data.addresses[0].zip, "90001");
+  assert.equal(data.addresses[0].notes, "Private address note");
   assert.deepEqual(f.store.get("event", event.id, host.household.id), event);
   assert.deepEqual(
     f.store.get("response", response.id, host.household.id),
@@ -460,4 +500,31 @@ test("GitHub rejection identifies the configured secret name without exposing it
       },
     );
   }
+});
+
+test("category mailing formats split city/state without losing street, suite or PO Box", () => {
+  for (const [lines, street, city, state, zip] of [
+    [
+      "221 W Example Loop Bldg A, Sample City CA 90210",
+      "221 W Example Loop Bldg A",
+      "Sample City",
+      "CA",
+      "90210",
+    ],
+    [
+      "PO Box 12, Sample City CA 90210",
+      "PO Box 12",
+      "Sample City",
+      "CA",
+      "90210",
+    ],
+    [
+      "12 Example Rd, STE B2, PMB 185, Sample City KY 42104",
+      "12 Example Rd, STE B2, PMB 185",
+      "Sample City",
+      "KY",
+      "42104",
+    ],
+  ])
+    assert.deepEqual(addressParts({ lines }), { street, city, state, zip });
 });

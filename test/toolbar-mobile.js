@@ -400,12 +400,63 @@ try {
     .getByRole("button", { name: "Remove background image", exact: true })
     .click();
 
+  await p
+    .getByLabel("Appearance categories", { exact: true })
+    .getByRole("button", { name: "Containers", exact: true })
+    .click();
+  await p
+    .getByLabel("Appearance actions", { exact: true })
+    .getByRole("button", { name: "Image", exact: true })
+    .click();
+  await p
+    .getByLabel("Containers image (up to 2 MB)", { exact: true })
+    .setInputFiles({
+      name: "container.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    });
+  await p.waitForFunction(() =>
+    getComputedStyle(
+      document.querySelector("[data-home-card=contacts]"),
+      "::before",
+    ).backgroundImage.includes("data:image/png"),
+  );
+  await p.getByLabel("Container image opacity (%)", { exact: true }).fill("25");
+  assert.equal(
+    await p
+      .locator("[data-home-card=contacts]")
+      .evaluate((el) => getComputedStyle(el, "::before").opacity),
+    "0.25",
+  );
+  assert.equal(
+    await p
+      .locator(".top-shell")
+      .evaluate((el) => getComputedStyle(el, "::before").backgroundImage),
+    "none",
+    "Editing toolbars stay solid",
+  );
   await geometry(p);
   await click(p, "Save");
   await p.getByText("Appearance saved.", { exact: true }).waitFor();
   await p.reload();
   await p.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
   assert.equal(store.household(host.household).design.textColor, "#123456");
+  assert.equal(
+    store.household(host.household).design.containerImageOpacity,
+    25,
+  );
+  assert.match(
+    store.household(host.household).design.containerImage,
+    /^data:image\/png/,
+  );
+  assert.equal(
+    store.get("event", e1.id, host.household).design.containerImage || "",
+    "",
+    "Household image save preserves existing event appearance",
+  );
   assert.equal(
     await p
       .locator(".hero h1")

@@ -11,7 +11,7 @@ export function addressParts(address = {}) {
     );
   const lines = String(address.lines || "").trim();
   const match = lines.match(
-    /^([\s\S]+?)[,\n]+\s*([^,\n]+?)[,\n]+\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/,
+    /^([\s\S]+?)[,\n]+\s*([^,\n]+?)(?:[,\n]+|\s+)\s*([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/,
   );
   return match
     ? {

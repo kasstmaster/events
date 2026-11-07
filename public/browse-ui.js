@@ -37,7 +37,7 @@ export function topbar({
   sort = [],
   extra = "",
 }) {
-  return ui`<div class="app-topbar no-print">${back ? tool(back, "Back", "", "back") : ""}<div class="browse-heading">${title ? ui`<h1>${title}</h1>` : ""}${subtitle ? ui`<p>${subtitle}</p>` : ""}</div><div class="browse-top-actions">${search ? tool(search, "Search", "", "search") : ""}${plus.length ? menu("Create", "plus", plus) : ""}${sort.length ? menu("Sorting and options", "more", sort) : ""}${extra}</div></div>`;
+  return ui`<div class="app-topbar no-print">${back ? tool("page-back", "Back", "", "back") : ""}<div class="browse-heading">${title ? ui`<h1>${title}</h1>` : ""}${subtitle ? ui`<p>${subtitle}</p>` : ""}</div><div class="browse-top-actions">${search ? tool(search, "Search", "", "search") : ""}${plus.length ? menu("Create", "plus", plus) : ""}${sort.length ? menu("Sorting and options", "more", sort) : ""}${extra}</div></div>`;
 }
 export function bottom(items, label = "Main navigation") {
   return ui`<nav class="toolbar no-print" aria-label="${H(label)}">${items.map((i) => tool(i.action, i.label, i.id || "", i.icon || i.action, i.current ? 'aria-current="page"' : "")).join("")}</nav>`;

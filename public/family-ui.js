@@ -599,6 +599,19 @@ export function familyTools(ctx) {
     render();
   }
   return {
+    navigation: () => ({ selected, section, search, showSearch }),
+    async restoreNavigation(page) {
+      await refresh();
+      if (
+        page.selected &&
+        !page.selected.startsWith("__") &&
+        !data().records.some((r) => r.id === page.selected)
+      )
+        return false;
+      ({ selected, section, search, showSearch } = page);
+      addItemOpen = false;
+      return true;
+    },
     reset() {
       itemDrafts.clear();
       selected = "";
@@ -656,11 +669,7 @@ export function familyTools(ctx) {
         return true;
       }
       if (actionName === "family-back") {
-        const r = record();
-        selected = r?.folder || "";
-        if (!r) section = "";
-        search = "";
-        render();
+        await ctx.back();
         return true;
       }
       if (

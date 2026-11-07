@@ -352,7 +352,7 @@ try {
     assert.equal(await p.locator('[name="cardEvent"]').inputValue(), event.id);
     await click(p, "Close editor");
   }
-  for (const width of [390, 1440]) {
+  for (const width of [320, 390, 1440]) {
     await p.setViewportSize({ width, height: 900 });
     const cards = await p.evaluate(() =>
       [...document.querySelectorAll(".host-event-choice")].map((choice) => {
@@ -925,8 +925,34 @@ try {
     "Settings",
   ]);
   assert.equal(await p.locator(".event-summary").count(), 1);
-  for (const width of [390, 1440]) {
+  for (const width of [320, 390, 1440]) {
     await p.setViewportSize({ width, height: 900 });
+    assert.ok(
+      await p
+        .locator(".event-summary")
+        .evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+      "Every count fits without a summary scrollbar",
+    );
+    assert.ok(
+      await p
+        .locator(".event-summary .totals span")
+        .evaluateAll((es) =>
+          es.every((el) => el.scrollWidth <= el.clientWidth + 1),
+        ),
+      "Summary words fit without clipping",
+    );
+    assert.ok(
+      await p
+        .locator(".rsvp-stack")
+        .evaluate(
+          (el) =>
+            Math.abs(
+              el.getBoundingClientRect().width -
+                el.parentElement.getBoundingClientRect().width,
+            ) < 3,
+        ),
+      "RSVP spans the event containers",
+    );
     const aligned = await p.locator(".top-primary").evaluate((el) => {
       const nodes = [
         el.querySelector(".brand"),
@@ -993,7 +1019,7 @@ try {
   );
   await click(p, "RSVP");
   await p
-    .getByRole("heading", { name: "Guest RSVP preview", exact: true })
+    .getByRole("heading", { name: "Choose an invited guest", exact: true })
     .waitFor();
   assert.equal(store.list("response", host.household).length, 0);
   await click(p, "Close editor");
@@ -1113,6 +1139,130 @@ try {
       fullPage: true,
     });
   }
+  stage("private address notes and manual host RSVP");
+  const notesGuest = store.get("guest", guest.id, host.household);
+  const moved = await api(
+    owner,
+    `/api/host/guests/${guest.id}`,
+    {
+      ...notesGuest,
+      addressDraft: {
+        label: "Example home",
+        lines: "PO Box 12, Sample City CA 90210",
+      },
+    },
+    "PUT",
+    notesGuest.version,
+  );
+  assert.equal(moved.status, 200);
+  await p.reload();
+  await click(p, "Contacts");
+  await p.locator("main [data-action=address-notes]").click();
+  await p
+    .getByLabel("Only you can see these notes", { exact: true })
+    .fill("Private household detail");
+  await p
+    .getByRole("dialog")
+    .getByRole("button", { name: "Save", exact: true })
+    .click();
+  await p.getByRole("dialog").waitFor({ state: "hidden" });
+  await p
+    .locator(".household-private-notes small")
+    .getByText("Private household detail", { exact: true })
+    .waitFor();
+  assert.ok(
+    await p
+      .locator(".household-private-notes small")
+      .evaluate(
+        (el) =>
+          parseFloat(getComputedStyle(el).fontSize) <
+          parseFloat(getComputedStyle(el.parentElement).fontSize),
+      ),
+  );
+  await click(p, "Home");
+  await p
+    .locator("article.card")
+    .filter({
+      has: p.getByRole("heading", { name: "Dinner Two", exact: true }),
+    })
+    .getByRole("button", { name: "RSVPs", exact: true })
+    .click();
+  await p
+    .getByRole("dialog")
+    .getByText("Private household detail", { exact: true })
+    .waitFor();
+  await p.getByRole("button", { name: "Record RSVP", exact: true }).click();
+  await p
+    .getByRole("heading", { name: "Record guest RSVP", exact: true })
+    .waitFor();
+  await p.getByLabel("Casey Example", { exact: true }).selectOption("yes");
+  await p
+    .getByRole("dialog")
+    .getByRole("button", { name: "RSVP", exact: true })
+    .click();
+  await p.getByRole("dialog").waitFor({ state: "hidden" });
+  assert.equal(
+    store.list("response", host.household).find((r) => r.event === e2.id)
+      .attendance[guest.id],
+    "yes",
+  );
+  stage("event Light Mode, Dark Mode and Custom remain isolated");
+  const otherEventAppearance = store.get("event", e2.id, host.household).design;
+  await click(p, "Home");
+  await p
+    .locator("article.card")
+    .filter({
+      has: p.getByRole("heading", { name: "Dinner One", exact: true }),
+    })
+    .getByRole("button", { name: "View Event", exact: true })
+    .click();
+  await option(p, "Dark Mode");
+  await p.waitForFunction(
+    () => getComputedStyle(document.body).backgroundColor === "rgb(21, 23, 25)",
+  );
+  assert.deepEqual(
+    store.get("event", e2.id, host.household).design,
+    otherEventAppearance,
+  );
+  await option(p, "Light Mode");
+  await p.waitForFunction(
+    () => getComputedStyle(document.body).backgroundColor !== "rgb(21, 23, 25)",
+  );
+  await option(p, "Custom");
+  await p.getByLabel("Appearance categories", { exact: true }).waitFor();
+  await click(p, "Cancel");
+  stage(
+    "Back follows visited pages, including Contacts and cross-section workspace navigation",
+  );
+  await click(p, "Contacts");
+  await p.getByRole("button", { name: "Back", exact: true }).click();
+  await p.locator("[data-home-card=contacts]").waitFor();
+  await click(p, "Family Workspace");
+  await p.getByRole("button", { name: "Lists", exact: true }).click();
+  await p.getByRole("button", { name: "Shared folder", exact: true }).click();
+  await p.getByRole("button", { name: "Groceries", exact: true }).click();
+  await p.getByRole("button", { name: "Back", exact: true }).click();
+  await p
+    .getByRole("heading", { name: "Shared folder", exact: true })
+    .waitFor();
+  await p.getByRole("button", { name: "Back", exact: true }).click();
+  await p.getByRole("heading", { name: "Lists", exact: true }).waitFor();
+  await click(p, "Home");
+  await click(p, "Family Workspace");
+  await p.getByRole("button", { name: "Tasks", exact: true }).click();
+  await p.getByRole("button", { name: "Homework", exact: true }).click();
+  await p
+    .getByRole("button", { name: "View linked home record", exact: true })
+    .click();
+  await p
+    .getByRole("heading", { name: "Private appliance", exact: true })
+    .waitFor();
+  await p.getByRole("button", { name: "Back", exact: true }).click();
+  await p.getByRole("heading", { name: "Homework", exact: true }).waitFor();
+  await click(p, "Settings");
+  await p.getByRole("heading", { name: "Settings", exact: true }).waitFor();
+  await p.getByRole("button", { name: "Back", exact: true }).click();
+  await p.getByRole("heading", { name: "Homework", exact: true }).waitFor();
   assert.deepEqual(errors, []);
   assert.equal(
     store.get("family-record", "legacy-retained", host.household).type,

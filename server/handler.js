@@ -13,7 +13,7 @@ import {
   syncStatus,
 } from "./household-integrations.js";
 import { addressInput } from "./addresses.js";
-import { saveAddressResponse } from "./address-rsvp.js";
+import { addressEvent, saveAddressResponse } from "./address-rsvp.js";
 import {
   identityAPI,
   identityFor,
@@ -944,6 +944,33 @@ export function createHandler({
           );
           return;
         }
+        const manualRSVP = path.match(
+          /^\/api\/host\/events\/([a-zA-Z0-9-]+)\/rsvp\/([a-zA-Z0-9-]+)$/,
+        );
+        if (manualRSVP && ["GET", "PUT"].includes(method)) {
+          const event = owned("event", manualRSVP[1]),
+            person = owned("guest", manualRSVP[2]);
+          if (!event.invited.includes(person.id))
+            fail(404, "Invitation not found.");
+          const adult = person.parent ? owned("guest", person.parent) : person;
+          if (!event.invited.includes(adult.id))
+            fail(404, "Invitation not found.");
+          const subject = { household, guest: adult.id };
+          json(
+            res,
+            method === "GET"
+              ? addressEvent(store, event, subject)
+              : saveAddressResponse(
+                  store,
+                  event,
+                  subject,
+                  await body(req),
+                  env,
+                  { allowClosed: true, notify: false },
+                ),
+          );
+          return;
+        }
         const match = path.match(
           /^\/api\/host\/(guests|addresses|events)(?:\/([a-zA-Z0-9-]+))?(\/dashboard)?$/,
         );
@@ -956,12 +983,19 @@ export function createHandler({
             key = match[2],
             existing = key ? owned(kind, key) : null;
           if (method === "GET" && kind === "event" && match[3]) {
+            const guests = store
+              .list("guest", household)
+              .filter((g) => existing.invited.includes(g.id));
+            const addresses = new Set(
+              guests.map((g) => g.address).filter(Boolean),
+            );
             json(res, {
               event: existing,
               totals: store.totals(existing, household),
-              guests: store
-                .list("guest", household)
-                .filter((g) => existing.invited.includes(g.id)),
+              guests,
+              addresses: store
+                .list("address", household)
+                .filter((a) => addresses.has(a.id)),
               responses: store
                 .list("response", household)
                 .filter((r) => r.event === key),

@@ -27,7 +27,14 @@ export function addressEvent(store, event, session) {
   );
   return result;
 }
-export function saveAddressResponse(store, event, session, input, env = {}) {
+export function saveAddressResponse(
+  store,
+  event,
+  session,
+  input,
+  env = {},
+  options = {},
+) {
   return store.transaction(() => {
     const current = store.get("event", event.id, session.household);
     if (!current?.invited.includes(session.guest))
@@ -88,11 +95,12 @@ export function saveAddressResponse(store, event, session, input, env = {}) {
           claims: own ? input.claims : previous.claims,
           customItems: own ? input.customItems : previous.customItems,
         },
-        { partial: true },
+        { partial: true, allowClosed: options.allowClosed === true },
       );
       if (own && attendance[session.guest]) ownSaved = true;
     }
-    if (ownSaved) recordRSVPNotification(store, env, current, session);
+    if (ownSaved && options.notify !== false)
+      recordRSVPNotification(store, env, current, session);
     return result || { ok: true };
   });
 }

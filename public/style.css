@@ -2101,7 +2101,7 @@ body :is(#app, #editor) .event-overview > p.muted {
   font-style: var(--description-style);
   font-weight: var(--description-weight);
 }
-/* One fixed row for brand, summary, options and Print. Small screens scroll
+/* One fixed row for brand, summary, options and Print. Small screens fit
    only the summary, retaining readable labels and access to the edge actions. */
 .event-toolbar .top-primary {
   flex-wrap: nowrap;
@@ -2116,23 +2116,23 @@ body :is(#app, #editor) .event-overview > p.muted {
 .top-shell .event-summary {
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
+  container-type: inline-size;
   padding: 4px 0;
-  overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
 }
 .event-summary .totals {
-  width: max-content;
-  min-width: 100%;
-  flex-wrap: nowrap;
-  justify-content: space-evenly;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(var(--summary-items, 4), minmax(0, 1fr));
+  width: 100%;
+  gap: 0;
 }
 .event-summary .totals div {
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  white-space: nowrap;
+  min-width: 0;
+  font-size: clamp(8px, 5cqw, var(--status-size, 16px));
+  line-height: 1.2;
+  overflow-wrap: normal;
 }
 .event-summary:focus-visible {
   outline: 2px solid var(--ink);
@@ -2240,4 +2240,124 @@ body.editing-active
   background-color: var(--panel-solid);
   opacity: 1;
   backdrop-filter: none;
+}
+
+.rsvp-stack {
+  width: 100%;
+  flex-basis: 100%;
+}
+.rsvp-stack > [data-action="rsvp"] {
+  width: 100%;
+}
+.household-private-notes {
+  flex-basis: 100%;
+  width: 100%;
+}
+.household-private-notes small {
+  display: block;
+  font-size: 0.75em;
+  font-weight: normal;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.household-private-notes button {
+  font-size: 0.75em;
+}
+
+.event-summary .totals strong,
+.event-summary .totals span {
+  font-size: inherit;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Separate image layer: opacity never fades text or other container contents.
+   Low-specificity positioning preserves fixed/sticky chrome and existing layouts. */
+:where(
+  .panel,
+  .card,
+  dialog,
+  .dialog-head,
+  .dialog-foot,
+  .browse-content,
+  .browse-category,
+  .browse-menu > div,
+  .browse-menu button,
+  .private-notes,
+  .pill,
+  .toolbar,
+  .top-shell,
+  input,
+  select,
+  textarea,
+  button,
+  .button,
+  .family-item,
+  .address-options,
+  .preview,
+  .status,
+  .layout-list
+) {
+  position: relative;
+  isolation: isolate;
+}
+:is(
+  .panel,
+  .card,
+  dialog,
+  .dialog-head,
+  .dialog-foot,
+  .browse-content,
+  .browse-category,
+  .browse-menu > div,
+  .browse-menu button,
+  .private-notes,
+  .pill,
+  .toolbar,
+  .top-shell,
+  button,
+  .button,
+  .family-item,
+  .address-options,
+  .preview,
+  .status,
+  .layout-list
+)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: var(--container-image, none);
+  background-size: cover;
+  background-position: center;
+  opacity: var(--container-image-opacity, 1);
+  pointer-events: none;
+  z-index: -1;
+}
+body.editing-active
+  #app
+  :is(
+    .top-shell,
+    .toolbar,
+    .card-controls,
+    .browse-menu[open] > div,
+    .appearance-options[open]
+  )::before {
+  background-image: none;
+}
+
+@media (max-width: 480px) {
+  .event-toolbar.top-shell {
+    padding-inline: max(8px, env(safe-area-inset-left))
+      max(8px, env(safe-area-inset-right));
+  }
+  .event-toolbar .top-primary {
+    gap: 4px;
+  }
+  .event-toolbar .browse-top-actions {
+    gap: 0;
+  }
+  body #app .event-toolbar .brand {
+    font-size: calc(var(--text-size) * 0.9);
+  }
 }

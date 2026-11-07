@@ -28,6 +28,7 @@ export function addressInput(input, existing = {}) {
     lines: structured
       ? text(addressLines(parts), 500)
       : text(input.lines ?? existing.lines ?? "", 500),
+    notes: text(input.notes ?? existing.notes ?? "", 20000),
     phone: contactPhone(input.phone ?? existing.phone ?? ""),
   };
 }

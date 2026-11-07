@@ -45,7 +45,12 @@ export async function clickNavigation(page, label) {
     ].includes(label) &&
     !(await page.locator("#editor[open]:not(.inline-management)").count())
   ) {
-    const name = label === "Share" ? "Share Household Link" : label;
+    const name =
+      label === "Share"
+        ? "Share Household Link"
+        : label === "Edit Event"
+          ? "Custom"
+          : label;
     await page.getByLabel("Sorting and options", { exact: true }).click();
     await page.getByRole("menuitem", { name, exact: true }).click();
     return;
