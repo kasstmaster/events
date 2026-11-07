@@ -190,6 +190,13 @@ const { existsSync, mkdirSync } = require("node:fs");
       "Titles color",
       "#8f3829",
     );
+    await setAppearance(
+      alpha.page,
+      "Buttons",
+      "Color",
+      "Buttons color",
+      "#8f3829",
+    );
     await saveAppearance(alpha.page);
     await click(alpha.page, "Home");
     await click(alpha.page, "Household link and QR");

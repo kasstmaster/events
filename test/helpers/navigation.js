@@ -1,5 +1,32 @@
 // Updated visible navigation for synthetic browser suites only.
 export async function clickNavigation(page, label) {
+  if (
+    [
+      "Share",
+      "Share Household Link",
+      "Share Guest Link",
+      "Share Invitation",
+    ].includes(label) &&
+    (await page.locator(".toolbar [data-action=share]").count())
+  ) {
+    await page.locator(".toolbar [data-action=share]").click();
+    return;
+  }
+  if (
+    ["Cards", "Invitation"].includes(label) &&
+    !(await page.locator("#editor[open]").count()) &&
+    (await page.locator(".event-home-actions").count())
+  ) {
+    await page
+      .getByRole("button", { name: "Invitation Cards", exact: true })
+      .first()
+      .click();
+    if (label === "Invitation")
+      await page
+        .getByRole("button", { name: "Edit invitation", exact: true })
+        .click();
+    return;
+  }
   if (label === "Edit event") label = "Edit Event";
   if (
     ["Cards & Templates", "Cards & templates"].includes(label) &&
@@ -60,7 +87,7 @@ export async function clickNavigation(page, label) {
       label === "Share"
         ? "Share Household Link"
         : label === "Edit Event"
-          ? "Custom"
+          ? "Custom Colors Mode"
           : label;
     await page.getByLabel("Sorting and options", { exact: true }).click();
     await page
@@ -200,7 +227,19 @@ export async function clickNavigation(page, label) {
     ) {
       await page.getByRole("button", { name: "Home", exact: true }).click();
       await page.locator(".event-home-actions").first().waitFor();
-      await page.getByRole("button", { name, exact: true }).first().click();
+      await page
+        .getByRole("button", {
+          name: ["Cards", "Invitation"].includes(name)
+            ? "Invitation Cards"
+            : name,
+          exact: true,
+        })
+        .first()
+        .click();
+      if (name === "Invitation")
+        await page
+          .getByRole("button", { name: "Edit invitation", exact: true })
+          .click();
       return;
     }
     const create =

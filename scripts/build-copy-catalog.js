@@ -26,8 +26,17 @@ const add = (value) => {
   }
 };
 for (const category of appearanceCategories) add(category);
-for (const category of ["Titles", "Description", "Text"])
+for (const category of ["Titles", "Description", "Text", "Toolbars", "Buttons"])
   for (const action of ["font", "color", "style", "size"])
+    add(category + " " + action);
+for (const category of ["Toolbars", "Buttons"])
+  for (const action of [
+    "background",
+    "opacity (%)",
+    "border color",
+    "border width",
+    "border style",
+  ])
     add(category + " " + action);
 function walk(node, parent, fn) {
   if (!node || typeof node !== "object") return;

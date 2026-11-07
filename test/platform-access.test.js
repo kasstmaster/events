@@ -133,6 +133,26 @@ test("host guest preview is scoped, read-only and excludes notes, contact data a
       phone: "+15551234567",
     }),
     event = await f.event(host, [guest], { notes: "private-event-note" });
+  assert.equal(
+    (
+      await f.request("/api/host/preview", {
+        method: "POST",
+        cookie: host.cookie,
+        data: {},
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await f.request("/api/admin/platform-access/" + host.user, {
+        method: "POST",
+        cookie: f.admin,
+        data: { password, confirmEmail: "alpha@example.test" },
+      })
+    ).status,
+    200,
+  );
   const before = f.store.all(
     "SELECT kind,id,version,body FROM records ORDER BY kind,id",
   );

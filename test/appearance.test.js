@@ -183,3 +183,49 @@ test("light preset uses platform defaults and dark preset is valid appearance da
   assert.equal(dark.textFont, "Verdana");
   assert.deepEqual(design(dark), dark);
 });
+
+test("independent toolbar and button roles validate and preserve legacy surface appearance", () => {
+  const legacy = categoryDesign({
+    container: "#abcdef",
+    opacity: 35,
+    borderColor: "#123456",
+    borderWidth: 2,
+    borderStyle: "dashed",
+    textColor: "#654321",
+    textFont: "Verdana",
+    textSize: 18,
+    textStyle: "bold",
+  });
+  assert.equal(legacy.toolbarSurface, "#abcdef");
+  assert.equal(legacy.buttonSurface, "#abcdef");
+  assert.equal(legacy.toolbarLabelColor, "#654321");
+  const saved = design({
+    ...legacy,
+    toolbarSurface: "#112233",
+    buttonSurface: "#445566",
+    toolbarBorderWidth: 3,
+    buttonOpacity: 0,
+  });
+  assert.equal(saved.container, "#abcdef");
+  assert.equal(saved.toolbarSurface, "#112233");
+  assert.equal(saved.buttonSurface, "#445566");
+  const layered = resolveUI(
+    { design: saved },
+    {
+      design: {
+        container: "#ffffff",
+        toolbarSurface: saved.toolbarSurface,
+        buttonSurface: saved.buttonSurface,
+      },
+    },
+  ).design;
+  assert.equal(layered.toolbarSurface, saved.toolbarSurface);
+  assert.equal(layered.buttonSurface, saved.buttonSurface);
+  for (const bad of [
+    { buttonOpacity: 101 },
+    { toolbarBorderWidth: 7 },
+    { buttonLabelStyle: "url(x)" },
+    { toolbarSurface: "red" },
+  ])
+    assert.throws(() => design(bad));
+});

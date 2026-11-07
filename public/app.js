@@ -21,6 +21,7 @@ import {
   roleDefaults,
   categoryDesign,
   appearanceKeys,
+  independentAppearanceKeys,
   appearancePreset,
 } from "/ui-system.js";
 import { icon } from "/icons.js";
@@ -118,6 +119,30 @@ function applyDesign(settings = {}, target = document.documentElement) {
     "--panel",
     `color-mix(in srgb, ${d.container} ${d.opacity}%, transparent)`,
   );
+  for (const prefix of ["toolbar", "button"]) {
+    root.setProperty(`--${prefix}-surface`, d[prefix + "Surface"]);
+    root.setProperty(
+      `--${prefix}-panel`,
+      `color-mix(in srgb, ${d[prefix + "Surface"]} ${d[prefix + "Opacity"]}%, transparent)`,
+    );
+    root.setProperty(`--${prefix}-border-color`, d[prefix + "BorderColor"]);
+    root.setProperty(
+      `--${prefix}-border-width`,
+      d[prefix + "BorderWidth"] + "px",
+    );
+    root.setProperty(`--${prefix}-border-style`, d[prefix + "BorderStyle"]);
+    root.setProperty(`--${prefix}-label-color`, d[prefix + "LabelColor"]);
+    root.setProperty(`--${prefix}-label-font`, d[prefix + "LabelFont"]);
+    root.setProperty(`--${prefix}-label-size`, d[prefix + "LabelSize"] + "px");
+    root.setProperty(
+      `--${prefix}-label-weight`,
+      d[prefix + "LabelStyle"].includes("bold") ? "700" : "400",
+    );
+    root.setProperty(
+      `--${prefix}-label-style`,
+      /italic/i.test(d[prefix + "LabelStyle"]) ? "italic" : "normal",
+    );
+  }
   root.setProperty("--heading", d.titleColor);
   root.setProperty("--ink", d.textColor);
   root.setProperty("--title-font", d.titleFont);
@@ -371,7 +396,12 @@ function toolbar(event) {
     ]);
   const role = state.session.role;
   if (role === "host")
-    return bottom([{ action: "home", label: "Home", icon: "home" }]);
+    return bottom([
+      { action: "home", label: "Home", icon: "home" },
+      ...(event
+        ? [{ action: "share", label: "Share Invitation", icon: "share" }]
+        : []),
+    ]);
   if (role === "admin")
     return bottom([
       { action: "home", label: "Home", icon: "home" },
@@ -404,9 +434,14 @@ function topActions(event) {
         role === "host"
           ? [
               { action: "event-details", label: "Edit event details" },
-              { action: "event-template", label: "Invitation" },
-              { action: "event-table", label: "Menu" },
-              { action: "preview-guest", label: "Preview guest experience" },
+              ...(state.session.platformAdmin
+                ? [
+                    {
+                      action: "preview-guest",
+                      label: "Preview guest experience",
+                    },
+                  ]
+                : []),
             ]
           : [],
     });
@@ -468,8 +503,7 @@ function eventCard(event) {
   return ui`<article class="card host-event-choice">${heading}<div class="event-overview">${content}</div><div class="event-home-actions" role="group" aria-label="${H("Event actions")}">${[
     ["dashboard", "RSVPs"],
     ["reminders", "Reminders"],
-    ["cards", "Cards"],
-    ["invitation", "Invitation"],
+    ["cards", "Invitation Cards"],
   ]
     .map(([action, label]) =>
       button("event-action-" + action, H(label), `data-id="${event.id}"`),
@@ -663,7 +697,14 @@ function render(target = $("#app"), example = false) {
               sort: [
                 { action: "share-details", label: "Household link and QR" },
                 { action: "household-details", label: "Household details" },
-                { action: "preview-guest", label: "Preview guest experience" },
+                ...(state.session.platformAdmin
+                  ? [
+                      {
+                        action: "preview-guest",
+                        label: "Preview guest experience",
+                      },
+                    ]
+                  : []),
               ],
             })
           : "") +
@@ -705,13 +746,12 @@ function render(target = $("#app"), example = false) {
               ? [
                   { action: "event-light-mode", label: "Light Mode" },
                   { action: "event-dark-mode", label: "Dark Mode" },
-                  { action: "edit-event", label: "Custom" },
+                  { action: "edit-event", label: "Custom Colors Mode" },
                 ]
               : [{ action: "household", label: "Edit House" }]),
-            {
-              action: "share",
-              label: event ? "Share Guest Link" : "Share Household Link",
-            },
+            ...(!event
+              ? [{ action: "share", label: "Share Household Link" }]
+              : []),
           ]
         : []),
       { action: "settings", label: "Settings" },
@@ -720,7 +760,7 @@ function render(target = $("#app"), example = false) {
       if (!options.querySelector(`[data-action="${item.action}"]`))
         options.insertAdjacentHTML(
           "beforeend",
-          ui`<button type="button" role="menuitem" data-action="${item.action}">${C(item.label)}</button>`,
+          ui`<button type="button" role="menuitem" data-action="${item.action}" class="${["event-light-mode", "event-dark-mode", "edit-event"].includes(item.action) ? "mode-option" : ""}">${C(item.label)}</button>`,
         );
   }
   if (!example) {
@@ -884,7 +924,7 @@ function contactsInviteTools() {
       : button("contacts-invite", H("Invite Guests"))
   }
     <button type="button" data-action="contacts-uninvite" aria-pressed="${contactUninvite}" ${contactInviteSaving ? "disabled" : ""}>${C("Uninvite Guests")}</button>
-    ${contactInviteMode ? button("contacts-invite-cancel", H("Cancel"), contactInviteSaving ? "disabled" : "") : ""}</div>
+    ${contactInviteMode ? button("contacts-invite-cancel", H("Cancel"), contactInviteSaving ? "disabled" : "") : ""}${contactsSyncTools()}</div>${state.data.integrations?.anylist ? ui`<p class="small" role="status" aria-live="polite" id="contacts-sync-status">${anyListStatusMessage(state.data.integrations.anylistStatus)}</p>` : ""}
     ${contactInviteMode ? ui`<p class="contacts-invite-status" role="status">${contactInviteSelection.size} ${C("contacts selected")}. ${contactUninvite ? C("Selecting an adult also selects their children.") : C("Selecting a child also selects their designated adult.")}</p>` : ""}
     ${contactInviteError ? ui`<p role="alert">${escape(contactInviteError)}</p>` : ""}
     ${contactInviteEventsOpen ? ui`<div class="contacts-event-picker"><h2>Select Event</h2><p>${contactUninvite ? C("Choose an event to uninvite the selected guests. Saved RSVPs are protected. No messages are sent.") : C("Choose an event to add the selected guests. Existing invitations and responses stay saved. No messages are sent.")}</p><ul class="browse-rows">${state.data.events.map((event) => row({ title: escape(event.title), meta: escape(dateLabel(event.date)), action: "contacts-invite-event", id: event.id, symbol: "list", attributes: contactInviteSaving ? "inert" : "" })).join("") || M('<li class="browse-empty">Create an event from Home first.</li>')}</ul></div>` : ""}</section>`;
@@ -907,11 +947,14 @@ function contactsSyncTools() {
   if (!state.data.integrations?.anylist) return "";
   const status = state.data.integrations.anylistStatus;
   const running = status?.state === "running";
-  return ui`<section class="contacts-sync"><button type="button" data-action="contacts-anylist-sync" ${running ? "disabled" : ""} aria-busy="${running}">${running ? C("Syncing…") : C("Sync AnyList")}</button><p class="small" role="status" aria-live="polite" id="contacts-sync-status">${anyListStatusMessage(status)}</p></section>`;
+  return ui`<section class="contacts-sync"><button type="button" data-action="contacts-anylist-sync" ${running ? "disabled" : ""} aria-busy="${running}">${running ? C("Syncing…") : C("Sync AnyList")}</button></section>`;
+}
+function notePencil(a) {
+  return a ? tool("address-notes", "Edit private notes", a.id, "edit") : "";
 }
 function householdNotes(a) {
   return a
-    ? ui`<div class="household-private-notes"><small>${escape(a.notes || "")}</small>${button("address-notes", H("Edit private notes"), `data-id="${a.id}"`)}</div>`
+    ? ui`<div class="household-private-notes"><small>${escape(a.notes || "")}</small></div>`
     : "";
 }
 function contactsPage() {
@@ -946,11 +989,11 @@ function contactsPage() {
     entries.sort(
       ([a], [b]) => label(a).localeCompare(label(b)) || a.localeCompare(b),
     );
-  return ui`<div class="browse-shell">${topbar({ title: C("Contacts"), back: "home", search: "contacts-search", plus: contactInviteMode ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: sorting("contacts-", contactPreferences?.contactSort) })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search contacts") : ""}<div class="browse-content">${contactsInviteTools()}${contactsSyncTools()}<ul class="browse-rows">${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
+  return ui`<div class="browse-shell">${topbar({ title: C("Contacts"), back: "home", search: "contacts-search", plus: contactInviteMode ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: sorting("contacts-", contactPreferences?.contactSort) })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search contacts") : ""}<div class="browse-content">${contactsInviteTools()}<ul class="browse-rows">${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
     entries
       .map(
         ([key, rows]) =>
-          ui`<li class="browse-category" data-address-group="${key}"><span data-address-title>${escape(label(key))}</span>${key && rows[0]?.inviteCode ? ui`<span class="address-guest-id">${C("Guest ID")} · <code>${escape(rows[0].inviteCode)}</code></span>` : ""}${key ? householdNotes(state.data.addresses.find((a) => a.id === key)) : ""}</li>${rows
+          ui`<li class="browse-category" data-address-group="${key}"><div class="address-title-row"><div class="address-title-content"><span data-address-title>${escape(label(key))}</span>${key && rows[0]?.inviteCode ? ui`<span class="address-guest-id">${C("Guest ID")} · <code>${escape(rows[0].inviteCode)}</code></span>` : ""}</div>${notePencil(state.data.addresses.find((a) => a.id === key))}</div>${key ? ui`<small class="contact-mailing-address">${escape(state.data.addresses.find((a) => a.id === key)?.lines || "")}</small>${householdNotes(state.data.addresses.find((a) => a.id === key))}` : ""}</li>${rows
             .sort((a, b) => Number(!!a.parent) - Number(!!b.parent))
             .map(
               (g) =>
@@ -1218,7 +1261,7 @@ async function dashboard() {
               .join(", ")}</li>`,
         )
         .join("") || M("<li>No items claimed yet.</li>")
-    }</ul><h3>Private household notes</h3>${(d.addresses || []).map((a) => ui`<section><strong>${escape(a.label)}</strong>${householdNotes(a)}</section>`).join("")}${button("refresh-dashboard", H("Refresh totals"))}`,
+    }</ul><h3>Private household notes</h3>${(d.addresses || []).map((a) => ui`<section><div class="address-title-row"><strong>${escape(a.label)}</strong>${notePencil(a)}</div>${householdNotes(a)}</section>`).join("")}${button("refresh-dashboard", H("Refresh totals"))}`,
   );
 }
 async function copyHouseholdLink() {
@@ -2437,13 +2480,7 @@ async function startAppearance(scope, globalOptions) {
   const version = record?.version;
   appearance.start({
     design: initial,
-    contentActions:
-      scope === "event"
-        ? [
-            { action: "event-template", label: "Invitation" },
-            { action: "event-table", label: "Menu" },
-          ]
-        : [],
+    contentActions: [],
     defaults: globalOptions?.defaults || state.data.defaults,
     sources: globalOptions?.sources || [
       { label: String(C("Household")), design: state.data.ui.design },
@@ -2473,7 +2510,11 @@ async function startAppearance(scope, globalOptions) {
       }
       const overrides = { ...(record.design || {}) };
       for (const key of appearanceKeys)
-        if (design[key] !== initial[key] || Object.hasOwn(overrides, key))
+        if (
+          independentAppearanceKeys.includes(key) ||
+          design[key] !== initial[key] ||
+          Object.hasOwn(overrides, key)
+        )
           overrides[key] = design[key];
       await api(
         scope === "event"
