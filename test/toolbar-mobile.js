@@ -815,7 +815,7 @@ try {
       .frameLocator("#page-example-frame")
       .locator("[data-home-card]")
       .count(),
-    2,
+    3,
   );
   await click(promoted, "Cancel");
   await promoted
