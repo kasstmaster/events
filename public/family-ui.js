@@ -648,6 +648,9 @@ export function familyTools(ctx) {
         return true;
       }
       if (actionName === "family-settings") {
+        if (!state.familyData) await refresh();
+        state.view = "family";
+        state.event = null;
         selected = "__settings__";
         search = "";
         render();

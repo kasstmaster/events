@@ -266,7 +266,16 @@ async function footer(p, names) {
   assert.deepEqual(
     await p
       .locator(".toolbar .nav-control")
-      .evaluateAll((es) => es.map((e) => e.getAttribute("aria-label"))),
+      .evaluateAll((es) =>
+        es
+          .filter(
+            (e) =>
+              !["settings", "share-details"].includes(e.dataset.action) &&
+              !e.dataset.action.endsWith("search") &&
+              e.dataset.icon !== "plus",
+          )
+          .map((e) => e.getAttribute("aria-label")),
+      ),
     names.filter(
       (name) =>
         ![
@@ -337,7 +346,7 @@ try {
   assert.equal(
     await p
       .locator(
-        ".toolbar [data-action=family-workspace],.toolbar [data-action=addresses],.toolbar [data-action=household],.toolbar [data-action=share],.toolbar [data-action=settings]",
+        ".toolbar [data-action=family-workspace],.toolbar [data-action=addresses],.toolbar [data-action=household],.toolbar [data-action=share]",
       )
       .count(),
     0,
@@ -484,12 +493,53 @@ try {
   await p
     .getByText("Background update after scrolling", { exact: true })
     .waitFor();
-  await p.waitForFunction(() => window.pageRefreshes >= 2);
+  await p.waitForFunction(() => window.pageRefreshes >= 1);
+  const refreshCount = await p.evaluate(() => window.pageRefreshes);
+  await p.waitForTimeout(3500);
+  assert.equal(
+    await p.evaluate(() => window.pageRefreshes),
+    refreshCount,
+    "Unchanged polls must preserve the rendered buttons",
+  );
   assert.ok(
     await p.evaluate(() => Math.abs(scrollY - window.readingPosition) < 3),
     "Background refresh must preserve scrolling while adopting new content",
   );
   await p.evaluate(() => window.refreshObserver.disconnect());
+  const openEventButton = p
+    .locator("article.card")
+    .filter({
+      has: p.getByRole("heading", { name: "Dinner One", exact: true }),
+    })
+    .getByRole("button", { name: "View Event", exact: true });
+  await openEventButton.scrollIntoViewIfNeeded();
+  const heldButton = await openEventButton.elementHandle();
+  const heldBox = await openEventButton.boundingBox();
+  await p.mouse.move(
+    heldBox.x + heldBox.width / 2,
+    heldBox.y + heldBox.height / 2,
+  );
+  await p.mouse.down();
+  const pendingRefreshEvent = store.get("event", e2.id, household.id);
+  store.put(
+    "event",
+    e2.id,
+    household.id,
+    { ...pendingRefreshEvent, description: "Update while a pointer is held" },
+    pendingRefreshEvent.version,
+  );
+  await p.waitForTimeout(3500);
+  assert.equal(
+    await heldButton.evaluate((el) => el.isConnected),
+    true,
+    "A poll must not replace the control during a click",
+  );
+  await p.mouse.up();
+  await p
+    .locator(".event-hero h1")
+    .getByText("Dinner One", { exact: true })
+    .waitFor();
+  await click(p, "Home");
   await p.setViewportSize({ width: 1440, height: 900 });
   await p.evaluate(() => {
     Object.defineProperty(navigator, "share", {
@@ -534,7 +584,35 @@ try {
     origin + "/h/" + household.slug,
   );
   stage("shared Contacts rows, search, menus and formatting");
+  let releasePreferences;
+  const preferencesGate = new Promise(
+    (resolve) => (releasePreferences = resolve),
+  );
+  await p.route("**/api/family/preferences", async (route) => {
+    await preferencesGate;
+    await route.continue();
+  });
   await click(p, "Contacts");
+  await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
+  releasePreferences();
+  await p.unroute("**/api/family/preferences");
+  assert.equal(
+    await p
+      .locator(
+        '#top-navigation [data-action="contacts-search"],#top-navigation summary[aria-label="Create"]',
+      )
+      .count(),
+    0,
+  );
+  await p.locator('.toolbar [data-action="contacts-search"]').waitFor();
+  await p.locator('.toolbar summary[aria-label="Create"]').waitFor();
+  const titleCenter = await p
+    .locator(".top-shell .browse-heading")
+    .evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return Math.abs(r.left + r.width / 2 - innerWidth / 2);
+    });
+  assert.ok(titleCenter < 2, "Page title stays centered in the viewport");
   await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
   assert.equal(
     await p.getByRole("button", { name: "Sync AnyList", exact: true }).count(),
@@ -1309,6 +1387,26 @@ try {
     await p.locator(".page-appearance-settings .mode-option").allTextContents(),
     ["Default Mode", "Custom Colors Mode"],
   );
+  assert.equal(await p.locator(".inline-household-details").count(), 0);
+  const eventSettings = p.locator(".inline-event-details");
+  await eventSettings.getByLabel("Event title", { exact: true }).waitFor();
+  assert.equal(
+    await eventSettings.getByLabel("Event title", { exact: true }).inputValue(),
+    "Dinner One",
+  );
+  await eventSettings
+    .getByLabel("Description", { exact: true })
+    .fill("Inline event Settings description");
+  await eventSettings
+    .getByRole("button", { name: "Save event", exact: true })
+    .click();
+  await p.getByText("Event saved.", { exact: true }).waitFor();
+  assert.equal(
+    (await api(owner, "/api/host")).body.events.find((e) => e.id === e1.id)
+      .description,
+    "Inline event Settings description",
+  );
+
   assert.ok(
     await p
       .locator(".page-appearance-settings .mode-option")
@@ -1394,13 +1492,9 @@ try {
   ]);
   await click(p, "Home");
   const offered = async () => {
-    await p.getByLabel("Sorting and options", { exact: true }).click();
     assert.equal(await p.locator("#top-navigation .mode-option").count(), 0);
-    await p
-      .getByRole("menuitem", { name: "Household Link and QR", exact: true })
-      .waitFor();
-    await p.getByRole("menuitem", { name: "Settings", exact: true }).waitFor();
-    await p.getByLabel("Sorting and options", { exact: true }).click();
+    await p.locator('.toolbar [data-action="share-details"]').waitFor();
+    await p.locator('.toolbar [data-action="settings"]').waitFor();
     await click(p, "Settings");
     assert.deepEqual(
       await p

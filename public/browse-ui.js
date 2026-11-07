@@ -9,7 +9,7 @@ export const sections = [
 export const sectionFor = (type) =>
   ({ list: "lists", task: "tasks", record: "records", chore: "chores" })[type];
 export function tool(action, label, key = "", symbol = action, extra = "") {
-  return ui`<button type="button" class="nav-control" data-action="${action}" data-id="${key}" aria-label="${H(label)}" ${extra}>${icon(symbol)}<span>${C(label)}</span></button>`;
+  return ui`<button type="button" class="nav-control" data-icon="${symbol}" data-action="${action}" data-id="${key}" aria-label="${H(label)}" ${extra}>${icon(symbol)}<span>${C(label)}</span></button>`;
 }
 export function menu(label, symbol, items) {
   return ui`<details class="browse-menu"><summary aria-label="${H(label)}">${icon(symbol)}</summary><div role="menu" aria-label="${H(label)} menu">${items.map((i) => ui`<button type="button" role="${i.checked === undefined ? "menuitem" : "menuitemradio"}" ${i.checked === undefined ? "" : `aria-checked="${i.checked}"`} data-action="${i.action}" data-id="${i.id || ""}">${C(i.label)}</button>`).join("")}</div></details>`;

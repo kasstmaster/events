@@ -2688,3 +2688,51 @@ body #app .settings-mode-row .mode-option span {
   font-size: inherit;
   font-weight: inherit;
 }
+
+/* Bottom actions retain the scope of their originating page. */
+.toolbar > :is(.nav-control, .browse-menu) {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.toolbar .nav-control,
+.toolbar .toolbar-create summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 3px;
+  white-space: normal;
+  text-align: center;
+  min-height: 52px;
+}
+.toolbar .toolbar-create summary span {
+  font-size: 0.85em;
+}
+.top-primary {
+  position: relative;
+}
+.top-shell .browse-heading {
+  position: absolute;
+  left: var(--heading-inset, 135px);
+  right: var(--heading-inset, 135px);
+  text-align: center;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.top-shell .browse-heading h1 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.top-shell .browse-top-actions {
+  margin-left: auto;
+}
+/* Fixed bottom menus position against the viewport, not a filtered ancestor. */
+.toolbar {
+  backdrop-filter: none;
+}
+.top-shell .browse-heading :is(h1, p) {
+  pointer-events: auto;
+}

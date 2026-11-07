@@ -245,7 +245,16 @@ async function footer(p, names) {
   assert.deepEqual(
     await p
       .locator(".toolbar .nav-control")
-      .evaluateAll((es) => es.map((e) => e.getAttribute("aria-label"))),
+      .evaluateAll((es) =>
+        es
+          .filter(
+            (e) =>
+              !["settings", "share-details"].includes(e.dataset.action) &&
+              !e.dataset.action.endsWith("search") &&
+              e.dataset.icon !== "plus",
+          )
+          .map((e) => e.getAttribute("aria-label")),
+      ),
     names.filter(
       (name) =>
         ![

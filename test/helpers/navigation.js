@@ -46,7 +46,20 @@ export async function clickNavigation(page, label) {
       .click();
     return;
   }
-  if (label === "Household link and QR") label = "Household Link and QR";
+  if (["Household link and QR", "Household Link and QR"].includes(label))
+    label = "Share Link";
+  if (["Settings", "Share Link"].includes(label)) {
+    await page
+      .locator(
+        `.toolbar [data-action="${label === "Settings" ? "settings" : "share-details"}"]`,
+      )
+      .click();
+    if (label === "Settings")
+      await page
+        .getByRole("heading", { name: "Settings", exact: true })
+        .waitFor();
+    return;
+  }
   if (
     [
       "Share",
