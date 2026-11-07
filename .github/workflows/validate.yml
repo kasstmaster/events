@@ -11,14 +11,43 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run format:check
+      - name: Install isolated AnyList reader dependencies
+        run: npm ci --ignore-scripts --prefix integrations/anylist
+      - name: Check read-only AnyList transport and protobuf decoding
+        run: node --test integrations/anylist/reader.test.js
       - run: npm test
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:mobile
-      - run: npm run test:cloudflare
+      - name: Original phone workflow
+        run: node test/mobile.cjs
+      - name: Household phone and desktop routing
+        run: node test/domains-mobile.js
+      - name: Shared editor browser checks
+        timeout-minutes: 3
+        run: node test/features-mobile.js
+      - name: Family workspace and invite-code browser checks
+        timeout-minutes: 3
+        run: node test/family-mobile.js
+      - name: Shared navigation and workspace browser checks
+        timeout-minutes: 3
+        run: node test/navigation-mobile.js
+      - name: Fixed toolbar and inline appearance browser checks
+        timeout-minutes: 3
+        run: node test/toolbar-mobile.js
+      - name: Cloudflare runtime checks
+        if: ${{ !cancelled() }}
+        run: npm run test:cloudflare
+      - name: Browser failure screenshots
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: browser-failure-screenshots
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7

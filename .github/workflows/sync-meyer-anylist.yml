@@ -1,0 +1,35 @@
+name: Sync Meyer AnyList contacts
+on:
+  workflow_dispatch:
+    inputs:
+      sync_id:
+        description: Job ID supplied by the authenticated Events host
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: events-meyer-anylist
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+        working-directory: integrations/anylist
+      - name: Read AnyList and import into the configured Events household
+        working-directory: integrations/anylist
+        env:
+          SYNC_ID: ${{ inputs.sync_id }}
+          ANYLIST_EMAIL: ${{ secrets.ANYLIST_EMAIL }}
+          ANYLIST_PASSWORD: ${{ secrets.ANYLIST_PASSWORD }}
+          ANYLIST_IMPORT_SECRET: ${{ secrets.ANYLIST_IMPORT_SECRET }}
+          ANYLIST_LIST_NAME: ${{ vars.ANYLIST_LIST_NAME || 'Address Book' }}
+        run: node sync.js
