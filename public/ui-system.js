@@ -2,6 +2,8 @@
 export const roleDefaults = {
   background: "#f3eee8",
   backgroundImage: "",
+  containerImage: "",
+  containerImageOpacity: 100,
   container: "#fffdf9",
   opacity: 96,
   titleStyle: "normal",
@@ -151,6 +153,8 @@ export const appearanceKeys = [
   "textSize",
   "textStyle",
   "container",
+  "containerImage",
+  "containerImageOpacity",
   "opacity",
   "borderColor",
   "borderWidth",
@@ -247,3 +251,24 @@ export const fontOptions = [
   "Verdana",
   "Times New Roman",
 ];
+
+// Presets are appearance data; all scopes use the same five-category schema.
+export function appearancePreset(mode, defaults = roleDefaults) {
+  const base = resolveUI({ design: defaults }).design;
+  if (mode === "dark")
+    Object.assign(base, {
+      background: "#151719",
+      backgroundImage: "",
+      container: "#25282b",
+      containerImage: "",
+      containerImageOpacity: 100,
+      titleColor: "#f4f3ed",
+      descriptionColor: "#d3d8d5",
+      textColor: "#f0f2ef",
+      borderColor: "#59615d",
+      opacity: 96,
+    });
+  return categoryDesign(
+    Object.fromEntries(appearanceKeys.map((key) => [key, base[key]])),
+  );
+}

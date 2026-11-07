@@ -235,13 +235,20 @@ export function importAnyList(store, env, input, validateGuest) {
       if (!address) address = store.put("address", id(), household, incoming);
       else if (
         mapping &&
-        (address.label !== incoming.label || address.lines !== incoming.lines)
+        ["label", "lines", "street", "city", "state", "zip"].some(
+          (key) => address[key] !== incoming[key],
+        )
       ) {
         address = store.put(
           "address",
           address.id,
           household,
-          { ...address, ...incoming, phone: address.phone || "" },
+          {
+            ...address,
+            ...incoming,
+            notes: address.notes || "",
+            phone: address.phone || "",
+          },
           address.version,
         );
         updated++;

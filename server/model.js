@@ -83,7 +83,8 @@ export function design(value = {}) {
   const result = {};
   for (const [key, val] of Object.entries(value)) {
     if (!(key in defaults)) fail(400, "Unknown appearance setting.");
-    if (key === "backgroundImage") result[key] = image(val);
+    if (["backgroundImage", "containerImage"].includes(key))
+      result[key] = image(val);
     else if (
       key.endsWith("Color") ||
       key.endsWith("Background") ||
@@ -115,11 +116,13 @@ export function design(value = {}) {
       const [min, max] =
         key === "borderWidth"
           ? [0, 6]
-          : key === "opacity"
-            ? [35, 100]
-            : key === "titleSize"
-              ? [22, 64]
-              : [14, 28];
+          : key === "containerImageOpacity"
+            ? [0, 100]
+            : key === "opacity"
+              ? [35, 100]
+              : key === "titleSize"
+                ? [22, 64]
+                : [14, 28];
       if (!Number.isInteger(val) || val < min || val > max)
         fail(400, "Appearance value is out of range.");
       result[key] = val;
@@ -770,7 +773,12 @@ export class Store {
       response: response || { version: 0, attendance: {}, claims: {} },
     };
   }
-  saveResponse(event, session, input, { partial = false } = {}) {
+  saveResponse(
+    event,
+    session,
+    input,
+    { partial = false, allowClosed = false } = {},
+  ) {
     return this.transaction(() => {
       const current = this.get("event", event.id, session.household);
       if (!current?.invited.includes(session.guest))
@@ -780,6 +788,7 @@ export class Store {
       if ((previous?.version || 0) !== input.version)
         fail(409, "Your RSVP changed on another device. Reload before saving.");
       if (
+        !allowClosed &&
         current.deadline &&
         current.deadline < new Date().toISOString().slice(0, 10)
       )

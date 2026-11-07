@@ -96,6 +96,24 @@ export function appearanceEditor({
         );
     }
     if (category === "Containers") {
+      if (action === "Image")
+        return (
+          field(
+            H("Containers image (up to 2 MB)"),
+            "appearanceContainerImage",
+            "",
+            "file",
+            'accept="image/png,image/jpeg,image/webp"',
+          ) +
+          field(
+            H("Container image opacity (%)"),
+            "containerImageOpacity",
+            d.containerImageOpacity,
+            "number",
+            'min="0" max="100"',
+          ) +
+          button("remove-container-image", "Remove container image")
+        );
       if (action === "Background")
         return (
           field(H("Containers background"), "container", d.container, "color") +
@@ -143,7 +161,7 @@ export function appearanceEditor({
       category === "Background"
         ? ["Color", "Image"]
         : category === "Containers"
-          ? ["Background", "Border"]
+          ? ["Background", "Image", "Border"]
           : ["Font", "Color", "Style", "Size"];
     const container = mount();
     const options = ui`<details class="appearance-options"><summary>${C("Formatting options")}</summary>${editing.sources.length ? button("action", "Copy Formatting", "copy") : ""}${button("reset", "Reset to Defaults")}${!category ? button("save", "Save") + button("cancel", "Cancel") : ""}</details>`;
@@ -238,10 +256,12 @@ export function appearanceEditor({
           preview();
           chrome();
         }
-      } else if (kind === "remove-image") {
+      } else if (["remove-image", "remove-container-image"].includes(kind)) {
         revision++;
         pendingImage = Promise.resolve();
-        editing.draft.backgroundImage = "";
+        editing.draft[
+          kind === "remove-image" ? "backgroundImage" : "containerImage"
+        ] = "";
         preview();
       } else if (kind === "copy") {
         const source =
@@ -264,11 +284,15 @@ export function appearanceEditor({
       const input = event.target,
         name = input.name,
         current = revision;
-      if (name === "appearanceImage") {
+      if (["appearanceImage", "appearanceContainerImage"].includes(name)) {
         try {
           pendingImage = fileData(input).then((data) => {
             if (editing && current === revision && data) {
-              editing.draft.backgroundImage = data;
+              editing.draft[
+                name === "appearanceImage"
+                  ? "backgroundImage"
+                  : "containerImage"
+              ] = data;
               preview();
             }
             return data;

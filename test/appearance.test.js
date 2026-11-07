@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { application, password } from "./helpers/application.js";
-import { categoryDesign, resolveUI } from "../public/ui-system.js";
+import {
+  appearancePreset,
+  categoryDesign,
+  resolveUI,
+} from "../public/ui-system.js";
 import { design } from "../server/model.js";
 test("legacy appearance maps deterministically before inheritance and category keys cover every legacy role", () => {
   const migrated = categoryDesign({
@@ -142,4 +146,40 @@ test("administrator password changes require the current password, reject other 
     (await f.request("/api/admin", { cookie: f.admin })).status,
     401,
   );
+});
+
+test("container images validate independently from page background and inherit without changing explicit overrides", () => {
+  const image = "data:image/png;base64,aGVsbG8=";
+  assert.equal(
+    design({ containerImage: image, containerImageOpacity: 0 })
+      .containerImageOpacity,
+    0,
+  );
+  for (const bad of [
+    { containerImage: "https://example.test/tracker.png" },
+    { containerImageOpacity: -1 },
+    { containerImageOpacity: 101 },
+    { containerImageOpacity: 0.5 },
+  ])
+    assert.throws(() => design(bad));
+  const result = resolveUI(
+    { design: { containerImage: image, containerImageOpacity: 25 } },
+    { design: { containerImage: "", containerImageOpacity: 80 } },
+  ).design;
+  assert.equal(result.containerImage, "");
+  assert.equal(result.containerImageOpacity, 80);
+});
+
+test("light preset uses platform defaults and dark preset is valid appearance data", () => {
+  const light = appearancePreset("light", {
+    background: "#abcdef",
+    containerImage: "",
+    textFont: "Verdana",
+  });
+  assert.equal(light.background, "#abcdef");
+  assert.equal(light.textFont, "Verdana");
+  const dark = appearancePreset("dark", light);
+  assert.equal(dark.background, "#151719");
+  assert.equal(dark.textFont, "Verdana");
+  assert.deepEqual(design(dark), dark);
 });

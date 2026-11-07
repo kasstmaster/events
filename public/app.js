@@ -21,6 +21,7 @@ import {
   roleDefaults,
   categoryDesign,
   appearanceKeys,
+  appearancePreset,
 } from "/ui-system.js";
 import { icon } from "/icons.js";
 import { suggestLabel } from "/household-address.js";
@@ -162,12 +163,21 @@ function applyDesign(settings = {}, target = document.documentElement) {
       /italic/i.test(d[prefix + "Style"]) ? "italic" : "normal",
     );
   }
+  root.setProperty(
+    "--container-image",
+    d.containerImage ? `url("${d.containerImage}")` : "none",
+  );
+  root.setProperty(
+    "--container-image-opacity",
+    String(d.containerImageOpacity / 100),
+  );
   root.setProperty("--border-width", d.borderWidth + "px");
   root.setProperty("--border-style", d.borderStyle);
   root.setProperty(
     "--background-image",
     d.backgroundImage ? `url("${d.backgroundImage}")` : "none",
   );
+  fitEventSummary();
 }
 let loadGeneration = 0;
 const isEditing = () =>
@@ -352,7 +362,7 @@ function authPage(designTarget) {
   if (state.view === "family-login" && household)
     return ui`<section class="auth"><div class="panel"><h1>${escape(household.name)}</h1><h2>Family member sign-in</h2><form data-form="family-login">${field(H("Sign-in name"), "login", "", "text", 'required autocomplete="username"')}${field(H("Password"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Sign in</button></form></div></section>`;
   const register = state.view === "register";
-  return ui`<section class="auth"><p class="eyebrow">A place for your people</p><h1>${register ? C("Make yourself at home.") : C("Good things begin together.")}</h1><div class="panel"><h2>${register ? C("Create your host account") : C("Host Login")}</h2><p class="muted">${register ? C("Registration is available only for administrator-approved email addresses. No emails will be sent.") : C("Plan a little. Gather a lot.")}</p><form data-form="${register ? "register" : "login"}">${field(H("Email address"), "email", "", "email", 'required autocomplete="username" maxlength="254"')}${field(H("Password"), "password", "", "password", `required minlength="12" maxlength="256" autocomplete="${register ? "new-password" : "current-password"}"`)}${register ? field(H("Family household name"), "name", "", "text", 'required maxlength="100" placeholder="Household name"') + subdomainField() : ""}<p class="form-error" role="alert"></p><button>${register ? C("Create account") : C("Sign in")}</button></form></div><p class="small">${register ? C("Already registered?") : C("Approved to host?")} ${button(register ? "host-login" : "register", register ? C("Sign in") : C("Create your account"), "", "quiet")}</p>${household ? button("guest-login", H("Back to guest sign-in"), "", "quiet") : ""}</section>`;
+  return ui`<section class="auth"><p class="eyebrow">A place for your people</p><h1>${register ? C("Make yourself at home.") : C("Good things begin together.")}</h1><div class="panel"><h2>${register ? C("Create your host account") : C("Host Login")}</h2><p class="muted">${register ? C("Registration is available only for administrator-approved email addresses. No emails will be sent.") : C("Plan a little. Gather a lot.")}</p><form data-form="${register ? "register" : "login"}">${field(H("Email address"), "email", "", "email", 'required autocomplete="username" maxlength="254"')}${field(H("Password"), "password", "", "password", `required minlength="12" maxlength="256" autocomplete="${register ? "new-password" : "current-password"}"`)}${register ? field(H("Family household name"), "name", "", "text", 'required maxlength="100" placeholder="Household name"') + subdomainField() : ""}<p class="form-error" role="alert"></p><button>${register ? C("Create account") : C("Sign in")}</button></form></div><p class="small">${register ? C("Already registered?") : C("Approved to host?")} ${button(register ? "host-login" : "register", register ? C("Sign in") : C("Create your account"), "", "quiet")}</p>${household ? button("page-back", H("Back"), "", "quiet") : ""}</section>`;
 }
 function toolbar(event) {
   if (state.preview)
@@ -431,7 +441,7 @@ function eventSummary(event) {
           "Your items",
         ],
       ];
-  return `<div class="event-summary no-print" role="group" tabindex="0" aria-label="${H("Event summary")}"><div class="totals">${items.map(([value, label]) => `<div><strong>${value}</strong><span>${H(label)}</span></div>`).join("")}</div></div>`;
+  return `<div class="event-summary no-print" role="group" tabindex="0" aria-label="${H("Event summary")}"><div class="totals" style="--summary-items:${items.length}">${items.map(([value, label]) => `<div><strong>${value}</strong><span>${H(label)}</span></div>`).join("")}</div></div>`;
 }
 
 function orderedInvitations(events) {
@@ -490,7 +500,95 @@ function eventPage(event) {
         ) + "</section>"
   }</div>`;
 }
+const pageTrail = [];
+let currentPage = null,
+  pageIdentity = "",
+  returningToPage = false,
+  pageTransition = false;
+function rememberPage() {
+  const identity = JSON.stringify([
+    state.session?.role,
+    state.session?.user,
+    state.session?.household,
+    state.publicHousehold?.slug,
+  ]);
+  if (identity !== pageIdentity) {
+    pageTrail.length = 0;
+    currentPage = null;
+    pageIdentity = identity;
+  }
+  if (
+    !state.session ||
+    pageTransition ||
+    state.preview ||
+    state.example ||
+    ["management", "card-editor"].includes(state.view)
+  )
+    return;
+  const page = {
+    view: state.view,
+    event: state.event,
+    settingsOpen: !!state.settingsOpen,
+    adminMode: !!state.adminMode,
+    family: family.navigation(),
+    scroll: scrollY,
+  };
+  const route = (p) =>
+    JSON.stringify([
+      p.view,
+      p.event,
+      p.settingsOpen,
+      p.adminMode,
+      p.view === "family" ? [p.family.selected, p.family.section] : null,
+    ]);
+  if (currentPage && route(currentPage) !== route(page) && !returningToPage) {
+    currentPage.scroll = scrollY;
+    pageTrail.push(currentPage);
+    if (pageTrail.length > 50) pageTrail.shift();
+  }
+  currentPage = page;
+}
+async function previousPage() {
+  const previous = pageTrail.at(-1);
+  if (!previous) {
+    notify(C("No previous page in this session."));
+    return;
+  }
+  if (
+    previous.view === "family" &&
+    !(await family.restoreNavigation(previous.family))
+  ) {
+    notify(C("The previous page is no longer available."));
+    return;
+  }
+  if (
+    previous.event &&
+    !state.data?.events?.some(
+      (e) => (e.invitationKey || e.id) === previous.event,
+    )
+  ) {
+    notify(C("The previous page is no longer available."));
+    return;
+  }
+  pageTrail.pop();
+  resetContactInvites();
+  state.actionEvent = null;
+  Object.assign(state, {
+    view: previous.view,
+    event: previous.event,
+    settingsOpen: previous.settingsOpen,
+    adminMode: previous.adminMode,
+  });
+  returningToPage = true;
+  try {
+    render();
+  } finally {
+    returningToPage = false;
+  }
+  requestAnimationFrame(() => window.scrollTo(0, previous.scroll || 0));
+}
 function render(target = $("#app"), example = false) {
+  if (!example) rememberPage();
   const designTarget = example ? target : document.documentElement;
   const existingEditor = !example && document.querySelector("#editor");
   if (existingEditor && target.contains(existingEditor))
@@ -606,10 +704,13 @@ function render(target = $("#app"), example = false) {
     const items = [
       ...(role === "host"
         ? [
-            {
-              action: event ? "edit-event" : "household",
-              label: event ? "Edit Event" : "Edit House",
-            },
+            ...(event
+              ? [
+                  { action: "event-light-mode", label: "Light Mode" },
+                  { action: "event-dark-mode", label: "Dark Mode" },
+                  { action: "edit-event", label: "Custom" },
+                ]
+              : [{ action: "household", label: "Edit House" }]),
             { action: "share", label: "Share Household Link" },
           ]
         : []),
@@ -808,6 +909,11 @@ function contactsSyncTools() {
   const running = status?.state === "running";
   return ui`<section class="contacts-sync"><button type="button" data-action="contacts-anylist-sync" ${running ? "disabled" : ""} aria-busy="${running}">${running ? C("Syncing…") : C("Sync AnyList")}</button><p class="small" role="status" aria-live="polite" id="contacts-sync-status">${anyListStatusMessage(status)}</p></section>`;
 }
+function householdNotes(a) {
+  return a
+    ? ui`<div class="household-private-notes"><small>${escape(a.notes || "")}</small>${button("address-notes", H("Edit private notes"), `data-id="${a.id}"`)}</div>`
+    : "";
+}
 function contactsPage() {
   const guests = ordered(
     state.data.guests.filter((g) =>
@@ -844,7 +950,7 @@ function contactsPage() {
     entries
       .map(
         ([key, rows]) =>
-          ui`<li class="browse-category" data-address-group="${key}"><span data-address-title>${escape(label(key))}</span>${key && rows[0]?.inviteCode ? ui`<span class="address-guest-id">${C("Guest ID")} · <code>${escape(rows[0].inviteCode)}</code></span>` : ""}</li>${rows
+          ui`<li class="browse-category" data-address-group="${key}"><span data-address-title>${escape(label(key))}</span>${key && rows[0]?.inviteCode ? ui`<span class="address-guest-id">${C("Guest ID")} · <code>${escape(rows[0].inviteCode)}</code></span>` : ""}${key ? householdNotes(state.data.addresses.find((a) => a.id === key)) : ""}</li>${rows
             .sort((a, b) => Number(!!a.parent) - Number(!!b.parent))
             .map(
               (g) =>
@@ -1033,9 +1139,10 @@ function eventEditor(existing, focus = "") {
     input.focus({ preventScroll: true });
   }
 }
-function rsvp() {
-  const event = selectedEvent();
+function rsvp(event = selectedEvent(), manual = false) {
+  state.manualRSVP = manual ? event : null;
   if (
+    !manual &&
     event.deadline &&
     event.deadline < new Date().toISOString().slice(0, 10)
   ) {
@@ -1044,8 +1151,8 @@ function rsvp() {
   }
   state.editingResponse = structuredClone(event.response);
   modal(
-    C("Will you join us?"),
-    ui`<p>${escape(event.title)}</p><p class="small">An RSVP confirmation may be texted to the phone number your host has on file. Reply STOP to opt out.</p>${event.deadline ? ui`<p class="muted small">RSVP by ${escape(dateLabel(event.deadline))}. Responses close after this date.</p>` : ""}<fieldset><legend>Your invited party</legend>${event.members
+    C(manual ? "Record guest RSVP" : "Will you join us?"),
+    ui`<p>${escape(event.title)}</p>${manual ? "" : M('<p class="small">An RSVP confirmation may be texted to the phone number your host has on file. Reply STOP to opt out.</p>')}${event.deadline && !manual ? ui`<p class="muted small">RSVP by ${escape(dateLabel(event.deadline))}. Responses close after this date.</p>` : ""}<fieldset><legend>Your invited party</legend>${event.members
       .map((m) =>
         select(
           escape(fullName(m)) + (m.parent ? C(" · child") : ""),
@@ -1089,7 +1196,7 @@ async function dashboard() {
               .filter((g) => (attendance[g.id] || "") === status)
               .map(
                 (g) =>
-                  ui`<li>${escape(fullName(g))}${g.parent ? " · child of " + escape(fullName(d.guests.find((a) => a.id === g.parent))) : C(" · adult")}</li>`,
+                  ui`<li>${escape(fullName(g))} ${button("manual-rsvp", H("Record RSVP"), `data-id="${g.id}"`)}${g.parent ? " · child of " + escape(fullName(d.guests.find((a) => a.id === g.parent))) : C(" · adult")}</li>`,
               )
               .join("") || M("<li>None yet</li>")
           }</ul></details>`,
@@ -1111,7 +1218,7 @@ async function dashboard() {
               .join(", ")}</li>`,
         )
         .join("") || M("<li>No items claimed yet.</li>")
-    }</ul>${button("refresh-dashboard", H("Refresh totals"))}`,
+    }</ul><h3>Private household notes</h3>${(d.addresses || []).map((a) => ui`<section><strong>${escape(a.label)}</strong>${householdNotes(a)}</section>`).join("")}${button("refresh-dashboard", H("Refresh totals"))}`,
   );
 }
 async function copyHouseholdLink() {
@@ -1339,36 +1446,51 @@ async function submit(form) {
     await saved("Event saved.");
     return;
   }
+  if (kind === "address-notes") {
+    const a = state.editingAddressNotes;
+    await api(`/api/host/addresses/${a.id}`, {
+      method: "PUT",
+      version: a.version,
+      data: { notes: value.notes },
+    });
+    await saved("Household notes saved.");
+    return;
+  }
   if (kind === "rsvp") {
-    const e = selectedEvent(),
+    const e = state.manualRSVP || selectedEvent(),
       attendance = {},
       claims = {};
     for (const [key, val] of data) {
       if (key.startsWith("attendance:")) attendance[key.slice(11)] = val;
       if (key.startsWith("claim:")) claims[key.slice(6)] = Number(val);
     }
-    await api(`/api/guest/events/${e.id}/rsvp`, {
-      method: "PUT",
-      data: {
-        version: state.editingResponse.version,
-        guestEntry: e.guestEntry,
-        partyVersions: e.partyVersions,
-        attendance,
-        claims,
-        customItems: value.customItems
-          ? value.customItems
-              .split("\n")
-              .map((name) => name.trim())
-              .filter(Boolean)
-              .map((name) => ({
-                name,
-                quantity:
-                  e.response.customItems?.find((item) => item.name === name)
-                    ?.quantity || 1,
-              }))
-          : [],
+    await api(
+      state.manualRSVP
+        ? `/api/host/events/${e.id}/rsvp/${state.manualRSVPGuest}`
+        : `/api/guest/events/${e.id}/rsvp`,
+      {
+        method: "PUT",
+        data: {
+          version: state.editingResponse.version,
+          guestEntry: e.guestEntry,
+          partyVersions: e.partyVersions,
+          attendance,
+          claims,
+          customItems: value.customItems
+            ? value.customItems
+                .split("\n")
+                .map((name) => name.trim())
+                .filter(Boolean)
+                .map((name) => ({
+                  name,
+                  quantity:
+                    e.response.customItems?.find((item) => item.name === name)
+                      ?.quantity || 1,
+                }))
+            : [],
+        },
       },
-    });
+    );
     await saved("Your RSVP is saved. Thank you!");
   }
 }
@@ -1501,14 +1623,25 @@ document.addEventListener("click", async (event) => {
       render();
       return;
     }
+    if (action === "page-back") {
+      if (state.preview || state.example) return;
+      await previousPage();
+      return;
+    }
     if (action === "settings") {
       if (document.querySelector("#editor[open]")) closeModal();
       resetContactInvites();
       state.settingsOpen = true;
       if (["host", "family"].includes(state.session.role)) {
-        await family.action("family-workspace", target);
-        await family.action("family-settings", target);
-        state.settingsOpen = true;
+        pageTransition = true;
+        try {
+          await family.action("family-workspace", target);
+          await family.action("family-settings", target);
+          state.settingsOpen = true;
+        } finally {
+          pageTransition = false;
+        }
+        render();
       } else {
         state.event = null;
         state.view = "settings";
@@ -1865,6 +1998,26 @@ document.addEventListener("click", async (event) => {
       eventEditor();
       return;
     }
+    if (["event-light-mode", "event-dark-mode"].includes(action)) {
+      if (state.session.role !== "host") return;
+      const e = selectedEvent();
+      if (!e) return;
+      await api(`/api/host/events/${e.id}`, {
+        method: "PUT",
+        version: e.version,
+        data: {
+          ...Object.fromEntries(
+            Object.entries(e).filter(([key]) => key !== "ui"),
+          ),
+          design: appearancePreset(
+            action === "event-dark-mode" ? "dark" : "light",
+            state.data.defaults,
+          ),
+        },
+      });
+      await load();
+      return;
+    }
     if (action === "edit-event") {
       await startAppearance("event");
       return;
@@ -2036,11 +2189,42 @@ document.addEventListener("click", async (event) => {
       );
       return;
     }
+    if (action === "address-notes") {
+      const a = state.data.addresses.find((a) => a.id === target.dataset.id);
+      if (!a) throw new Error("Address not found.");
+      state.editingAddressNotes = structuredClone(a);
+      modal(
+        C("Private household notes"),
+        area(
+          H("Only you can see these notes"),
+          "notes",
+          a.notes || "",
+          'maxlength="20000"',
+        ),
+        "address-notes",
+        "Save",
+      );
+      return;
+    }
+    if (action === "manual-rsvp") {
+      state.manualRSVPGuest = target.dataset.id;
+      const projection = await api(
+        `/api/host/events/${selectedEvent().id}/rsvp/${state.manualRSVPGuest}`,
+      );
+      rsvp(projection, true);
+      return;
+    }
     if (action === "rsvp") {
       if (state.session.role === "host") {
+        const e = selectedEvent();
         modal(
-          C("Guest RSVP preview"),
-          ui`<p>Guests use this button to respond to their invitation. This host preview never submits a guest response.</p><p>Open the household guest link and sign in with an existing invitation to view your own RSVP.</p>`,
+          C("Choose an invited guest"),
+          state.data.guests
+            .filter((g) => e.invited.includes(g.id))
+            .map((g) =>
+              button("manual-rsvp", escape(fullName(g)), `data-id="${g.id}"`),
+            )
+            .join("") || M("<p>No invited guests.</p>"),
         );
         return;
       }
@@ -2174,7 +2358,33 @@ const guestAddresses = addressPicker({
 guestAddresses.bind();
 document.addEventListener("input", (event) => guestAddresses.input(event));
 let chromeObserver, observedTop, observedFooter;
+function fitEventSummary() {
+  const items = [
+    ...document.querySelectorAll(".top-shell .event-summary .totals > div"),
+  ];
+  if (!items.length) return;
+  for (const item of items) item.style.removeProperty("font-size");
+  const context = document.createElement("canvas").getContext("2d");
+  if (!context) return;
+  let ratio = 1;
+  const base = parseFloat(getComputedStyle(items[0]).fontSize);
+  for (const item of items) {
+    const available = item.getBoundingClientRect().width - 1;
+    for (const label of item.children) {
+      context.font = getComputedStyle(label).font;
+      const width = Math.max(
+        0,
+        ...label.textContent
+          .split(/\s+/)
+          .map((word) => context.measureText(word).width),
+      );
+      if (width) ratio = Math.min(ratio, Math.max(0, available) / width);
+    }
+  }
+  for (const item of items) item.style.fontSize = `${base * ratio}px`;
+}
 function measureChrome() {
+  fitEventSummary();
   document.body.classList.toggle(
     "editing-active",
     appearance.active() ||
@@ -2201,6 +2411,8 @@ function measureChrome() {
     observedFooter = footer;
   }
 }
+window.addEventListener("resize", measureChrome);
+document.fonts?.ready.then(measureChrome);
 const appearance = appearanceEditor({
   field,
   select,
@@ -2287,6 +2499,7 @@ async function startAppearance(scope, globalOptions) {
   });
 }
 const family = familyTools({
+  back: previousPage,
   state,
   api,
   modal,

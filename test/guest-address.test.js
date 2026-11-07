@@ -398,3 +398,110 @@ test("inline address creation/edit and guest assignment commit together and reje
   assert.equal(forbidden.status, 404);
   assert.equal(f.store.list("guest", other.household.id).length, 0);
 });
+
+test("host records versioned RSVPs after deadline without guest enrollment; notes remain address-private", async (t) => {
+  const f = await application(t, { SMS_ENABLED: "true" }),
+    host = await f.host("Manual"),
+    other = await f.host("Outside");
+  const a = await f.guest(host, {
+    addressDraft: {
+      label: "Example home",
+      lines: "PO Box 12, Sample City CA 90210",
+      notes: "Private household detail",
+    },
+  });
+  const b = await f.guest(host, { first: "Jordan", address: a.address });
+  const child = await f.guest(host, {
+    first: "Riley",
+    parent: a.id,
+    address: a.address,
+  });
+  const e = await f.event(host, [a, b, child], { deadline: "2000-01-01" });
+  const path = `/api/host/events/${e.id}/rsvp/${a.id}`;
+  const projection = await f.request(path, { cookie: host.cookie });
+  assert.equal(projection.status, 200);
+  assert.doesNotMatch(
+    JSON.stringify(projection.body),
+    /Private household detail/,
+  );
+  const input = {
+    version: 0,
+    partyVersions: projection.body.partyVersions,
+    attendance: { [a.id]: "yes", [child.id]: "yes", [b.id]: "" },
+    claims: {},
+  };
+  assert.equal(
+    (await f.request(path, { cookie: host.cookie, method: "PUT", data: input }))
+      .status,
+    200,
+  );
+  assert.equal(f.store.list("response", host.household.id).length, 1);
+  assert.equal(f.store.list("guest-rsvp-consent", host.household.id).length, 0);
+  assert.equal(f.store.all("SELECT * FROM reminder_deliveries").length, 0);
+  assert.equal(
+    (await f.request(path, { cookie: host.cookie, method: "PUT", data: input }))
+      .status,
+    409,
+  );
+  assert.equal((await f.request(path, { cookie: other.cookie })).status, 404);
+  assert.equal((await f.request(path, { cookie: f.admin })).status, 403);
+  const login = await f.guestLogin(host, a);
+  assert.equal((await f.request(path, { cookie: login.cookie })).status, 403);
+  const guestView = await f.request("/api/guest", { cookie: login.cookie });
+  assert.doesNotMatch(
+    JSON.stringify(guestView.body),
+    /Private household detail/,
+  );
+  assert.equal(
+    (
+      await f.request(`/api/guest/events/${e.id}/rsvp`, {
+        cookie: login.cookie,
+        method: "PUT",
+        data: { ...input, version: 1, allowClosed: true },
+      })
+    ).status,
+    409,
+  );
+  const address = f.store.get("address", a.address, host.household.id);
+  const notesPath = `/api/host/addresses/${address.id}`;
+  assert.equal(
+    (
+      await f.request(notesPath, {
+        cookie: host.cookie,
+        method: "PUT",
+        version: address.version,
+        data: { notes: "New private note" },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await f.request(notesPath, {
+        cookie: host.cookie,
+        method: "PUT",
+        version: address.version,
+        data: { notes: "Stale" },
+      })
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await f.request(notesPath, {
+        cookie: other.cookie,
+        method: "PUT",
+        version: address.version,
+        data: { notes: "Outside" },
+      })
+    ).status,
+    404,
+  );
+  const saved = f.store.get("address", address.id, host.household.id);
+  assert.equal(saved.notes, "New private note");
+  assert.equal(saved.lines, address.lines);
+  const dash = await f.request(`/api/host/events/${e.id}/dashboard`, {
+    cookie: host.cookie,
+  });
+  assert.equal(dash.body.addresses[0].notes, "New private note");
+});

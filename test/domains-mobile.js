@@ -140,9 +140,7 @@ try {
         ),
         background,
       );
-      await page
-        .getByRole("button", { name: "Back to guest sign-in", exact: true })
-        .click();
+      await page.getByRole("button", { name: "Back", exact: true }).click();
       await page.getByLabel("First name", { exact: true }).fill("Casey");
       await page.getByLabel("Last name", { exact: true }).fill("Synthetic");
       await page
