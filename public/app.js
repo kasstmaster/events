@@ -867,10 +867,13 @@ function render(target = $("#app"), example = false) {
         ".contacts-invite-tools > .row button",
       )) {
         const labels = {
+          "contacts-select": ["Select Contacts", "contacts"],
           "contacts-invite": ["Invite", "invite"],
           "contacts-uninvite": ["Uninvite", "uninvite"],
           "contacts-anylist-sync": [
-            control.disabled ? "Syncing…" : "Sync",
+            state.data.integrations?.anylistStatus?.state === "running"
+              ? "Syncing…"
+              : "Sync",
             "sync",
           ],
           "contacts-select-event": ["Select Event", "rsvp"],
@@ -1060,20 +1063,31 @@ function guestEditor(guest = {}) {
   host.querySelector("input")?.focus();
   queueGuestMatches(document.querySelector("form[data-form=guest]"), 0);
 }
-function contactsInviteTools() {
-  return ui`<section class="contacts-invite-tools" aria-busy="${contactInviteSaving}" aria-label="${H("Guest invitations")}"><div class="row">${
-    contactInviteMode
-      ? button(
-          "contacts-select-event",
-          H("Select Event"),
-          `${!contactInviteSelection.size || contactInviteSaving ? "disabled" : ""}`,
-          "contacts-select-event",
-        )
-      : button("contacts-invite", H("Invite Guests"))
+function contactSelectionTargets() {
+  const selected = new Set(contactInviteSelection);
+  if (contactInviteEventsOpen) {
+    const guests = new Map(state.data.guests.map((g) => [g.id, g]));
+    const children = new Map();
+    for (const g of state.data.guests)
+      if (g.parent) {
+        if (!children.has(g.parent)) children.set(g.parent, []);
+        children.get(g.parent).push(g.id);
+      }
+    for (const id of contactInviteSelection) {
+      const guest = guests.get(id);
+      if (!guest) continue;
+      if (!contactUninvite && guest.parent) selected.add(guest.parent);
+      if (contactUninvite && !guest.parent)
+        for (const child of children.get(id) || []) selected.add(child);
+    }
   }
-    <button type="button" data-action="contacts-uninvite" aria-pressed="${contactUninvite}" ${contactInviteSaving ? "disabled" : ""}>${C("Uninvite Guests")}</button>
-    ${contactInviteMode ? button("contacts-invite-cancel", H("Cancel"), contactInviteSaving ? "disabled" : "") : ""}${contactsSyncTools()}</div>${state.data.integrations?.anylist ? ui`<p class="small" role="status" aria-live="polite" id="contacts-sync-status">${anyListStatusMessage(state.data.integrations.anylistStatus)}</p>` : ""}
-    ${contactInviteMode ? ui`<p class="contacts-invite-status" role="status">${contactInviteSelection.size} ${C("contacts selected")}. ${contactUninvite ? C("Selecting an adult also selects their children.") : C("Selecting a child also selects their designated adult.")}</p>` : ""}
+  return selected;
+}
+function contactsInviteTools() {
+  const disabled =
+    !contactInviteSelection.size || contactInviteSaving ? "disabled" : "";
+  return ui`<section class="contacts-invite-tools" aria-busy="${contactInviteSaving}" aria-label="${H("Guest invitations")}"><div class="row">${contactInviteMode ? ui`${button("contacts-invite", H("Invite"), disabled)}${button("contacts-uninvite", H("Uninvite"), disabled)}${button("contacts-invite-cancel", H("Cancel"), contactInviteSaving ? "disabled" : "")}` : button("contacts-select", H("Select Contacts"))}${contactsSyncTools()}</div>${state.data.integrations?.anylist ? ui`<p class="small" role="status" aria-live="polite" id="contacts-sync-status">${anyListStatusMessage(state.data.integrations.anylistStatus)}</p>` : ""}
+    ${contactInviteMode ? ui`<p class="contacts-invite-status" role="status">${contactSelectionTargets().size} ${C("contacts selected")}. ${contactInviteEventsOpen ? (contactUninvite ? C("Selecting an adult also selects their children.") : C("Selecting a child also selects their designated adult.")) : ""}</p>` : ""}
     ${contactInviteError ? ui`<p role="alert">${escape(contactInviteError)}</p>` : ""}
     ${contactInviteEventsOpen ? ui`<div class="contacts-event-picker"><h2>Select Event</h2><p>${contactUninvite ? C("Choose an event to uninvite the selected guests. Saved RSVPs are protected. No messages are sent.") : C("Choose an event to add the selected guests. Existing invitations and responses stay saved. No messages are sent.")}</p><ul class="browse-rows">${state.data.events.map((event) => row({ title: escape(event.title), meta: escape(dateLabel(event.date)), action: "contacts-invite-event", id: event.id, symbol: "list", attributes: contactInviteSaving ? "inert" : "" })).join("") || M('<li class="browse-empty">Create an event from Home first.</li>')}</ul></div>` : ""}</section>`;
 }
@@ -1095,7 +1109,7 @@ function contactsSyncTools() {
   if (!state.data.integrations?.anylist) return "";
   const status = state.data.integrations.anylistStatus;
   const running = status?.state === "running";
-  return ui`<section class="contacts-sync"><button type="button" data-action="contacts-anylist-sync" ${running ? "disabled" : ""} aria-busy="${running}">${running ? C("Syncing…") : C("Sync AnyList")}</button></section>`;
+  return ui`<section class="contacts-sync"><button type="button" data-action="contacts-anylist-sync" ${running || contactInviteMode ? "disabled" : ""} aria-busy="${running}">${running ? C("Syncing…") : C("Sync AnyList")}</button></section>`;
 }
 function notePencil(a) {
   return a ? tool("address-notes", "Edit private notes", a.id, "edit") : "";
@@ -1119,6 +1133,7 @@ function contactsPage() {
       .toLowerCase()
       .includes(contactSearch.toLowerCase()),
   );
+  const selectedContacts = contactSelectionTargets();
   const groups = new Map();
   for (const g of guests) {
     const key = g.address || "";
@@ -1165,7 +1180,7 @@ function contactsPage() {
                   attributes:
                     `data-contact-kind="${g.parent ? "child" : "adult"}" ` + "",
                   controls: contactInviteMode
-                    ? ui`<label class="check"><input type="checkbox" data-contact-invite="${g.id}" aria-label="${H("Select")} ${escape(fullName(g))}" ${contactInviteSelection.has(g.id) ? "checked" : ""} ${contactInviteSaving ? "disabled" : ""}></label>`
+                    ? ui`<label class="check"><input type="checkbox" data-contact-invite="${g.id}" aria-label="${H("Select")} ${escape(fullName(g))}" ${selectedContacts.has(g.id) ? "checked" : ""} ${contactInviteSaving ? "disabled" : ""}></label>`
                     : tool("edit-guest", "Edit contact", g.id, "edit") +
                       menu("Contact actions", "more", [
                         { action: "delete-guest", label: "Remove", id: g.id },
@@ -1181,7 +1196,10 @@ function contactsPage() {
     ui`<li class="browse-empty">${C("No matching contacts. Use the plus menu to add someone.")}</li>`
   }</ul></div></div>`;
 }
-function toggleContactInvite(key, checked = !contactInviteSelection.has(key)) {
+function toggleContactInvite(
+  key,
+  checked = !contactSelectionTargets().has(key),
+) {
   if (contactInviteSaving) return;
   const checkboxFocus = document.activeElement?.matches(
     "[data-contact-invite]",
@@ -1190,16 +1208,11 @@ function toggleContactInvite(key, checked = !contactInviteSelection.has(key)) {
   if (!guest) return;
   if (checked) {
     contactInviteSelection.add(key);
-    if (!contactUninvite && guest.parent)
-      contactInviteSelection.add(guest.parent);
-    if (contactUninvite && !guest.parent)
-      for (const child of state.data.guests.filter((g) => g.parent === key))
-        contactInviteSelection.add(child.id);
   } else {
     contactInviteSelection.delete(key);
-    if (contactUninvite) {
+    if (contactInviteEventsOpen && contactUninvite) {
       if (guest.parent) contactInviteSelection.delete(guest.parent);
-    } else
+    } else if (contactInviteEventsOpen)
       for (const child of state.data.guests.filter((g) => g.parent === key))
         contactInviteSelection.delete(child.id);
   }
@@ -1963,8 +1976,14 @@ document.addEventListener("click", async (event) => {
         )
           return;
         state.data.integrations.anylistStatus = result;
-        if (result.state === "complete") await load({ background: true });
-        else if (!isEditing()) renderRefresh(true);
+        if (
+          state.view === "contacts" &&
+          !state.editingGuest &&
+          !contactInviteMode
+        ) {
+          if (result.state === "complete") await load();
+          else renderRefresh(true);
+        }
         notify(
           result.state === "complete"
             ? C("Contacts synced.")
@@ -1980,6 +1999,7 @@ document.addEventListener("click", async (event) => {
       action.startsWith("contacts-invite") ||
       [
         "contacts-uninvite",
+        "contacts-select",
         "contacts-select-event",
         "contacts-toggle-invite",
       ].includes(action)
@@ -1994,12 +2014,9 @@ document.addEventListener("click", async (event) => {
         render();
         return;
       }
-      if (action === "contacts-invite" || action === "contacts-uninvite") {
+      if (action === "contacts-select") {
+        resetContactInvites();
         contactInviteMode = true;
-        contactInviteEventsOpen = false;
-        contactInviteError = "";
-        contactUninvite = action === "contacts-uninvite";
-        contactInviteSelection.clear();
         render();
         return;
       }
@@ -2007,8 +2024,9 @@ document.addEventListener("click", async (event) => {
         toggleContactInvite(key);
         return;
       }
-      if (action === "contacts-select-event") {
-        if (!contactInviteSelection.size) return;
+      if (["contacts-invite", "contacts-uninvite"].includes(action)) {
+        if (!contactInviteMode || !contactInviteSelection.size) return;
+        contactUninvite = action === "contacts-uninvite";
         contactInviteSaving = true;
         render();
         try {
@@ -2051,7 +2069,7 @@ document.addEventListener("click", async (event) => {
             {
               method: "POST",
               version: event.version,
-              data: { guestIds: [...contactInviteSelection] },
+              data: { guestIds: [...contactSelectionTargets()] },
             },
           );
           resetContactInvites();
@@ -2646,7 +2664,7 @@ function measureChrome() {
     "editing-active",
     appearance.active() ||
       !!document.querySelector(
-        "#editor[open] form, form[data-form=guest], .card-editor-page",
+        "#editor[open] form, form[data-form=guest], .card-editor-page, .inline-household-details, .inline-event-details",
       ),
   );
   const top = document.querySelector(".top-shell"),
@@ -2669,6 +2687,25 @@ function measureChrome() {
       "--heading-inset",
       Math.max(left, right) + 8 + "px",
     );
+    const heading = primary.querySelector(".browse-heading"),
+      title = heading?.querySelector("h1");
+    if (title) {
+      title.style.fontSize = "";
+      const style = getComputedStyle(title),
+        canvas = document.createElement("canvas"),
+        context = canvas.getContext("2d");
+      if (context) {
+        context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        const width = context.measureText(title.textContent).width;
+        if (width > heading.clientWidth)
+          title.style.fontSize =
+            Math.max(
+              12,
+              (parseFloat(style.fontSize) * heading.clientWidth) / width,
+            ) + "px";
+      }
+      primary.style.minHeight = Math.max(64, heading.scrollHeight + 16) + "px";
+    }
   }
   document.documentElement.style.setProperty(
     "--top-height",

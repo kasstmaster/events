@@ -260,6 +260,7 @@ async function footer(p, names) {
                 "settings",
                 "share-details",
                 "family-mine",
+                "contacts-select",
                 "contacts-invite",
                 "contacts-uninvite",
                 "contacts-anylist-sync",

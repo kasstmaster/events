@@ -281,6 +281,7 @@ async function footer(p, names) {
                 "settings",
                 "share-details",
                 "family-mine",
+                "contacts-select",
                 "contacts-invite",
                 "contacts-uninvite",
                 "contacts-anylist-sync",
@@ -767,26 +768,57 @@ try {
     .locator(".browse-row-icon path")
     .getAttribute("d");
   assert.notEqual(childIcon, adultIcon);
-  await click(p, "Invite Guests");
+  assert.equal(await p.locator("[data-contact-invite]").count(), 0);
+  await click(p, "Select Contacts");
+  assert.equal(
+    await p.getByRole("button", { name: "Uninvite", exact: true }).isDisabled(),
+    true,
+  );
   assert.equal(
     await p.getByRole("button", { name: "Casey Example", exact: true }).count(),
     1,
   );
   assert.ok(
-    await p
-      .getByRole("button", { name: "Select Event", exact: true })
-      .isDisabled(),
+    await p.getByRole("button", { name: "Invite", exact: true }).isDisabled(),
   );
   await p.getByLabel("Select Riley New", { exact: true }).check();
+  assert.equal(
+    await p.getByLabel("Select Jordan New", { exact: true }).isChecked(),
+    false,
+  );
+  await click(p, "Invite");
+  await p.locator(".contacts-event-picker").waitFor();
   assert.equal(
     await p.getByLabel("Select Jordan New", { exact: true }).isChecked(),
     true,
   );
   assert.equal(
     await p
-      .getByRole("button", { name: "Select Event", exact: true })
-      .evaluate((el) => getComputedStyle(el).color),
-    "rgb(22, 101, 52)",
+      .getByRole("button", { name: "Select Contacts", exact: true })
+      .count(),
+    0,
+  );
+  const versionBeforeChoice = store.get("event", e2.id, host.household).version;
+  await click(p, "Uninvite");
+  await p.waitForFunction(
+    (id) =>
+      document.querySelector(`[data-contact-invite="${id}"]`)?.checked ===
+      false,
+    inviteAdult.id,
+  );
+  assert.equal(
+    await p.getByLabel("Select Riley New", { exact: true }).isChecked(),
+    true,
+  );
+  await click(p, "Invite");
+  await p.waitForFunction(
+    (id) =>
+      document.querySelector(`[data-contact-invite="${id}"]`)?.checked === true,
+    inviteAdult.id,
+  );
+  assert.equal(
+    store.get("event", e2.id, host.household).version,
+    versionBeforeChoice,
   );
   for (const width of [390, 1440]) {
     await p.setViewportSize({ width, height: 900 });
@@ -795,7 +827,7 @@ try {
     );
     assert.ok(
       await p
-        .locator('.toolbar [data-action="contacts-select-event"]')
+        .locator('.toolbar [data-action="contacts-invite"]')
         .evaluate((el) => {
           const r = el.getBoundingClientRect();
           return r.top >= 0 && r.bottom <= innerHeight;
@@ -811,7 +843,6 @@ try {
       fullPage: true,
     });
   }
-  await click(p, "Select Event");
   await p.locator(".contacts-event-picker").waitFor();
   await p
     .locator(".contacts-event-picker")
@@ -831,13 +862,18 @@ try {
     false,
   );
   stage("confirmed uninviting from one chosen event");
-  await click(p, "Uninvite Guests");
+  await click(p, "Select Contacts");
   await p.getByLabel("Select Jordan New", { exact: true }).check();
+  assert.equal(
+    await p.getByLabel("Select Riley New", { exact: true }).isChecked(),
+    false,
+  );
+  await click(p, "Uninvite");
+  await p.locator(".contacts-event-picker").waitFor();
   assert.equal(
     await p.getByLabel("Select Riley New", { exact: true }).isChecked(),
     true,
   );
-  await click(p, "Select Event");
   const beforeUninvite = store.get("event", e2.id, host.household);
   p.once("dialog", (dialog) => dialog.dismiss());
   await p
@@ -861,7 +897,7 @@ try {
   assert.ok(store.get("guest", inviteAdult.id, host.household));
   assert.ok(store.get("guest", inviteChild.id, host.household));
   const unchanged = store.get("event", e2.id, host.household).version;
-  await click(p, "Invite Guests");
+  await click(p, "Select Contacts");
   await p.getByLabel("Select Casey Example", { exact: true }).check();
   await p
     .locator(".toolbar")
