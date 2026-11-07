@@ -230,7 +230,14 @@ async function click(p, name) {
   await clickNavigation(p, name);
 }
 async function option(p, name) {
-  await p.locator('summary[aria-label="Sorting and options"]').click();
+  await p
+    .getByLabel(
+      ["Sort alphabetically", "Manual ordering"].includes(name)
+        ? "Sort"
+        : "Sorting and options",
+      { exact: true },
+    )
+    .click();
   await p
     .getByRole(
       ["Sort alphabetically", "Manual ordering"].includes(name)
@@ -249,7 +256,16 @@ async function footer(p, names) {
         es
           .filter(
             (e) =>
-              !["settings", "share-details"].includes(e.dataset.action) &&
+              ![
+                "settings",
+                "share-details",
+                "family-mine",
+                "contacts-invite",
+                "contacts-uninvite",
+                "contacts-anylist-sync",
+                "contacts-select-event",
+                "contacts-invite-cancel",
+              ].includes(e.dataset.action) &&
               !e.dataset.action.endsWith("search") &&
               e.dataset.icon !== "plus",
           )
@@ -637,7 +653,7 @@ try {
   await p.reload();
   await click(p, "Contacts");
   await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
-  await option(p, "Sort alphabetically");
+  assert.equal(await p.locator('[data-action^="contacts-sort-"]').count(), 0);
   await p.waitForFunction(
     () =>
       document.querySelector("[data-address-title]")?.textContent ===

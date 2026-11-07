@@ -828,6 +828,68 @@ function render(target = $("#app"), example = false) {
         }
         footer.append(control);
       }
+      const sortItems = [
+        ...target.querySelectorAll(
+          '#top-navigation [data-action^="family-sort-"]',
+        ),
+      ];
+      if (sortItems.length) {
+        footer.insertAdjacentHTML(
+          "beforeend",
+          menu(
+            "Sort",
+            "sort",
+            sortItems.map((el) => ({
+              action: el.dataset.action,
+              label: el.textContent,
+              checked: el.getAttribute("aria-checked") === "true",
+            })),
+          ),
+        );
+        const sortingMenu = footer.lastElementChild;
+        sortingMenu.classList.add("toolbar-create");
+        sortingMenu
+          .querySelector("summary")
+          .insertAdjacentHTML("beforeend", ui`<span>${C("Sort")}</span>`);
+        sortItems.forEach((el) => el.remove());
+      }
+      const tasks = target.querySelector(
+        '#top-navigation [data-action="family-mine"]',
+      );
+      if (tasks) {
+        footer.insertAdjacentHTML(
+          "beforeend",
+          tool("family-mine", "My Tasks", "", "task"),
+        );
+        tasks.remove();
+      }
+      for (const control of target.querySelectorAll(
+        ".contacts-invite-tools > .row button",
+      )) {
+        const labels = {
+          "contacts-invite": ["Invite", "invite"],
+          "contacts-uninvite": ["Uninvite", "uninvite"],
+          "contacts-anylist-sync": [
+            control.disabled ? "Syncing…" : "Sync",
+            "sync",
+          ],
+          "contacts-select-event": ["Select Event", "rsvp"],
+          "contacts-invite-cancel": ["Cancel", "back"],
+        };
+        const [label, symbol] = labels[control.dataset.action] || [
+          control.textContent,
+          "contacts",
+        ];
+        control.setAttribute("aria-label", control.textContent.trim());
+        control.classList.add("nav-control");
+        control.innerHTML = ui`${icon(symbol)}<span>${C(label)}</span>`;
+        footer.append(control);
+      }
+      for (const details of target.querySelectorAll(
+        "#top-navigation .browse-menu",
+      ))
+        if (!details.querySelector('[role="menu"]')?.children.length)
+          details.remove();
       if (role === "host")
         footer.insertAdjacentHTML(
           "beforeend",
@@ -1044,20 +1106,18 @@ function householdNotes(a) {
     : "";
 }
 function contactsPage() {
-  const guests = ordered(
-    state.data.guests.filter((g) =>
-      [
-        fullName(g),
-        g.phone,
-        ...[state.data.addresses.find((a) => a.id === g.address)].flatMap(
-          (a) => [a?.label, a?.lines],
-        ),
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(contactSearch.toLowerCase()),
-    ),
-    "manual",
+  const guests = state.data.guests.filter((g) =>
+    [
+      fullName(g),
+      g.phone,
+      ...[state.data.addresses.find((a) => a.id === g.address)].flatMap((a) => [
+        a?.label,
+        a?.lines,
+      ]),
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(contactSearch.toLowerCase()),
   );
   const groups = new Map();
   for (const g of guests) {
@@ -1071,11 +1131,10 @@ function contactsPage() {
         String(C("Address unavailable"))
       : String(C("No shared address"));
   const entries = [...groups];
-  if (contactPreferences?.contactSort === "alpha")
-    entries.sort(
-      ([a], [b]) => label(a).localeCompare(label(b)) || a.localeCompare(b),
-    );
-  return ui`<div class="browse-shell">${topbar({ title: C("Contacts"), back: "home", search: "contacts-search", plus: contactInviteMode ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: sorting("contacts-", contactPreferences?.contactSort) })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search contacts") : ""}<div class="browse-content">${contactsInviteTools()}<ul class="browse-rows">${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
+  entries.sort(
+    ([a], [b]) => label(a).localeCompare(label(b)) || a.localeCompare(b),
+  );
+  return ui`<div class="browse-shell">${topbar({ title: C("Contacts"), back: "home", search: "contacts-search", plus: contactInviteMode ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: [] })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search contacts") : ""}<div class="browse-content">${contactsInviteTools()}<ul class="browse-rows">${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
     entries
       .map(
         ([key, rows]) =>
@@ -1104,29 +1163,11 @@ function contactsPage() {
                     : "edit-guest",
                   id: g.id,
                   attributes:
-                    `data-contact-kind="${g.parent ? "child" : "adult"}" ` +
-                    (!contactInviteMode &&
-                    contactPreferences?.contactSort !== "alpha"
-                      ? `draggable="true" data-contact-row="${g.id}"`
-                      : ""),
+                    `data-contact-kind="${g.parent ? "child" : "adult"}" ` + "",
                   controls: contactInviteMode
                     ? ui`<label class="check"><input type="checkbox" data-contact-invite="${g.id}" aria-label="${H("Select")} ${escape(fullName(g))}" ${contactInviteSelection.has(g.id) ? "checked" : ""} ${contactInviteSaving ? "disabled" : ""}></label>`
                     : tool("edit-guest", "Edit contact", g.id, "edit") +
                       menu("Contact actions", "more", [
-                        ...(contactPreferences?.contactSort !== "alpha"
-                          ? [
-                              {
-                                action: "contacts-up",
-                                label: "Move up",
-                                id: g.id,
-                              },
-                              {
-                                action: "contacts-down",
-                                label: "Move down",
-                                id: g.id,
-                              },
-                            ]
-                          : []),
                         { action: "delete-guest", label: "Remove", id: g.id },
                       ]),
                 }) +
@@ -2278,19 +2319,6 @@ document.addEventListener("click", async (event) => {
     }
     if (action === "addresses") {
       addresses();
-      const preferences = await api("/api/family/preferences");
-      const changed =
-        JSON.stringify(preferences) !== JSON.stringify(contactPreferences);
-      contactPreferences = preferences;
-      if (
-        changed &&
-        state.view === "contacts" &&
-        !state.editingGuest &&
-        !contactInviteMode &&
-        pendingActions === 1 &&
-        !document.activeElement?.matches("input,textarea,select")
-      )
-        render();
       return;
     }
 

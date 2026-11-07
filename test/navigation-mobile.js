@@ -251,7 +251,14 @@ async function option(p, name) {
     await click(p, name);
     return;
   }
-  await p.locator('summary[aria-label="Sorting and options"]').click();
+  await p
+    .getByLabel(
+      ["Sort alphabetically", "Manual ordering"].includes(name)
+        ? "Sort"
+        : "Sorting and options",
+      { exact: true },
+    )
+    .click();
   await p
     .getByRole(
       ["Sort alphabetically", "Manual ordering"].includes(name)
@@ -270,7 +277,16 @@ async function footer(p, names) {
         es
           .filter(
             (e) =>
-              !["settings", "share-details"].includes(e.dataset.action) &&
+              ![
+                "settings",
+                "share-details",
+                "family-mine",
+                "contacts-invite",
+                "contacts-uninvite",
+                "contacts-anylist-sync",
+                "contacts-select-event",
+                "contacts-invite-cancel",
+              ].includes(e.dataset.action) &&
               !e.dataset.action.endsWith("search") &&
               e.dataset.icon !== "plus",
           )
@@ -525,7 +541,7 @@ try {
     "event",
     e2.id,
     household.id,
-    { ...pendingRefreshEvent, description: "Update while a pointer is held" },
+    { ...pendingRefreshEvent },
     pendingRefreshEvent.version,
   );
   await p.waitForTimeout(3500);
@@ -584,22 +600,18 @@ try {
     origin + "/h/" + household.slug,
   );
   stage("shared Contacts rows, search, menus and formatting");
-  let releasePreferences, preferencesContinued;
-  const preferencesDone = new Promise(
-    (resolve) => (preferencesContinued = resolve),
-  );
-  const preferencesGate = new Promise(
-    (resolve) => (releasePreferences = resolve),
-  );
+  let preferenceReads = 0;
   await p.route("**/api/family/preferences", async (route) => {
-    await preferencesGate;
+    preferenceReads++;
     await route.continue();
-    preferencesContinued();
   });
   await click(p, "Contacts");
   await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
-  releasePreferences();
-  await preferencesDone;
+  assert.equal(
+    preferenceReads,
+    0,
+    "Contacts renders without loading sort preferences",
+  );
   await p.unroute("**/api/family/preferences");
   assert.equal(
     await p
@@ -773,34 +785,21 @@ try {
   assert.equal(
     await p
       .getByRole("button", { name: "Select Event", exact: true })
-      .evaluate((el) => getComputedStyle(el).backgroundColor),
-    "rgb(31, 122, 63)",
+      .evaluate((el) => getComputedStyle(el).color),
+    "rgb(22, 101, 52)",
   );
   for (const width of [390, 1440]) {
     await p.setViewportSize({ width, height: 900 });
     await p.evaluate(() =>
       window.scrollTo(0, document.documentElement.scrollHeight),
     );
-    await p.waitForFunction(
-      () =>
-        Math.abs(
-          document
-            .querySelector(".contacts-invite-tools")
-            .getBoundingClientRect().top -
-            document.querySelector(".top-shell").getBoundingClientRect().bottom,
-        ) < 2,
-    );
     assert.ok(
-      await p.evaluate(
-        () =>
-          Math.abs(
-            document
-              .querySelector(".contacts-invite-tools")
-              .getBoundingClientRect().top -
-              document.querySelector(".top-shell").getBoundingClientRect()
-                .bottom,
-          ) < 2,
-      ),
+      await p
+        .locator('.toolbar [data-action="contacts-select-event"]')
+        .evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return r.top >= 0 && r.bottom <= innerHeight;
+        }),
     );
     assert.ok(
       await p.evaluate(
@@ -865,7 +864,7 @@ try {
   await click(p, "Invite Guests");
   await p.getByLabel("Select Casey Example", { exact: true }).check();
   await p
-    .locator(".contacts-invite-tools")
+    .locator(".toolbar")
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
   assert.equal(store.get("event", e2.id, host.household).version, unchanged);

@@ -314,7 +314,14 @@ export async function clickNavigation(page, label) {
     if (name === "＋ Add adult or child") name = "Add Guest";
     if (name === "Cards & templates") name = "Cards & Templates";
     await page
-      .getByLabel(create ? "Create" : "Sorting and options", { exact: true })
+      .getByLabel(
+        create
+          ? "Create"
+          : ["Sort alphabetically", "Manual ordering"].includes(name)
+            ? "Sort"
+            : "Sorting and options",
+        { exact: true },
+      )
       .click();
     await page
       .getByRole(

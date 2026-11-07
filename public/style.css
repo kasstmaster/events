@@ -2736,3 +2736,53 @@ body #app .settings-mode-row .mode-option span {
 .top-shell .browse-heading :is(h1, p) {
   pointer-events: auto;
 }
+
+:root {
+  --action-gap: 8px;
+}
+:is(
+  .row,
+  .stack,
+  .settings-mode-row,
+  .event-home-actions,
+  .admin-home-actions,
+  .browse-row-actions,
+  .appearance-categories,
+  .appearance-actions,
+  .appearance-controls
+) {
+  gap: var(--action-gap);
+}
+.toolbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: var(--action-gap);
+}
+.toolbar > :is(.nav-control, .browse-menu) {
+  width: 100%;
+  max-width: none;
+}
+.toolbar .contacts-select-event {
+  color: #166534;
+  font-weight: 700;
+}
+.contacts-invite-tools > .row:empty {
+  display: none;
+}
+
+body #app .toolbar .contacts-select-event {
+  color: #166534;
+}
+.contacts-invite-tools {
+  position: static;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+.contacts-invite-tools > .row {
+  display: none;
+}
+
+#app :is(div, nav, section):has(> :is(button, .button) ~ :is(button, .button)) {
+  gap: var(--action-gap);
+}

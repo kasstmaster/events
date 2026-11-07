@@ -158,7 +158,6 @@ export function familyTools(ctx) {
             : "manual"
           : d.preferences.collectionSort,
       ),
-      { action: "family-refresh", label: "Refresh household" },
       { action: "family-mine", label: "My Tasks" },
     ];
     if (r?.type === "list")

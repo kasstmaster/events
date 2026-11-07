@@ -174,11 +174,11 @@ try {
     2,
   );
   await click(kid.page, "Hide Completed");
-  await kid.page.getByLabel("Sorting and options", { exact: true }).click();
+  await kid.page.getByLabel("Sort", { exact: true }).click();
   await kid.page
     .getByRole("menuitem", { name: "Show All", exact: true })
     .waitFor();
-  await kid.page.getByLabel("Sorting and options", { exact: true }).click();
+  await kid.page.getByLabel("Sort", { exact: true }).click();
   assert.equal(
     await kid.page
       .locator(".family-item-title")
@@ -192,11 +192,11 @@ try {
     .getByText("Bread", { exact: true })
     .waitFor();
   await click(owner.page, "Sort alphabetically within categories");
-  await owner.page.getByLabel("Sorting and options", { exact: true }).click();
+  await owner.page.getByLabel("Sort", { exact: true }).click();
   await owner.page
     .getByRole("menuitemradio", { name: "Manual ordering", exact: true })
     .waitFor();
-  await owner.page.getByLabel("Sorting and options", { exact: true }).click();
+  await owner.page.getByLabel("Sort", { exact: true }).click();
   assert.equal(
     await owner.page
       .getByRole("button", { name: "Move up", exact: true })
