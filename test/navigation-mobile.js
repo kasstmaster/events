@@ -1408,6 +1408,43 @@ try {
         .allTextContents(),
       ["Light Mode", "Dark Mode", "Custom Colors Mode"],
     );
+    assert.equal(
+      await p
+        .locator(".page-appearance-settings.panel,.settings-details.panel")
+        .count(),
+      0,
+    );
+    const modeRow = p.locator(".page-appearance-settings");
+    assert.equal(await modeRow.locator("button svg").count(), 3);
+    assert.equal(
+      await modeRow.evaluate(
+        (el) =>
+          el.previousElementSibling.querySelector(
+            "[data-action=family-members]",
+          ) !== null,
+      ),
+      true,
+    );
+    const originalWidth = p.viewportSize().width;
+    for (const width of [390, 1440]) {
+      await p.setViewportSize({ width, height: 900 });
+      assert.equal(
+        await modeRow
+          .locator(".settings-mode-row")
+          .evaluate(
+            (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+          ),
+        3,
+      );
+      assert.ok(
+        await modeRow.evaluate((el) => el.scrollWidth <= el.clientWidth),
+      );
+      await p.screenshot({
+        path: `test-results/settings-mode-row-${width}.png`,
+        fullPage: true,
+      });
+    }
+    await p.setViewportSize({ width: originalWidth, height: 900 });
     assert.ok(
       await p
         .locator(".inline-household-details")

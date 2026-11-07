@@ -875,7 +875,7 @@ function householdDetails() {
 }
 function inlineHouseholdDetails() {
   if (state.session.role !== "host") return "";
-  return ui`<section class="panel"><h2>Details</h2><form class="inline-household-details" data-form="household" data-version="${state.data.household.version}">${householdDetailsFields()}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form></section>`;
+  return ui`<section class="settings-details"><h2>Details</h2><form class="inline-household-details" data-form="household" data-version="${state.data.household.version}">${householdDetailsFields()}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form></section>`;
 }
 let guestMatchTimer,
   guestMatchSequence = 0;
@@ -2570,15 +2570,15 @@ function appearanceSettingsMarkup() {
   const unavailable = !state.example && state.settingsEvent && !event;
   const modes = event
     ? [
-        ["page-default-mode", "Default Mode"],
-        ["page-custom-mode", "Custom Colors Mode"],
+        ["page-default-mode", "Default Mode", "home"],
+        ["page-custom-mode", "Custom Colors Mode", "palette"],
       ]
     : [
-        ["page-light-mode", "Light Mode"],
-        ["page-dark-mode", "Dark Mode"],
-        ["page-custom-mode", "Custom Colors Mode"],
+        ["page-light-mode", "Light Mode", "sun"],
+        ["page-dark-mode", "Dark Mode", "moon"],
+        ["page-custom-mode", "Custom Colors Mode", "palette"],
       ];
-  return ui`<section class="panel page-appearance-settings"><h2>Appearance</h2><p>${unavailable ? C("Event unavailable") : event ? escape(event.title) : C("Household pages")}</p>${event ? ui`<p class="small">Default Mode follows the home page’s formatting. Custom Colors Mode applies only to this event.</p>` : ""}<div class="stack">${modes.map(([action, label]) => button(action, H(label), unavailable ? "disabled" : "", "mode-option")).join("")}</div></section>`;
+  return ui`<li class="browse-row page-appearance-settings"><div class="settings-mode-row" role="group" aria-label="${H("Appearance")}">${modes.map(([action, label, symbol]) => button(action, ui`${icon(symbol)}<span>${C(label)}</span>`, unavailable ? "disabled" : "", "browse-open mode-option")).join("")}</div></li>`;
 }
 function visibleAppearanceEvent() {
   return !state.adminMode && state.view === "home"

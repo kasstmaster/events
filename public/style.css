@@ -2649,3 +2649,36 @@ body.card-editor-active #app > header {
 body #app .page-appearance-settings .mode-option {
   font-weight: 700;
 }
+
+/* Settings modes share the management rows, without separate panels. */
+.page-appearance-settings {
+  display: block;
+}
+.settings-mode-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+  gap: 8px;
+}
+.settings-mode-row .mode-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.settings-mode-row .mode-option svg {
+  flex: 0 0 22px;
+}
+.settings-details {
+  margin-top: 20px;
+}
+@media (max-width: 480px) {
+  .settings-mode-row .mode-option {
+    flex-direction: column;
+    text-align: center;
+    font-size: 13px;
+  }
+}
