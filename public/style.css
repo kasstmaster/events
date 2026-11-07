@@ -2636,3 +2636,16 @@ body #app [role="menu"] button.mode-option {
   width: calc(var(--toolbar-label-size) * 1.3);
   height: calc(var(--toolbar-label-size) * 1.3);
 }
+/* Page appearance remains available while editing cards/templates. */
+body.card-editor-active #app > header {
+  display: block;
+}
+.card-editor-active .card-editor-page {
+  height: calc(
+    100dvh - var(--top-height, 0px) - var(--bottom-height, 0px) - 44px
+  );
+}
+
+body #app .page-appearance-settings .mode-option {
+  font-weight: 700;
+}

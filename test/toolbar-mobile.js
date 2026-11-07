@@ -532,6 +532,27 @@ try {
     "italic",
   );
   await click(p, "Edit House");
+  await editValue(p, "Containers", "Background", "Container opacity (%)", "0");
+  assert.equal(
+    await p
+      .getByLabel("Container opacity (%)", { exact: true })
+      .getAttribute("min"),
+    "0",
+  );
+  assert.deepEqual(
+    await p.locator("[data-home-card=contacts]").evaluate((el) => {
+      const canvas = document.createElement("canvas"),
+        ctx = canvas.getContext("2d");
+      ctx.fillStyle = getComputedStyle(el).backgroundColor;
+      ctx.fillRect(0, 0, 1, 1);
+      return [
+        ctx.getImageData(0, 0, 1, 1).data[3],
+        getComputedStyle(el).opacity,
+      ];
+    }),
+    [0, "1"],
+    "Only the container background becomes transparent; its contents remain opaque",
+  );
   await editValue(p, "Containers", "Background", "Container opacity (%)", "35");
   assert.equal(
     await p

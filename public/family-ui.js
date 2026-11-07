@@ -185,7 +185,7 @@ export function familyTools(ctx) {
     });
     let content = "";
     if (selected === "__settings__")
-      content = `<ul class="browse-rows">${row({ title: C("Notification settings"), action: "family-preferences", symbol: "settings" })}${row({ title: C("Change Password"), action: "family-password", symbol: "edit" })}${manager() ? row({ title: C("Family Members"), action: "family-members", symbol: "contacts" }) : ""}${row({ title: C("Sign Out"), action: "logout", symbol: "logout" })}</ul>`;
+      content = `${ctx.appearanceSettings?.() || ""}<ul class="browse-rows">${row({ title: C("Notification settings"), action: "family-preferences", symbol: "settings" })}${row({ title: C("Change Password"), action: "family-password", symbol: "edit" })}${manager() ? row({ title: C("Family Members"), action: "family-members", symbol: "contacts" }) : ""}${row({ title: C("Sign Out"), action: "logout", symbol: "logout" })}</ul>${ctx.householdDetails?.() || ""}`;
     else if (search) {
       const found = ordered(
         d.records.filter((r) =>

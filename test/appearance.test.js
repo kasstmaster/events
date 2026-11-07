@@ -229,3 +229,160 @@ test("independent toolbar and button roles validate and preserve legacy surface 
   ])
     assert.throws(() => design(bad));
 });
+
+test("container background opacity accepts zero and retains bounded integer validation", () => {
+  assert.equal(design({ opacity: 0 }).opacity, 0);
+  assert.equal(design({ opacity: 100 }).opacity, 100);
+  for (const value of [-1, 101, 0.5, "0"])
+    assert.throws(() => design({ opacity: value }));
+});
+
+test("shared page modes cascade to default events while preserving custom events, content and responses atomically", async (t) => {
+  const f = await application(t),
+    host = await f.host("Modes"),
+    other = await f.host("OtherModes"),
+    guest = await f.guest(host);
+  const normal = await f.event(host, [guest]),
+    legacy = await f.event(host, [guest]),
+    custom = await f.event(host, [guest], {
+      design: { titleColor: "#123abc" },
+    }),
+    sameCustom = await f.event(host, [guest], {
+      design: appearancePreset("light"),
+      appearanceMode: "custom",
+    }),
+    outside = await f.event(other, []);
+  const { appearanceMode, ...old } = legacy;
+  f.store.put(
+    "event",
+    legacy.id,
+    host.household.id,
+    { ...old, design: appearancePreset("light") },
+    legacy.version,
+  );
+  const response = f.store.put(
+    "response",
+    "keep-mode-response",
+    host.household.id,
+    {
+      event: normal.id,
+      guest: guest.id,
+      attendance: { [guest.id]: "yes" },
+      claims: {},
+    },
+  );
+  const read = async () =>
+    (await f.request("/api/host", { cookie: host.cookie })).body;
+  const before = await read(),
+    beforeCustom = before.events.find((e) => e.id === custom.id).ui.design,
+    beforeSame = before.events.find((e) => e.id === sameCustom.id).ui.design;
+  const apply = async (
+    mode,
+    design,
+    extra = {},
+    version = f.store.household(host.household.id).version,
+  ) =>
+    f.request("/api/host/household", {
+      cookie: host.cookie,
+      method: "PUT",
+      version,
+      data: {
+        ...f.store.household(host.household.id),
+        design,
+        appearanceMode: mode,
+        applyAppearanceMode: true,
+        ...extra,
+      },
+    });
+  assert.equal((await apply("dark", appearancePreset("dark"))).status, 200);
+  let data = await read();
+  for (const id of [normal.id, legacy.id]) {
+    const e = data.events.find((e) => e.id === id);
+    assert.equal(e.ui.design.background, "#151719");
+    assert.equal(e.appearanceMode, "inherit");
+    assert.deepEqual(e.design, {});
+    assert.deepEqual(e.invited, [guest.id]);
+  }
+  assert.deepEqual(
+    data.events.find((e) => e.id === custom.id).ui.design,
+    beforeCustom,
+  );
+  assert.deepEqual(
+    data.events.find((e) => e.id === sameCustom.id).ui.design,
+    beforeSame,
+  );
+  assert.equal(
+    (await apply("custom", { background: "#334455", textColor: "#ccddee" }))
+      .status,
+    200,
+  );
+  data = await read();
+  assert.equal(
+    data.events.find((e) => e.id === normal.id).ui.design.background,
+    "#334455",
+  );
+  assert.equal(
+    data.events.find((e) => e.id === normal.id).ui.design.textColor,
+    "#ccddee",
+  );
+  assert.deepEqual(
+    data.events.find((e) => e.id === custom.id).ui.design,
+    beforeCustom,
+  );
+  assert.deepEqual(
+    f.store.get("event", outside.id, other.household.id),
+    outside,
+  );
+  assert.deepEqual(
+    f.store.get("response", response.id, host.household.id),
+    response,
+  );
+  const records = f.store.list("event", host.household.id);
+  assert.equal(
+    (
+      await apply(
+        "light",
+        appearancePreset("light"),
+        {},
+        before.household.version,
+      )
+    ).status,
+    409,
+  );
+  assert.deepEqual(f.store.list("event", host.household.id), records);
+  const returnDefault = (
+    event,
+    version = event.version,
+    cookie = host.cookie,
+  ) =>
+    f.request("/api/host/events/" + event.id, {
+      cookie,
+      method: "PUT",
+      version,
+      data: { ...event, design: {}, appearanceMode: "inherit" },
+    });
+  assert.equal((await returnDefault(outside)).status, 404);
+  const current = f.store.get("event", custom.id, host.household.id);
+  assert.equal((await returnDefault(current, current.version - 1)).status, 409);
+  assert.equal((await returnDefault(current)).status, 200);
+  data = await read();
+  assert.equal(
+    data.events.find((e) => e.id === custom.id).appearanceMode,
+    "inherit",
+  );
+  assert.equal(
+    data.events.find((e) => e.id === custom.id).ui.design.background,
+    "#334455",
+  );
+  assert.equal((await apply("dark", appearancePreset("dark"))).status, 200);
+  data = await read();
+  assert.equal(
+    data.events.find((e) => e.id === custom.id).ui.design.background,
+    "#151719",
+  );
+  assert.deepEqual(
+    data.events.find((e) => e.id === sameCustom.id).ui.design,
+    beforeSame,
+  );
+  assert.equal((await apply("invalid", {})).status, 400);
+});

@@ -276,6 +276,21 @@ function eventInput(input, store, household, existing) {
   const template = text(input.template ?? "", 100);
   if (template && !store.get("template", template, "platform"))
     fail(400, "Choose an available template.");
+  const nextDesign = design(input.design);
+  let appearanceMode = input.appearanceMode ?? existing?.appearanceMode;
+  if (
+    input.appearanceMode === undefined &&
+    input.design !== undefined &&
+    JSON.stringify(input.design) !== JSON.stringify(existing?.design || {}) &&
+    Object.keys(input.design || {}).length
+  )
+    appearanceMode = "custom";
+  if (appearanceMode === undefined && !existing) appearanceMode = "inherit";
+  if (
+    appearanceMode !== undefined &&
+    !["inherit", "custom"].includes(appearanceMode)
+  )
+    fail(400, "Choose a supported event appearance mode.");
   return {
     title: text(input.title, 160, true),
     description: text(input.description ?? "", 5000),
@@ -284,7 +299,8 @@ function eventInput(input, store, household, existing) {
     address: text(input.address ?? "", 500),
     deadline: date(input.deadline),
     icon: image(input.icon),
-    design: design(input.design),
+    design: input.appearanceMode === "inherit" ? {} : nextDesign,
+    ...(appearanceMode ? { appearanceMode } : {}),
     invited: input.invited,
     menu,
     template,
@@ -294,9 +310,16 @@ function eventInput(input, store, household, existing) {
     notes: text(input.notes ?? existing?.notes ?? "", 20000),
     uploadURL: webURL(input.uploadURL ?? existing?.uploadURL ?? ""),
     ui:
-      input.ui === undefined
-        ? existing?.ui || {}
-        : hostUI(input.ui, existing?.ui),
+      input.appearanceMode === "inherit"
+        ? {
+            ...(input.ui === undefined
+              ? existing?.ui || {}
+              : hostUI(input.ui, existing?.ui)),
+            design: {},
+          }
+        : input.ui === undefined
+          ? existing?.ui || {}
+          : hostUI(input.ui, existing?.ui),
     reminders: reminderInput(input.reminders ?? existing?.reminders ?? []),
     registries: savedRegistries,
   };

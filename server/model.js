@@ -2,6 +2,8 @@ import {
   roleDefaults,
   resolveUI,
   categoryDesign,
+  appearanceKeys,
+  appearancePreset,
 } from "../public/ui-system.js";
 import { Buffer } from "node:buffer";
 import {
@@ -129,7 +131,7 @@ export function design(value = {}) {
               ["toolbarOpacity", "buttonOpacity"].includes(key)
             ? [0, 100]
             : key === "opacity"
-              ? [35, 100]
+              ? [0, 100]
               : key === "titleSize"
                 ? [22, 64]
                 : [14, 28];
@@ -465,6 +467,20 @@ export class Store {
       } catch {
         fail(400, "Choose a valid household IANA timezone.");
       }
+      const nextMode = input.appearanceMode ?? existing.appearanceMode;
+      if (
+        nextMode !== undefined &&
+        !["light", "dark", "custom"].includes(nextMode)
+      )
+        fail(400, "Choose a supported appearance mode.");
+      if (
+        input.applyAppearanceMode !== undefined &&
+        input.applyAppearanceMode !== true
+      )
+        fail(400, "Invalid appearance mode update.");
+      const applyMode = input.applyAppearanceMode === true;
+      if (applyMode && input.appearanceMode === undefined)
+        fail(400, "Choose an appearance mode.");
       const nextDesign = design(input.design);
       const before = resolveUI(
         this.get("ui", "defaults", "platform"),
@@ -476,20 +492,42 @@ export class Store {
         { design: existing.ui?.design },
         { design: nextDesign },
       ).design;
-      if (JSON.stringify(before) !== JSON.stringify(after)) {
+      if (applyMode || JSON.stringify(before) !== JSON.stringify(after)) {
+        const platform = resolveUI(
+          this.get("ui", "defaults", "platform"),
+        ).design;
+        const legacyDefaults = [
+          before,
+          platform,
+          resolveUI({ design: appearancePreset("dark", platform) }).design,
+        ];
         for (const event of this.list("event", household)) {
           const preserved = resolveUI(
             { design: before },
             { design: event.ui?.design },
             { design: event.design },
           ).design;
-          this.put(
-            "event",
-            event.id,
-            household,
-            { ...event, design: preserved },
-            event.version,
-          );
+          const inherits =
+            event.appearanceMode === "inherit" ||
+            (event.appearanceMode !== "custom" &&
+              legacyDefaults.some((d) =>
+                appearanceKeys.every((key) => d[key] === preserved[key]),
+              ));
+          const nextEvent =
+            applyMode && inherits
+              ? {
+                  ...event,
+                  design: {},
+                  ui: { ...(event.ui || {}), design: {} },
+                  appearanceMode: "inherit",
+                }
+              : {
+                  ...event,
+                  design: preserved,
+                  ...(applyMode ? { appearanceMode: "custom" } : {}),
+                };
+          if (JSON.stringify(nextEvent) !== JSON.stringify(event))
+            this.put("event", event.id, household, nextEvent, event.version);
         }
       }
       const subdomain = existing.subdomain;
@@ -503,6 +541,7 @@ export class Store {
           logo: image(input.logo ?? existing.logo ?? ""),
           timezone,
           design: nextDesign,
+          ...(nextMode ? { appearanceMode: nextMode } : {}),
           notes: text(input.notes ?? existing.notes ?? "", 20000),
           ui: input.ui ?? existing.ui ?? {},
           ...(subdomain ? { subdomain } : {}),

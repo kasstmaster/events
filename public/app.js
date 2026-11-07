@@ -209,7 +209,9 @@ const isEditing = () =>
   state.view === "card-editor" ||
   appearance.active() ||
   contactInviteMode ||
-  !!document.querySelector("form[data-form=guest]") ||
+  !!document.querySelector(
+    "form[data-form=guest],.inline-household-details[data-dirty=true]",
+  ) ||
   $("#editor").open ||
   !!document.querySelector(".browse-menu[open]") ||
   document.activeElement?.matches("input,select,textarea");
@@ -543,12 +545,15 @@ function rememberPage() {
   const identity = JSON.stringify([
     state.session?.role,
     state.session?.user,
-    state.session?.household,
+    state.session?.household?.id || state.session?.household?.slug,
     state.publicHousehold?.slug,
   ]);
   if (identity !== pageIdentity) {
     pageTrail.length = 0;
     currentPage = null;
+    state.settingsReturn = null;
+    state.settingsEvent = null;
+    state.settingsOpen = false;
     pageIdentity = identity;
   }
   if (
@@ -582,7 +587,44 @@ function rememberPage() {
   }
   currentPage = page;
 }
+async function returnFromSettings() {
+  const target = state.settingsReturn;
+  if (!target) {
+    state.settingsOpen = false;
+    return previousPage();
+  }
+  if (
+    target.view === "family" &&
+    !(await family.restoreNavigation(target.family))
+  )
+    throw new Error("The previous page is no longer available.");
+  if (
+    target.view === "home" &&
+    target.event &&
+    !state.data.events?.some((e) => (e.invitationKey || e.id) === target.event)
+  )
+    throw new Error("The previous page is no longer available.");
+  pageTrail.splice(0, pageTrail.length, ...target.trail);
+  currentPage = target.page;
+  Object.assign(state, {
+    view: target.view,
+    event: target.event,
+    adminMode: target.adminMode,
+    settingsOpen: false,
+    settingsReturn: null,
+    actionEvent:
+      state.data.events?.find((e) => e.id === target.actionEvent) || null,
+  });
+  returningToPage = true;
+  try {
+    render();
+  } finally {
+    returningToPage = false;
+  }
+  requestAnimationFrame(() => window.scrollTo(0, target.scroll || 0));
+}
 async function previousPage() {
+  if (state.settingsOpen && state.settingsReturn) return returnFromSettings();
   const previous = pageTrail.at(-1);
   if (!previous) {
     notify(C("No previous page in this session."));
@@ -695,8 +737,6 @@ function render(target = $("#app"), example = false) {
                 ? ui`<div class="admin-home-actions" role="toolbar" aria-label="Administrator tools">${button("admin-approvals", H("Approvals"))}${button("admin-hosts", H("Hosts"))}${button("global-defaults", H("Defaults"))}${button("admin-templates", H("Templates"))}</div>`
                 : "",
               sort: [
-                { action: "share-details", label: "Household link and QR" },
-                { action: "household-details", label: "Household details" },
                 ...(state.session.platformAdmin
                   ? [
                       {
@@ -724,7 +764,9 @@ function render(target = $("#app"), example = false) {
   if (role && !state.preview) {
     let options = [
       ...target.querySelectorAll(
-        '#top-navigation .browse-menu > [role="menu"]',
+        '#top-navigation .browse-menu:has(summary[aria-label="' +
+          H("Sorting and options") +
+          '"]) > [role="menu"]',
       ),
     ].at(-1);
     if (!options) {
@@ -736,23 +778,14 @@ function render(target = $("#app"), example = false) {
         menu("Sorting and options", "more", []),
       );
       options = target.querySelector(
-        '#top-navigation .browse-menu > [role="menu"]',
+        '#top-navigation .browse-menu:has(summary[aria-label="' +
+          H("Sorting and options") +
+          '"]) > [role="menu"]',
       );
     }
     const items = [
       ...(role === "host"
-        ? [
-            ...(event
-              ? [
-                  { action: "event-light-mode", label: "Light Mode" },
-                  { action: "event-dark-mode", label: "Dark Mode" },
-                  { action: "edit-event", label: "Custom Colors Mode" },
-                ]
-              : [{ action: "household", label: "Edit House" }]),
-            ...(!event
-              ? [{ action: "share", label: "Share Household Link" }]
-              : []),
-          ]
+        ? [{ action: "share-details", label: "Household Link and QR" }]
         : []),
       { action: "settings", label: "Settings" },
     ];
@@ -760,7 +793,7 @@ function render(target = $("#app"), example = false) {
       if (!options.querySelector(`[data-action="${item.action}"]`))
         options.insertAdjacentHTML(
           "beforeend",
-          ui`<button type="button" role="menuitem" data-action="${item.action}" class="${["event-light-mode", "event-dark-mode", "edit-event"].includes(item.action) ? "mode-option" : ""}">${C(item.label)}</button>`,
+          ui`<button type="button" role="menuitem" data-action="${item.action}" class="${["page-light-mode", "page-dark-mode", "page-custom-mode", "page-default-mode"].includes(item.action) ? "mode-option" : ""}">${C(item.label)}</button>`,
         );
   }
   if (!example) {
@@ -833,13 +866,16 @@ const closeModal = () => {
 const selectedEvent = () =>
   state.actionEvent ||
   state.data.events?.find((e) => (e.invitationKey || e.id) === state.event);
-function householdDetails() {
+function householdDetailsFields() {
   const household = state.data.household;
-  modal(
-    C("Household details"),
-    ui`${field(H("Family household name"), "householdName", household.name, "text", 'required maxlength="100"')}<p class="small muted">Display-name edits preserve the household address and existing links.</p>${household.logo ? ui`<img class="family-logo-preview" src="${escape(household.logo)}" alt="Current family logo">` : ""}${field(H("Family logo / icon"), "familyLogo", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<p>You can ask Kassandra to create a family logo for you. This appears when guests choose an event; event artwork is separate.</p><label class="check"><input type="checkbox" name="removeLogo">Remove family logo</label>${field(H("Household IANA timezone"), "householdTimezone", household.timezone || "UTC")}`,
-    "household",
-  );
+  return ui`${field(H("Family household name"), "householdName", household.name, "text", 'required maxlength="100"')}<p class="small muted">Display-name edits preserve the household address and existing links.</p>${household.logo ? ui`<img class="family-logo-preview" src="${escape(household.logo)}" alt="Current family logo">` : ""}${field(H("Family logo / icon"), "familyLogo", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<p>You can ask Kassandra to create a family logo for you. This appears when guests choose an event; event artwork is separate.</p><label class="check"><input type="checkbox" name="removeLogo">Remove family logo</label>${field(H("Household IANA timezone"), "householdTimezone", household.timezone || "UTC")}`;
+}
+function householdDetails() {
+  modal(C("Details"), householdDetailsFields(), "household");
+}
+function inlineHouseholdDetails() {
+  if (state.session.role !== "host") return "";
+  return ui`<section class="panel"><h2>Details</h2><form class="inline-household-details" data-form="household" data-version="${state.data.household.version}">${householdDetailsFields()}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form></section>`;
 }
 let guestMatchTimer,
   guestMatchSequence = 0;
@@ -1169,7 +1205,7 @@ function eventEditor(existing, focus = "") {
   const e = state.editingEvent;
   modal(
     existing ? C("Edit event") : C("A new reason to gather"),
-    ui`${field(H("Event title"), "title", e.title, "text", 'required maxlength="160" placeholder="Sunday around the table"')}${area(H("Description"), "description", e.description, 'maxlength="5000"')}<div class="form-grid">${field(H("Date"), "date", e.date, "date")}${field(H("Time · numbers or words"), "time", e.time, "text", 'maxlength="100" placeholder="Two O’Clock in the Afternoon"')}${field(H("RSVP deadline"), "deadline", e.deadline, "date")}</div>${area(H("Event address"), "eventAddress", e.address, 'maxlength="500"')}${field(H("Photo / video upload link (optional)"), "uploadURL", e.uploadURL || "", "url", 'maxlength="2048" placeholder="https://…"')}<p class="small muted">Use Dropbox File Requests, Google Drive, OneDrive, or another sharing service. Configure upload permissions at that destination. Clear the link to remove the guest upload button.</p>${field(H("Event artwork / image"), "iconUpload", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input type="checkbox" name="removeIcon">Remove current image</label>${select(H("Invitation template"), "template", [["", C("Simple invitation")], ...state.templates.map((t) => [t.id, t.name])], e.template || "")}<fieldset><legend>Gift registries · optional</legend><p class="small muted">Guest buttons appear directly below RSVP, in this order.</p><div id="registry-rows">${(e.registries || []).map(registryRow).join("")}</div>${button("add-registry", H("＋ Add registry"))}</fieldset><fieldset><legend>Who’s invited?</legend><p class="small muted">Choose each person. Children need their designated adult invited too.</p>${state.data.guests.map((g) => ui`<label class="check ${g.parent ? "child" : ""}"><input type="checkbox" name="invited" value="${g.id}" ${e.invited.includes(g.id) ? "checked" : ""}>${escape(fullName(g))}${g.parent ? C(" (child)") : ""}</label>`).join("") || M("<p>Add guests from Home → Contacts before inviting them.</p>")}</fieldset><fieldset><legend>Potluck & drinks</legend><label class="check"><input type="checkbox" name="customItemsEnabled" ${e.customItemsEnabled ? "checked" : ""}>Allow guests to enter custom menu items</label><label class="check"><input type="checkbox" name="saveCustomItems" ${e.saveCustomItems ? "checked" : ""}>Save custom items to future menus</label><div class="row">${select(H("Copy menu from"), "copyMenu", [["", C("Choose a past event")], ...state.data.events.filter((p) => p.id !== e.id).map((p) => [p.id, p.title])], "")}${button("copy-menu", H("Copy items"))}</div><fieldset><legend>Table templates</legend>${select(H("Table template"), "tableTemplate", [["", C("New table template")], ...(state.data.tableTemplates || []).map((t) => [t.id, t.name])], "")}${field(H("Table template name"), "tableTemplateName", "", "text", 'maxlength="160"')}<div class="row">${button("table-template-apply", H("Apply Table Template"))}${button("table-template-save", H("Save Table Template"))}${button("table-template-delete", H("Delete Table Template"))}</div><p class="small">Applying a template adds items to this draft. Save the event to keep them. Existing menu items and guest claims stay unchanged.</p></fieldset><div id="menu-rows">${e.menu.map(menuRow).join("")}</div>${button("add-menu", H("＋ Add item"))}</fieldset>${existing ? ui`<hr>${button("delete-event", H("Delete event"), "", "danger")}` : ""}`,
+    ui`${field(H("Event title"), "title", e.title, "text", 'required maxlength="160" placeholder="Sunday around the table"')}${area(H("Description"), "description", e.description, 'maxlength="5000"')}<div class="form-grid">${field(H("Date"), "date", e.date, "date")}${field(H("Time · numbers or words"), "time", e.time, "text", 'maxlength="100" placeholder="Two O’Clock in the Afternoon"')}${field(H("RSVP deadline"), "deadline", e.deadline, "date")}</div>${area(H("Event address"), "eventAddress", e.address, 'maxlength="500"')}${field(H("Photo / video upload link (optional)"), "uploadURL", e.uploadURL || "", "url", 'maxlength="2048" placeholder="https://…"')}<p class="small muted">Use Dropbox File Requests, Google Drive, OneDrive, or another sharing service. Configure upload permissions at that destination. Clear the link to remove the guest upload button.</p>${field(H("Event artwork / image"), "iconUpload", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input type="checkbox" name="removeIcon">Remove current image</label>${select(H("Invitation template"), "template", [["", C("Simple invitation")], ...state.templates.map((t) => [t.id, t.name])], e.template || "")}<fieldset><legend>Gift registries · optional</legend><p class="small muted">Guest buttons appear directly below RSVP, in this order.</p><div id="registry-rows">${(e.registries || []).map(registryRow).join("")}</div>${button("add-registry", H("＋ Add registry"))}</fieldset><fieldset><legend>Potluck & drinks</legend><label class="check"><input type="checkbox" name="customItemsEnabled" ${e.customItemsEnabled ? "checked" : ""}>Allow guests to enter custom menu items</label><label class="check"><input type="checkbox" name="saveCustomItems" ${e.saveCustomItems ? "checked" : ""}>Save custom items to future menus</label><div class="row">${select(H("Copy menu from"), "copyMenu", [["", C("Choose a past event")], ...state.data.events.filter((p) => p.id !== e.id).map((p) => [p.id, p.title])], "")}${button("copy-menu", H("Copy items"))}</div><fieldset><legend>Table templates</legend>${select(H("Table template"), "tableTemplate", [["", C("New table template")], ...(state.data.tableTemplates || []).map((t) => [t.id, t.name])], "")}${field(H("Table template name"), "tableTemplateName", "", "text", 'maxlength="160"')}<div class="row">${button("table-template-apply", H("Apply Table Template"))}${button("table-template-save", H("Save Table Template"))}${button("table-template-delete", H("Delete Table Template"))}</div><p class="small">Applying a template adds items to this draft. Save the event to keep them. Existing menu items and guest claims stay unchanged.</p></fieldset><div id="menu-rows">${e.menu.map(menuRow).join("")}</div>${button("add-menu", H("＋ Add item"))}</fieldset><fieldset><legend>Who’s invited?</legend><p class="small muted">Choose each person. Children need their designated adult invited too.</p>${state.data.guests.map((g) => ui`<label class="check ${g.parent ? "child" : ""}"><input type="checkbox" name="invited" value="${g.id}" ${e.invited.includes(g.id) ? "checked" : ""}>${escape(fullName(g))}${g.parent ? C(" (child)") : ""}</label>`).join("") || M("<p>Add guests from Home → Contacts before inviting them.</p>")}</fieldset>${existing ? ui`<hr>${button("delete-event", H("Delete event"), "", "danger")}` : ""}`,
     "event",
     existing ? C("Save event") : C("Create event"),
   );
@@ -1417,7 +1453,7 @@ async function submit(form) {
   if (kind === "household") {
     await api("/api/host/household", {
       method: "PUT",
-      version: state.data.household.version,
+      version: Number(form.dataset.version ?? state.data.household.version),
       data: {
         name: value.householdName,
         logo: data.has("removeLogo")
@@ -1429,7 +1465,7 @@ async function submit(form) {
         design: state.data.household.design,
       },
     });
-    await saved("Appearance saved.");
+    await saved("Details saved.");
     return;
   }
   if (kind === "guest") {
@@ -1641,6 +1677,14 @@ document.addEventListener("click", async (event) => {
       !(await appearance.leave())
     )
       return;
+
+    const detailsForm = document.querySelector(
+      ".inline-household-details[data-dirty=true]",
+    );
+    if (detailsForm && !target.closest(".inline-household-details")) {
+      if (!confirm(String(C("Discard unsaved details changes?")))) return;
+      detailsForm.dataset.dirty = "false";
+    }
     if (
       [
         "home",
@@ -1673,6 +1717,20 @@ document.addEventListener("click", async (event) => {
     }
     if (action === "settings") {
       if (document.querySelector("#editor[open]")) closeModal();
+      if (!state.settingsOpen || !state.settingsReturn) {
+        state.settingsEvent = visibleAppearanceEvent()?.id || null;
+        state.settingsReturn = structuredClone({
+          view: state.view,
+          event: state.event,
+          adminMode: !!state.adminMode,
+          family: family.navigation(),
+          trail: pageTrail,
+          page: currentPage,
+          scroll: scrollY,
+          actionEvent: state.actionEvent?.id || null,
+        });
+      }
+      state.adminMode = false;
       resetContactInvites();
       state.settingsOpen = true;
       if (["host", "family"].includes(state.session.role)) {
@@ -2041,24 +2099,51 @@ document.addEventListener("click", async (event) => {
       eventEditor();
       return;
     }
-    if (["event-light-mode", "event-dark-mode"].includes(action)) {
-      if (state.session.role !== "host") return;
-      const e = selectedEvent();
-      if (!e) return;
-      await api(`/api/host/events/${e.id}`, {
-        method: "PUT",
-        version: e.version,
-        data: {
-          ...Object.fromEntries(
-            Object.entries(e).filter(([key]) => key !== "ui"),
-          ),
-          design: appearancePreset(
-            action === "event-dark-mode" ? "dark" : "light",
-            state.data.defaults,
-          ),
-        },
-      });
-      await load();
+    if (
+      [
+        "page-light-mode",
+        "page-dark-mode",
+        "page-custom-mode",
+        "page-default-mode",
+      ].includes(action)
+    ) {
+      if (state.session.role !== "host" || !state.settingsOpen) return;
+      if (appearanceModeSaving) return;
+      const event = settingsAppearanceEvent();
+      if (state.settingsEvent && !event)
+        throw new Error("The event is no longer available.");
+      const scope = event ? "event" : "household";
+      if (action === "page-custom-mode") {
+        await returnFromSettings();
+        await startAppearance(scope);
+        return;
+      }
+      appearanceModeSaving = true;
+      document
+        .querySelectorAll(".page-appearance-settings button")
+        .forEach((b) => (b.disabled = true));
+      try {
+        if (action === "page-default-mode") {
+          if (!event) return;
+          await persistPageAppearance("event", event, {}, "inherit");
+        } else {
+          if (event) return;
+          const mode = action === "page-dark-mode" ? "dark" : "light";
+          await persistPageAppearance(
+            "household",
+            state.data.household,
+            appearancePreset(mode, state.data.defaults),
+            mode,
+          );
+        }
+        await load();
+        await returnFromSettings();
+      } finally {
+        appearanceModeSaving = false;
+        document
+          .querySelectorAll(".page-appearance-settings button")
+          .forEach((b) => (b.disabled = false));
+      }
       return;
     }
     if (action === "edit-event") {
@@ -2399,6 +2484,10 @@ const guestAddresses = addressPicker({
   onChange: queueGuestMatches,
 });
 guestAddresses.bind();
+document.addEventListener("input", (event) => {
+  const form = event.target.closest(".inline-household-details");
+  if (form) form.dataset.dirty = "true";
+});
 document.addEventListener("input", (event) => guestAddresses.input(event));
 let chromeObserver, observedTop, observedFooter;
 function fitEventSummary() {
@@ -2469,6 +2558,51 @@ const appearance = appearanceEditor({
   },
   measure: measureChrome,
 });
+let appearanceModeSaving = false;
+function settingsAppearanceEvent() {
+  return state.settingsEvent
+    ? state.data.events?.find((e) => e.id === state.settingsEvent)
+    : null;
+}
+function appearanceSettingsMarkup() {
+  if (state.session.role !== "host") return "";
+  const event = state.example ? null : settingsAppearanceEvent();
+  const unavailable = !state.example && state.settingsEvent && !event;
+  const modes = event
+    ? [
+        ["page-default-mode", "Default Mode"],
+        ["page-custom-mode", "Custom Colors Mode"],
+      ]
+    : [
+        ["page-light-mode", "Light Mode"],
+        ["page-dark-mode", "Dark Mode"],
+        ["page-custom-mode", "Custom Colors Mode"],
+      ];
+  return ui`<section class="panel page-appearance-settings"><h2>Appearance</h2><p>${unavailable ? C("Event unavailable") : event ? escape(event.title) : C("Household pages")}</p>${event ? ui`<p class="small">Default Mode follows the home page’s formatting. Custom Colors Mode applies only to this event.</p>` : ""}<div class="stack">${modes.map(([action, label]) => button(action, H(label), unavailable ? "disabled" : "", "mode-option")).join("")}</div></section>`;
+}
+function visibleAppearanceEvent() {
+  return !state.adminMode && state.view === "home"
+    ? state.data.events?.find((e) => (e.invitationKey || e.id) === state.event)
+    : null;
+}
+async function persistPageAppearance(scope, record, design, mode = "custom") {
+  await api(
+    scope === "event" ? "/api/host/events/" + record.id : "/api/host/household",
+    {
+      method: "PUT",
+      version: record.version,
+      data: {
+        ...Object.fromEntries(
+          Object.entries(record).filter(([key]) => key !== "ui"),
+        ),
+        design: categoryDesign(design),
+        appearanceMode:
+          scope === "event" ? (mode === "custom" ? "custom" : "inherit") : mode,
+        ...(scope === "household" ? { applyAppearanceMode: true } : {}),
+      },
+    },
+  );
+}
 async function startAppearance(scope, globalOptions) {
   if (!["host", "admin"].includes(state.session.role)) return;
   const event = scope === "event" ? selectedEvent() : null;
@@ -2477,7 +2611,6 @@ async function startAppearance(scope, globalOptions) {
   const record = event || household;
   const initial =
     globalOptions?.design || event?.ui?.design || state.data.ui.design;
-  const version = record?.version;
   appearance.start({
     design: initial,
     contentActions: [],
@@ -2516,21 +2649,7 @@ async function startAppearance(scope, globalOptions) {
           Object.hasOwn(overrides, key)
         )
           overrides[key] = design[key];
-      await api(
-        scope === "event"
-          ? "/api/host/events/" + event.id
-          : "/api/host/household",
-        {
-          method: "PUT",
-          version,
-          data: {
-            ...Object.fromEntries(
-              Object.entries(record).filter(([key]) => key !== "ui"),
-            ),
-            design: categoryDesign(overrides),
-          },
-        },
-      );
+      await persistPageAppearance(scope, record, overrides);
       document
         .querySelector(".top-shell")
         ?.classList.remove("appearance-active");
@@ -2540,6 +2659,8 @@ async function startAppearance(scope, globalOptions) {
   });
 }
 const family = familyTools({
+  appearanceSettings: appearanceSettingsMarkup,
+  householdDetails: inlineHouseholdDetails,
   back: previousPage,
   state,
   api,

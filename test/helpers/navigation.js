@@ -2,6 +2,53 @@
 export async function clickNavigation(page, label) {
   if (
     [
+      "Edit House",
+      "Edit Event",
+      "Edit event",
+      "Light Mode",
+      "Dark Mode",
+      "Default Mode",
+      "Custom Colors Mode",
+    ].includes(label)
+  ) {
+    if (!(await page.locator(".page-appearance-settings").count()))
+      await clickNavigation(page, "Settings");
+    await page
+      .getByRole("button", {
+        name: ["Light Mode", "Dark Mode", "Default Mode"].includes(label)
+          ? label
+          : "Custom Colors Mode",
+        exact: true,
+      })
+      .click();
+    if (["Light Mode", "Dark Mode", "Default Mode"].includes(label))
+      await page
+        .locator(".page-appearance-settings")
+        .waitFor({ state: "hidden" });
+    else
+      await page.getByLabel("Appearance categories", { exact: true }).waitFor();
+    return;
+  }
+  if (["Household details", "Details"].includes(label)) {
+    if (!(await page.locator(".inline-household-details").count()))
+      await clickNavigation(page, "Settings");
+    await page.getByRole("heading", { name: "Details", exact: true }).waitFor();
+    return;
+  }
+  if (
+    ["Share", "Share Household Link", "Share Guest Link"].includes(label) &&
+    !(await page.locator(".toolbar [data-action=share]").count())
+  ) {
+    await clickNavigation(page, "Household link and QR");
+    await page.getByRole("button", { name: "Share link", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Close editor", exact: true })
+      .click();
+    return;
+  }
+  if (label === "Household link and QR") label = "Household Link and QR";
+  if (
+    [
       "Share",
       "Share Household Link",
       "Share Guest Link",
@@ -80,6 +127,7 @@ export async function clickNavigation(page, label) {
       "Share",
       "Share Household Link",
       "Settings",
+      "Household Link and QR",
     ].includes(label) &&
     !(await page.locator("#editor[open]:not(.inline-management)").count())
   ) {
@@ -102,6 +150,10 @@ export async function clickNavigation(page, label) {
         exact: true,
       })
       .click();
+    if (label === "Settings")
+      await page
+        .getByRole("heading", { name: "Settings", exact: true })
+        .waitFor();
     return;
   }
   if (
@@ -179,7 +231,7 @@ export async function clickNavigation(page, label) {
     "Household details",
     "Preview guest experience",
     "Cards & Templates",
-    "Household link and QR",
+    "Household Link and QR",
     "Create list",
     "Create folder",
     "Create task",
