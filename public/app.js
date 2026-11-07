@@ -204,13 +204,45 @@ function applyDesign(settings = {}, target = document.documentElement) {
   );
   fitEventSummary();
 }
-let loadGeneration = 0;
+let loadGeneration = 0,
+  pendingActions = 0,
+  pointerInteraction = false;
+document.addEventListener(
+  "pointerdown",
+  () => {
+    pointerInteraction = true;
+  },
+  true,
+);
+const finishPointer = () =>
+  setTimeout(() => {
+    pointerInteraction = false;
+  }, 0);
+document.addEventListener("pointerup", finishPointer, true);
+document.addEventListener("pointercancel", finishPointer, true);
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (
+      ["Enter", " "].includes(event.key) &&
+      event.target.closest("button,summary,a")
+    )
+      pointerInteraction = true;
+  },
+  true,
+);
+document.addEventListener("keyup", finishPointer, true);
+window.addEventListener("blur", () => {
+  pointerInteraction = false;
+});
 const isEditing = () =>
+  pointerInteraction ||
+  pendingActions > 0 ||
   state.view === "card-editor" ||
   appearance.active() ||
   contactInviteMode ||
   !!document.querySelector(
-    "form[data-form=guest],.inline-household-details[data-dirty=true]",
+    "form[data-form=guest],:is(.inline-household-details,.inline-event-details)[data-dirty=true]",
   ) ||
   $("#editor").open ||
   !!document.querySelector(".browse-menu[open]") ||
@@ -238,8 +270,11 @@ async function load({ background = false } = {}) {
       render();
       return;
     }
-    const context = await api("/api/public/context");
-    const platform = await api("/api/interface");
+    const [context, platform, session] = await Promise.all([
+      api("/api/public/context"),
+      api("/api/interface"),
+      api("/api/session"),
+    ]);
     state.platformUI = platform.ui;
     if (state.preview) {
       const data = await api(state.preview.endpoint || "/api/admin/preview", {
@@ -259,7 +294,6 @@ async function load({ background = false } = {}) {
       renderRefresh(background);
       return;
     }
-    const session = await api("/api/session");
     let data = null,
       templates = [],
       publicHousehold = context.household;
@@ -299,6 +333,22 @@ async function load({ background = false } = {}) {
       previousSync?.state === "running" &&
       nextSync?.state === "complete" &&
       previousSync.id === nextSync.id;
+    const unchanged =
+      background &&
+      JSON.stringify([
+        state.session,
+        state.data,
+        state.templates,
+        state.publicHousehold,
+        state.familyData,
+      ]) ===
+        JSON.stringify([
+          session,
+          data,
+          templates,
+          publicHousehold,
+          familyData || state.familyData,
+        ]);
     if (familyData) state.familyData = familyData;
     Object.assign(state, {
       session,
@@ -307,7 +357,8 @@ async function load({ background = false } = {}) {
       publicHousehold,
       lastSync: new Date(),
     });
-    renderRefresh(preserveScroll);
+    if (!unchanged) renderRefresh(preserveScroll);
+    else $("#sync-status")?.replaceChildren();
     if (syncCompleted && state.view === "contacts")
       notify(C("Contacts synced."));
   } catch (error) {
@@ -751,7 +802,7 @@ function render(target = $("#app"), example = false) {
         ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : H("Welcome,") + " " + escape(state.data.guest.first)}</p><h1>${escape(state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? button("guest-link-requests", H("Review shared guest links")) : ""}${state.data.events.length ? ui`<section class="grid home-events ${state.data.events.length > 1 ? "multiple-events" : "single-event"}" aria-label="Events">${(role === "guest" ? orderedInvitations(state.data.events) : state.data.events).map(eventCard).join("")}</section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
     }
   }
-  target.innerHTML = ui`<header class="top-shell no-print ${event ? "event-toolbar" : ""}"><div class="top-primary"><a class="brand" href="/" data-action="home">gather<span>＊</span></a>${event ? eventSummary(event) : ""}<div id="top-navigation">${topActions(event)}</div></div><div id="appearance-toolbar"></div></header><main id="main">${content}${role && state.view !== "card-editor" ? '<p id="sync-status" class="connection" role="status" aria-live="polite"></p>' : ""}</main>${(state.view !== "card-editor" || role === "admin") && (role || state.preview) ? toolbar(event) : ""}`;
+  target.innerHTML = ui`<header class="top-shell no-print ${event ? "event-toolbar" : ""}"><div class="top-primary"><a class="brand" href="/" data-action="home">gather<span>＊</span></a>${event ? eventSummary(event) : ""}<div id="top-navigation">${topActions(event)}</div></div><div id="appearance-toolbar"></div></header><main id="main">${content}${role && state.view !== "card-editor" ? '<p id="sync-status" class="connection" role="status" aria-live="polite"></p>' : ""}</main>${role || state.preview ? toolbar(event) : ""}`;
   if (keepGuest)
     target
       .querySelector(
@@ -762,39 +813,96 @@ function render(target = $("#app"), example = false) {
   if (embeddedTop)
     target.querySelector("#top-navigation").replaceChildren(embeddedTop);
   if (role && !state.preview) {
-    let options = [
-      ...target.querySelectorAll(
+    const footer = target.querySelector(":scope > .toolbar");
+    if (footer) {
+      for (const control of target.querySelectorAll(
         '#top-navigation .browse-menu:has(summary[aria-label="' +
-          H("Sorting and options") +
-          '"]) > [role="menu"]',
-      ),
-    ].at(-1);
-    if (!options) {
-      (
-        target.querySelector("#top-navigation .browse-top-actions") ||
-        target.querySelector("#top-navigation")
-      ).insertAdjacentHTML(
-        "beforeend",
-        menu("Sorting and options", "more", []),
+          H("Create") +
+          '"]), #top-navigation .nav-control[data-icon="search"], #top-navigation .nav-control[data-icon="plus"]',
+      )) {
+        if (control.matches(".browse-menu")) {
+          control.classList.add("toolbar-create");
+          control
+            .querySelector("summary")
+            .insertAdjacentHTML("beforeend", ui`<span>${C("Create")}</span>`);
+        }
+        footer.append(control);
+      }
+      const sortItems = [
+        ...target.querySelectorAll(
+          '#top-navigation [data-action^="family-sort-"]',
+        ),
+      ];
+      if (sortItems.length) {
+        footer.insertAdjacentHTML(
+          "beforeend",
+          menu(
+            "Sort",
+            "sort",
+            sortItems.map((el) => ({
+              action: el.dataset.action,
+              label: el.textContent,
+              checked: el.getAttribute("aria-checked") === "true",
+            })),
+          ),
+        );
+        const sortingMenu = footer.lastElementChild;
+        sortingMenu.classList.add("toolbar-create");
+        sortingMenu
+          .querySelector("summary")
+          .insertAdjacentHTML("beforeend", ui`<span>${C("Sort")}</span>`);
+        sortItems.forEach((el) => el.remove());
+      }
+      const tasks = target.querySelector(
+        '#top-navigation [data-action="family-mine"]',
       );
-      options = target.querySelector(
-        '#top-navigation .browse-menu:has(summary[aria-label="' +
-          H("Sorting and options") +
-          '"]) > [role="menu"]',
+      if (tasks) {
+        footer.insertAdjacentHTML(
+          "beforeend",
+          tool("family-mine", "My Tasks", "", "task"),
+        );
+        tasks.remove();
+      }
+      for (const control of target.querySelectorAll(
+        ".contacts-invite-tools > .row button",
+      )) {
+        const labels = {
+          "contacts-select": ["Select Contacts", "contacts"],
+          "contacts-invite": ["Invite", "invite"],
+          "contacts-uninvite": ["Uninvite", "uninvite"],
+          "contacts-anylist-sync": [
+            state.data.integrations?.anylistStatus?.state === "running"
+              ? "Syncing…"
+              : "Sync",
+            "sync",
+          ],
+          "contacts-select-event": ["Select Event", "rsvp"],
+          "contacts-invite-cancel": ["Cancel", "back"],
+        };
+        const [label, symbol] = labels[control.dataset.action] || [
+          control.textContent,
+          "contacts",
+        ];
+        control.setAttribute("aria-label", control.textContent.trim());
+        control.classList.add("nav-control");
+        control.innerHTML = ui`${icon(symbol)}<span>${C(label)}</span>`;
+        footer.append(control);
+      }
+      for (const details of target.querySelectorAll(
+        "#top-navigation .browse-menu",
+      ))
+        if (!details.querySelector('[role="menu"]')?.children.length)
+          details.remove();
+      if (role === "host")
+        footer.insertAdjacentHTML(
+          "beforeend",
+          tool("share-details", "Share Link", "", "share"),
+        );
+      footer.insertAdjacentHTML(
+        "beforeend",
+        tool("settings", "Settings", "", "settings"),
       );
     }
-    const items = [
-      ...(role === "host"
-        ? [{ action: "share-details", label: "Household Link and QR" }]
-        : []),
-      { action: "settings", label: "Settings" },
-    ];
-    for (const item of items)
-      if (!options.querySelector(`[data-action="${item.action}"]`))
-        options.insertAdjacentHTML(
-          "beforeend",
-          ui`<button type="button" role="menuitem" data-action="${item.action}" class="${["page-light-mode", "page-dark-mode", "page-custom-mode", "page-default-mode"].includes(item.action) ? "mode-option" : ""}">${C(item.label)}</button>`,
-        );
   }
   if (!example) {
     if (state.view === "management" && existingEditor)
@@ -864,6 +972,7 @@ const closeModal = () => {
   measureChrome();
 };
 const selectedEvent = () =>
+  (state.settingsOpen && settingsAppearanceEvent()) ||
   state.actionEvent ||
   state.data.events?.find((e) => (e.invitationKey || e.id) === state.event);
 function householdDetailsFields() {
@@ -875,7 +984,13 @@ function householdDetails() {
 }
 function inlineHouseholdDetails() {
   if (state.session.role !== "host") return "";
-  return ui`<section class="panel"><h2>Details</h2><form class="inline-household-details" data-form="household" data-version="${state.data.household.version}">${householdDetailsFields()}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form></section>`;
+  const event = settingsAppearanceEvent();
+  if (state.settingsEvent && !event) return "";
+  if (event) {
+    state.editingEvent = event;
+    return ui`<section class="settings-details"><h2>Event Details</h2><form class="inline-event-details" data-form="event" data-version="${event.version}" data-event="${event.id}">${eventDetailsFields(event)}<p class="form-error" role="alert"></p><button>${C("Save event")}</button></form></section>`;
+  }
+  return ui`<section class="settings-details"><h2>Details</h2><form class="inline-household-details" data-form="household" data-version="${state.data.household.version}">${householdDetailsFields()}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form></section>`;
 }
 let guestMatchTimer,
   guestMatchSequence = 0;
@@ -948,20 +1063,31 @@ function guestEditor(guest = {}) {
   host.querySelector("input")?.focus();
   queueGuestMatches(document.querySelector("form[data-form=guest]"), 0);
 }
-function contactsInviteTools() {
-  return ui`<section class="contacts-invite-tools" aria-busy="${contactInviteSaving}" aria-label="${H("Guest invitations")}"><div class="row">${
-    contactInviteMode
-      ? button(
-          "contacts-select-event",
-          H("Select Event"),
-          `${!contactInviteSelection.size || contactInviteSaving ? "disabled" : ""}`,
-          "contacts-select-event",
-        )
-      : button("contacts-invite", H("Invite Guests"))
+function contactSelectionTargets() {
+  const selected = new Set(contactInviteSelection);
+  if (contactInviteEventsOpen) {
+    const guests = new Map(state.data.guests.map((g) => [g.id, g]));
+    const children = new Map();
+    for (const g of state.data.guests)
+      if (g.parent) {
+        if (!children.has(g.parent)) children.set(g.parent, []);
+        children.get(g.parent).push(g.id);
+      }
+    for (const id of contactInviteSelection) {
+      const guest = guests.get(id);
+      if (!guest) continue;
+      if (!contactUninvite && guest.parent) selected.add(guest.parent);
+      if (contactUninvite && !guest.parent)
+        for (const child of children.get(id) || []) selected.add(child);
+    }
   }
-    <button type="button" data-action="contacts-uninvite" aria-pressed="${contactUninvite}" ${contactInviteSaving ? "disabled" : ""}>${C("Uninvite Guests")}</button>
-    ${contactInviteMode ? button("contacts-invite-cancel", H("Cancel"), contactInviteSaving ? "disabled" : "") : ""}${contactsSyncTools()}</div>${state.data.integrations?.anylist ? ui`<p class="small" role="status" aria-live="polite" id="contacts-sync-status">${anyListStatusMessage(state.data.integrations.anylistStatus)}</p>` : ""}
-    ${contactInviteMode ? ui`<p class="contacts-invite-status" role="status">${contactInviteSelection.size} ${C("contacts selected")}. ${contactUninvite ? C("Selecting an adult also selects their children.") : C("Selecting a child also selects their designated adult.")}</p>` : ""}
+  return selected;
+}
+function contactsInviteTools() {
+  const disabled =
+    !contactInviteSelection.size || contactInviteSaving ? "disabled" : "";
+  return ui`<section class="contacts-invite-tools" aria-busy="${contactInviteSaving}" aria-label="${H("Guest invitations")}"><div class="row">${contactInviteMode ? ui`${button("contacts-invite", H("Invite"), disabled)}${button("contacts-uninvite", H("Uninvite"), disabled)}${button("contacts-invite-cancel", H("Cancel"), contactInviteSaving ? "disabled" : "")}` : button("contacts-select", H("Select Contacts"))}${contactsSyncTools()}</div>${state.data.integrations?.anylist ? ui`<p class="small" role="status" aria-live="polite" id="contacts-sync-status">${anyListStatusMessage(state.data.integrations.anylistStatus)}</p>` : ""}
+    ${contactInviteMode ? ui`<p class="contacts-invite-status" role="status">${contactSelectionTargets().size} ${C("contacts selected")}. ${contactInviteEventsOpen ? (contactUninvite ? C("Selecting an adult also selects their children.") : C("Selecting a child also selects their designated adult.")) : ""}</p>` : ""}
     ${contactInviteError ? ui`<p role="alert">${escape(contactInviteError)}</p>` : ""}
     ${contactInviteEventsOpen ? ui`<div class="contacts-event-picker"><h2>Select Event</h2><p>${contactUninvite ? C("Choose an event to uninvite the selected guests. Saved RSVPs are protected. No messages are sent.") : C("Choose an event to add the selected guests. Existing invitations and responses stay saved. No messages are sent.")}</p><ul class="browse-rows">${state.data.events.map((event) => row({ title: escape(event.title), meta: escape(dateLabel(event.date)), action: "contacts-invite-event", id: event.id, symbol: "list", attributes: contactInviteSaving ? "inert" : "" })).join("") || M('<li class="browse-empty">Create an event from Home first.</li>')}</ul></div>` : ""}</section>`;
 }
@@ -983,7 +1109,7 @@ function contactsSyncTools() {
   if (!state.data.integrations?.anylist) return "";
   const status = state.data.integrations.anylistStatus;
   const running = status?.state === "running";
-  return ui`<section class="contacts-sync"><button type="button" data-action="contacts-anylist-sync" ${running ? "disabled" : ""} aria-busy="${running}">${running ? C("Syncing…") : C("Sync AnyList")}</button></section>`;
+  return ui`<section class="contacts-sync"><button type="button" data-action="contacts-anylist-sync" ${running || contactInviteMode ? "disabled" : ""} aria-busy="${running}">${running ? C("Syncing…") : C("Sync AnyList")}</button></section>`;
 }
 function notePencil(a) {
   return a ? tool("address-notes", "Edit private notes", a.id, "edit") : "";
@@ -994,21 +1120,20 @@ function householdNotes(a) {
     : "";
 }
 function contactsPage() {
-  const guests = ordered(
-    state.data.guests.filter((g) =>
-      [
-        fullName(g),
-        g.phone,
-        ...[state.data.addresses.find((a) => a.id === g.address)].flatMap(
-          (a) => [a?.label, a?.lines],
-        ),
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(contactSearch.toLowerCase()),
-    ),
-    "manual",
+  const guests = state.data.guests.filter((g) =>
+    [
+      fullName(g),
+      g.phone,
+      ...[state.data.addresses.find((a) => a.id === g.address)].flatMap((a) => [
+        a?.label,
+        a?.lines,
+      ]),
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(contactSearch.toLowerCase()),
   );
+  const selectedContacts = contactSelectionTargets();
   const groups = new Map();
   for (const g of guests) {
     const key = g.address || "";
@@ -1021,11 +1146,10 @@ function contactsPage() {
         String(C("Address unavailable"))
       : String(C("No shared address"));
   const entries = [...groups];
-  if (contactPreferences?.contactSort === "alpha")
-    entries.sort(
-      ([a], [b]) => label(a).localeCompare(label(b)) || a.localeCompare(b),
-    );
-  return ui`<div class="browse-shell">${topbar({ title: C("Contacts"), back: "home", search: "contacts-search", plus: contactInviteMode ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: sorting("contacts-", contactPreferences?.contactSort) })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search contacts") : ""}<div class="browse-content">${contactsInviteTools()}<ul class="browse-rows">${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
+  entries.sort(
+    ([a], [b]) => label(a).localeCompare(label(b)) || a.localeCompare(b),
+  );
+  return ui`<div class="browse-shell">${topbar({ title: C("Contacts"), back: "home", search: "contacts-search", plus: contactInviteMode ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: [] })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search contacts") : ""}<div class="browse-content">${contactsInviteTools()}<ul class="browse-rows">${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
     entries
       .map(
         ([key, rows]) =>
@@ -1054,29 +1178,11 @@ function contactsPage() {
                     : "edit-guest",
                   id: g.id,
                   attributes:
-                    `data-contact-kind="${g.parent ? "child" : "adult"}" ` +
-                    (!contactInviteMode &&
-                    contactPreferences?.contactSort !== "alpha"
-                      ? `draggable="true" data-contact-row="${g.id}"`
-                      : ""),
+                    `data-contact-kind="${g.parent ? "child" : "adult"}" ` + "",
                   controls: contactInviteMode
-                    ? ui`<label class="check"><input type="checkbox" data-contact-invite="${g.id}" aria-label="${H("Select")} ${escape(fullName(g))}" ${contactInviteSelection.has(g.id) ? "checked" : ""} ${contactInviteSaving ? "disabled" : ""}></label>`
+                    ? ui`<label class="check"><input type="checkbox" data-contact-invite="${g.id}" aria-label="${H("Select")} ${escape(fullName(g))}" ${selectedContacts.has(g.id) ? "checked" : ""} ${contactInviteSaving ? "disabled" : ""}></label>`
                     : tool("edit-guest", "Edit contact", g.id, "edit") +
                       menu("Contact actions", "more", [
-                        ...(contactPreferences?.contactSort !== "alpha"
-                          ? [
-                              {
-                                action: "contacts-up",
-                                label: "Move up",
-                                id: g.id,
-                              },
-                              {
-                                action: "contacts-down",
-                                label: "Move down",
-                                id: g.id,
-                              },
-                            ]
-                          : []),
                         { action: "delete-guest", label: "Remove", id: g.id },
                       ]),
                 }) +
@@ -1090,7 +1196,10 @@ function contactsPage() {
     ui`<li class="browse-empty">${C("No matching contacts. Use the plus menu to add someone.")}</li>`
   }</ul></div></div>`;
 }
-function toggleContactInvite(key, checked = !contactInviteSelection.has(key)) {
+function toggleContactInvite(
+  key,
+  checked = !contactSelectionTargets().has(key),
+) {
   if (contactInviteSaving) return;
   const checkboxFocus = document.activeElement?.matches(
     "[data-contact-invite]",
@@ -1099,16 +1208,11 @@ function toggleContactInvite(key, checked = !contactInviteSelection.has(key)) {
   if (!guest) return;
   if (checked) {
     contactInviteSelection.add(key);
-    if (!contactUninvite && guest.parent)
-      contactInviteSelection.add(guest.parent);
-    if (contactUninvite && !guest.parent)
-      for (const child of state.data.guests.filter((g) => g.parent === key))
-        contactInviteSelection.add(child.id);
   } else {
     contactInviteSelection.delete(key);
-    if (contactUninvite) {
+    if (contactInviteEventsOpen && contactUninvite) {
       if (guest.parent) contactInviteSelection.delete(guest.parent);
-    } else
+    } else if (contactInviteEventsOpen)
       for (const child of state.data.guests.filter((g) => g.parent === key))
         contactInviteSelection.delete(child.id);
   }
@@ -1192,6 +1296,9 @@ function readMenuRows(form) {
 function registryRow(registry = {}) {
   return ui`<div class="registry-row" data-registry-id="${registry.id || crypto.randomUUID()}">${field(H("Registry title"), "registryTitle", registry.title || "", "text", 'required maxlength="100" placeholder="Wedding Registry"')}${field(H("Registry URL"), "registryUrl", registry.url || "", "url", 'required maxlength="2048" placeholder="https://…"')}<div class="row">${button("registry-up", H("↑ Move up"), 'aria-label="Move registry up"', "quiet")}${button("registry-down", H("↓ Move down"), 'aria-label="Move registry down"', "quiet")}${button("remove-registry", H("Remove registry"), "", "quiet")}</div></div>`;
 }
+function eventDetailsFields(e, existing = true) {
+  return ui`${field(H("Event title"), "title", e.title, "text", 'required maxlength="160" placeholder="Sunday around the table"')}${area(H("Description"), "description", e.description, 'maxlength="5000"')}<div class="form-grid">${field(H("Date"), "date", e.date, "date")}${field(H("Time · numbers or words"), "time", e.time, "text", 'maxlength="100" placeholder="Two O’Clock in the Afternoon"')}${field(H("RSVP deadline"), "deadline", e.deadline, "date")}</div>${area(H("Event address"), "eventAddress", e.address, 'maxlength="500"')}${field(H("Photo / video upload link (optional)"), "uploadURL", e.uploadURL || "", "url", 'maxlength="2048" placeholder="https://…"')}<p class="small muted">Use Dropbox File Requests, Google Drive, OneDrive, or another sharing service. Configure upload permissions at that destination. Clear the link to remove the guest upload button.</p>${field(H("Event artwork / image"), "iconUpload", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input type="checkbox" name="removeIcon">Remove current image</label>${select(H("Invitation template"), "template", [["", C("Simple invitation")], ...state.templates.map((t) => [t.id, t.name])], e.template || "")}<fieldset><legend>Gift registries · optional</legend><p class="small muted">Guest buttons appear directly below RSVP, in this order.</p><div id="registry-rows">${(e.registries || []).map(registryRow).join("")}</div>${button("add-registry", H("＋ Add registry"))}</fieldset><fieldset><legend>Potluck & drinks</legend><label class="check"><input type="checkbox" name="customItemsEnabled" ${e.customItemsEnabled ? "checked" : ""}>Allow guests to enter custom menu items</label><label class="check"><input type="checkbox" name="saveCustomItems" ${e.saveCustomItems ? "checked" : ""}>Save custom items to future menus</label><div class="row">${select(H("Copy menu from"), "copyMenu", [["", C("Choose a past event")], ...state.data.events.filter((p) => p.id !== e.id).map((p) => [p.id, p.title])], "")}${button("copy-menu", H("Copy items"))}</div><fieldset><legend>Table templates</legend>${select(H("Table template"), "tableTemplate", [["", C("New table template")], ...(state.data.tableTemplates || []).map((t) => [t.id, t.name])], "")}${field(H("Table template name"), "tableTemplateName", "", "text", 'maxlength="160"')}<div class="row">${button("table-template-apply", H("Apply Table Template"))}${button("table-template-save", H("Save Table Template"))}${button("table-template-delete", H("Delete Table Template"))}</div><p class="small">Applying a template adds items to this draft. Save the event to keep them. Existing menu items and guest claims stay unchanged.</p></fieldset><div id="menu-rows">${e.menu.map(menuRow).join("")}</div>${button("add-menu", H("＋ Add item"))}</fieldset><fieldset><legend>Who’s invited?</legend><p class="small muted">Choose each person. Children need their designated adult invited too.</p>${state.data.guests.map((g) => ui`<label class="check ${g.parent ? "child" : ""}"><input type="checkbox" name="invited" value="${g.id}" ${e.invited.includes(g.id) ? "checked" : ""}>${escape(fullName(g))}${g.parent ? C(" (child)") : ""}</label>`).join("") || M("<p>Add guests from Home → Contacts before inviting them.</p>")}</fieldset>${existing ? ui`<hr>${button("delete-event", H("Delete event"), "", "danger")}` : ""}`;
+}
 function eventEditor(existing, focus = "") {
   state.editingEvent = existing || {
     design: {},
@@ -1205,7 +1312,7 @@ function eventEditor(existing, focus = "") {
   const e = state.editingEvent;
   modal(
     existing ? C("Edit event") : C("A new reason to gather"),
-    ui`${field(H("Event title"), "title", e.title, "text", 'required maxlength="160" placeholder="Sunday around the table"')}${area(H("Description"), "description", e.description, 'maxlength="5000"')}<div class="form-grid">${field(H("Date"), "date", e.date, "date")}${field(H("Time · numbers or words"), "time", e.time, "text", 'maxlength="100" placeholder="Two O’Clock in the Afternoon"')}${field(H("RSVP deadline"), "deadline", e.deadline, "date")}</div>${area(H("Event address"), "eventAddress", e.address, 'maxlength="500"')}${field(H("Photo / video upload link (optional)"), "uploadURL", e.uploadURL || "", "url", 'maxlength="2048" placeholder="https://…"')}<p class="small muted">Use Dropbox File Requests, Google Drive, OneDrive, or another sharing service. Configure upload permissions at that destination. Clear the link to remove the guest upload button.</p>${field(H("Event artwork / image"), "iconUpload", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input type="checkbox" name="removeIcon">Remove current image</label>${select(H("Invitation template"), "template", [["", C("Simple invitation")], ...state.templates.map((t) => [t.id, t.name])], e.template || "")}<fieldset><legend>Gift registries · optional</legend><p class="small muted">Guest buttons appear directly below RSVP, in this order.</p><div id="registry-rows">${(e.registries || []).map(registryRow).join("")}</div>${button("add-registry", H("＋ Add registry"))}</fieldset><fieldset><legend>Potluck & drinks</legend><label class="check"><input type="checkbox" name="customItemsEnabled" ${e.customItemsEnabled ? "checked" : ""}>Allow guests to enter custom menu items</label><label class="check"><input type="checkbox" name="saveCustomItems" ${e.saveCustomItems ? "checked" : ""}>Save custom items to future menus</label><div class="row">${select(H("Copy menu from"), "copyMenu", [["", C("Choose a past event")], ...state.data.events.filter((p) => p.id !== e.id).map((p) => [p.id, p.title])], "")}${button("copy-menu", H("Copy items"))}</div><fieldset><legend>Table templates</legend>${select(H("Table template"), "tableTemplate", [["", C("New table template")], ...(state.data.tableTemplates || []).map((t) => [t.id, t.name])], "")}${field(H("Table template name"), "tableTemplateName", "", "text", 'maxlength="160"')}<div class="row">${button("table-template-apply", H("Apply Table Template"))}${button("table-template-save", H("Save Table Template"))}${button("table-template-delete", H("Delete Table Template"))}</div><p class="small">Applying a template adds items to this draft. Save the event to keep them. Existing menu items and guest claims stay unchanged.</p></fieldset><div id="menu-rows">${e.menu.map(menuRow).join("")}</div>${button("add-menu", H("＋ Add item"))}</fieldset><fieldset><legend>Who’s invited?</legend><p class="small muted">Choose each person. Children need their designated adult invited too.</p>${state.data.guests.map((g) => ui`<label class="check ${g.parent ? "child" : ""}"><input type="checkbox" name="invited" value="${g.id}" ${e.invited.includes(g.id) ? "checked" : ""}>${escape(fullName(g))}${g.parent ? C(" (child)") : ""}</label>`).join("") || M("<p>Add guests from Home → Contacts before inviting them.</p>")}</fieldset>${existing ? ui`<hr>${button("delete-event", H("Delete event"), "", "danger")}` : ""}`,
+    eventDetailsFields(e, !!existing),
     "event",
     existing ? C("Save event") : C("Create event"),
   );
@@ -1493,12 +1600,14 @@ async function submit(form) {
     return;
   }
   if (kind === "event") {
-    const e = state.editingEvent,
+    const e = form.classList.contains("inline-event-details")
+        ? state.data.events.find((e) => e.id === form.dataset.event)
+        : state.editingEvent,
       menu = readMenuRows(form);
     const icon = await fileData(form.elements.iconUpload);
     const result = await api("/api/host/events" + (e.id ? "/" + e.id : ""), {
       method: e.id ? "PUT" : "POST",
-      version: e.id ? e.version : undefined,
+      version: e.id ? Number(form.dataset.version ?? e.version) : undefined,
       data: {
         title: value.title,
         description: value.description,
@@ -1521,7 +1630,8 @@ async function submit(form) {
         menu,
       },
     });
-    state.event = result.id;
+    if (!form.classList.contains("inline-event-details"))
+      state.event = result.id;
     await saved("Event saved.");
     return;
   }
@@ -1577,6 +1687,10 @@ document.addEventListener("submit", async (event) => {
   const form = event.target.closest("form[data-form]");
   if (!form) return;
   event.preventDefault();
+  if (form.dataset.saving === "true") return;
+  form.dataset.saving = "true";
+  pendingActions++;
+  loadGeneration++;
   const error = form.querySelector(".form-error"),
     buttons = [...form.querySelectorAll("button")];
   error.textContent = "";
@@ -1595,6 +1709,8 @@ document.addEventListener("submit", async (event) => {
       void checkAddress(form);
     error.scrollIntoView({ block: "nearest", behavior: "smooth" });
   } finally {
+    pendingActions--;
+    delete form.dataset.saving;
     buttons.forEach((b) => (b.disabled = false));
   }
 });
@@ -1666,8 +1782,15 @@ document.addEventListener("click", async (event) => {
   const target = event.target.closest("[data-action]");
   if (!target) return;
   event.preventDefault();
+  if (target.dataset.actionPending === "true") return;
   const action = target.dataset.action,
     key = target.dataset.id;
+  target.dataset.actionPending = "true";
+  target.setAttribute("aria-busy", "true");
+  const inlineDraft = target.closest(".inline-event-details");
+  if (inlineDraft) inlineDraft.dataset.dirty = "true";
+  pendingActions++;
+  loadGeneration++;
   target.closest('[role="menu"]')?.closest("details")?.removeAttribute("open");
   try {
     if (await appearance.action(action, target)) return;
@@ -1679,9 +1802,12 @@ document.addEventListener("click", async (event) => {
       return;
 
     const detailsForm = document.querySelector(
-      ".inline-household-details[data-dirty=true]",
+      ":is(.inline-household-details,.inline-event-details)[data-dirty=true]",
     );
-    if (detailsForm && !target.closest(".inline-household-details")) {
+    if (
+      detailsForm &&
+      !target.closest(".inline-household-details,.inline-event-details")
+    ) {
       if (!confirm(String(C("Discard unsaved details changes?")))) return;
       detailsForm.dataset.dirty = "false";
     }
@@ -1736,7 +1862,6 @@ document.addEventListener("click", async (event) => {
       if (["host", "family"].includes(state.session.role)) {
         pageTransition = true;
         try {
-          await family.action("family-workspace", target);
           await family.action("family-settings", target);
           state.settingsOpen = true;
         } finally {
@@ -1851,8 +1976,14 @@ document.addEventListener("click", async (event) => {
         )
           return;
         state.data.integrations.anylistStatus = result;
-        if (result.state === "complete") await load({ background: true });
-        else if (!isEditing()) renderRefresh(true);
+        if (
+          state.view === "contacts" &&
+          !state.editingGuest &&
+          !contactInviteMode
+        ) {
+          if (result.state === "complete") await load();
+          else renderRefresh(true);
+        }
         notify(
           result.state === "complete"
             ? C("Contacts synced.")
@@ -1868,6 +1999,7 @@ document.addEventListener("click", async (event) => {
       action.startsWith("contacts-invite") ||
       [
         "contacts-uninvite",
+        "contacts-select",
         "contacts-select-event",
         "contacts-toggle-invite",
       ].includes(action)
@@ -1882,12 +2014,9 @@ document.addEventListener("click", async (event) => {
         render();
         return;
       }
-      if (action === "contacts-invite" || action === "contacts-uninvite") {
+      if (action === "contacts-select") {
+        resetContactInvites();
         contactInviteMode = true;
-        contactInviteEventsOpen = false;
-        contactInviteError = "";
-        contactUninvite = action === "contacts-uninvite";
-        contactInviteSelection.clear();
         render();
         return;
       }
@@ -1895,8 +2024,9 @@ document.addEventListener("click", async (event) => {
         toggleContactInvite(key);
         return;
       }
-      if (action === "contacts-select-event") {
-        if (!contactInviteSelection.size) return;
+      if (["contacts-invite", "contacts-uninvite"].includes(action)) {
+        if (!contactInviteMode || !contactInviteSelection.size) return;
+        contactUninvite = action === "contacts-uninvite";
         contactInviteSaving = true;
         render();
         try {
@@ -1939,7 +2069,7 @@ document.addEventListener("click", async (event) => {
             {
               method: "POST",
               version: event.version,
-              data: { guestIds: [...contactInviteSelection] },
+              data: { guestIds: [...contactSelectionTargets()] },
             },
           );
           resetContactInvites();
@@ -2206,7 +2336,6 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "addresses") {
-      contactPreferences = await api("/api/family/preferences");
       addresses();
       return;
     }
@@ -2420,15 +2549,27 @@ document.addEventListener("click", async (event) => {
         `/api/host/${kind === "event" ? "events" : kind === "guest" ? "guests" : "addresses"}/${record.id}`,
         { method: "DELETE", version: record.version, data: {} },
       );
-      if (kind === "event") state.event = null;
+      if (kind === "event") {
+        state.event = null;
+        state.settingsOpen = false;
+        state.settingsReturn = null;
+        state.settingsEvent = null;
+        state.view = "home";
+      }
       await saved("Removed.");
     }
   } catch (error) {
-    const box = $("#editor[open] .form-error");
+    const box =
+      target.closest("form")?.querySelector(".form-error") ||
+      $("#editor[open] .form-error");
     if (box) {
       box.textContent = error.message;
       box.scrollIntoView({ block: "nearest" });
     } else notify(error.message);
+  } finally {
+    pendingActions--;
+    delete target.dataset.actionPending;
+    target.removeAttribute("aria-busy");
   }
 });
 document.addEventListener("input", (event) => {
@@ -2485,7 +2626,9 @@ const guestAddresses = addressPicker({
 });
 guestAddresses.bind();
 document.addEventListener("input", (event) => {
-  const form = event.target.closest(".inline-household-details");
+  const form = event.target.closest(
+    ".inline-household-details,.inline-event-details",
+  );
   if (form) form.dataset.dirty = "true";
 });
 document.addEventListener("input", (event) => guestAddresses.input(event));
@@ -2521,11 +2664,49 @@ function measureChrome() {
     "editing-active",
     appearance.active() ||
       !!document.querySelector(
-        "#editor[open] form, form[data-form=guest], .card-editor-page",
+        "#editor[open] form, form[data-form=guest], .card-editor-page, .inline-household-details, .inline-event-details",
       ),
   );
   const top = document.querySelector(".top-shell"),
     footer = document.querySelector(".toolbar");
+  const primary = top?.querySelector(".top-primary");
+  if (primary) {
+    const rect = primary.getBoundingClientRect();
+    const left = Math.max(
+      ...[
+        ...primary.querySelectorAll(
+          '.brand,[data-action="page-back"],[data-action="family-back"]',
+        ),
+      ].map((el) => el.getBoundingClientRect().right - rect.left),
+      0,
+    );
+    const right =
+      primary.querySelector(".browse-top-actions")?.getBoundingClientRect()
+        .width || 0;
+    primary.style.setProperty(
+      "--heading-inset",
+      Math.max(left, right) + 8 + "px",
+    );
+    const heading = primary.querySelector(".browse-heading"),
+      title = heading?.querySelector("h1");
+    if (title) {
+      title.style.fontSize = "";
+      const style = getComputedStyle(title),
+        canvas = document.createElement("canvas"),
+        context = canvas.getContext("2d");
+      if (context) {
+        context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        const width = context.measureText(title.textContent).width;
+        if (width > heading.clientWidth)
+          title.style.fontSize =
+            Math.max(
+              12,
+              (parseFloat(style.fontSize) * heading.clientWidth) / width,
+            ) + "px";
+      }
+      primary.style.minHeight = Math.max(64, heading.scrollHeight + 16) + "px";
+    }
+  }
   document.documentElement.style.setProperty(
     "--top-height",
     (top?.getBoundingClientRect().height || 0) + "px",
@@ -2570,15 +2751,15 @@ function appearanceSettingsMarkup() {
   const unavailable = !state.example && state.settingsEvent && !event;
   const modes = event
     ? [
-        ["page-default-mode", "Default Mode"],
-        ["page-custom-mode", "Custom Colors Mode"],
+        ["page-default-mode", "Default Mode", "home"],
+        ["page-custom-mode", "Custom Colors Mode", "palette"],
       ]
     : [
-        ["page-light-mode", "Light Mode"],
-        ["page-dark-mode", "Dark Mode"],
-        ["page-custom-mode", "Custom Colors Mode"],
+        ["page-light-mode", "Light Mode", "sun"],
+        ["page-dark-mode", "Dark Mode", "moon"],
+        ["page-custom-mode", "Custom Colors Mode", "palette"],
       ];
-  return ui`<section class="panel page-appearance-settings"><h2>Appearance</h2><p>${unavailable ? C("Event unavailable") : event ? escape(event.title) : C("Household pages")}</p>${event ? ui`<p class="small">Default Mode follows the home page’s formatting. Custom Colors Mode applies only to this event.</p>` : ""}<div class="stack">${modes.map(([action, label]) => button(action, H(label), unavailable ? "disabled" : "", "mode-option")).join("")}</div></section>`;
+  return ui`<li class="browse-row page-appearance-settings"><div class="settings-mode-row" role="group" aria-label="${H("Appearance")}">${modes.map(([action, label, symbol]) => button(action, ui`${icon(symbol)}<span>${C(label)}</span>`, unavailable ? "disabled" : "", "browse-open mode-option")).join("")}</div></li>`;
 }
 function visibleAppearanceEvent() {
   return !state.adminMode && state.view === "home"

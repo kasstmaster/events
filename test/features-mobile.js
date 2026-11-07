@@ -269,12 +269,12 @@ try {
     await h.page
       .locator(".toolbar [data-action]")
       .evaluateAll((els) => els.map((el) => el.dataset.action)),
-    ["home"],
+    ["home", "new-event", "share-details", "settings"],
   );
   assert.equal(await h.page.locator("header [data-action=logout]").count(), 0);
   assert.equal(
     await h.page.locator(".toolbar [data-action=settings] svg").count(),
-    0,
+    1,
   );
   assert.equal(
     await h.page

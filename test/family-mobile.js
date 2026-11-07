@@ -192,11 +192,11 @@ try {
     .getByText("Bread", { exact: true })
     .waitFor();
   await click(owner.page, "Sort alphabetically within categories");
-  await owner.page.getByLabel("Sorting and options", { exact: true }).click();
+  await owner.page.getByLabel("Sort", { exact: true }).click();
   await owner.page
     .getByRole("menuitemradio", { name: "Manual ordering", exact: true })
     .waitFor();
-  await owner.page.getByLabel("Sorting and options", { exact: true }).click();
+  await owner.page.getByLabel("Sort", { exact: true }).click();
   assert.equal(
     await owner.page
       .getByRole("button", { name: "Move up", exact: true })

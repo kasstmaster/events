@@ -251,7 +251,14 @@ async function option(p, name) {
     await click(p, name);
     return;
   }
-  await p.locator('summary[aria-label="Sorting and options"]').click();
+  await p
+    .getByLabel(
+      ["Sort alphabetically", "Manual ordering"].includes(name)
+        ? "Sort"
+        : "Sorting and options",
+      { exact: true },
+    )
+    .click();
   await p
     .getByRole(
       ["Sort alphabetically", "Manual ordering"].includes(name)
@@ -266,7 +273,26 @@ async function footer(p, names) {
   assert.deepEqual(
     await p
       .locator(".toolbar .nav-control")
-      .evaluateAll((es) => es.map((e) => e.getAttribute("aria-label"))),
+      .evaluateAll((es) =>
+        es
+          .filter(
+            (e) =>
+              ![
+                "settings",
+                "share-details",
+                "family-mine",
+                "contacts-select",
+                "contacts-invite",
+                "contacts-uninvite",
+                "contacts-anylist-sync",
+                "contacts-select-event",
+                "contacts-invite-cancel",
+              ].includes(e.dataset.action) &&
+              !e.dataset.action.endsWith("search") &&
+              e.dataset.icon !== "plus",
+          )
+          .map((e) => e.getAttribute("aria-label")),
+      ),
     names.filter(
       (name) =>
         ![
@@ -337,7 +363,7 @@ try {
   assert.equal(
     await p
       .locator(
-        ".toolbar [data-action=family-workspace],.toolbar [data-action=addresses],.toolbar [data-action=household],.toolbar [data-action=share],.toolbar [data-action=settings]",
+        ".toolbar [data-action=family-workspace],.toolbar [data-action=addresses],.toolbar [data-action=household],.toolbar [data-action=share]",
       )
       .count(),
     0,
@@ -484,12 +510,53 @@ try {
   await p
     .getByText("Background update after scrolling", { exact: true })
     .waitFor();
-  await p.waitForFunction(() => window.pageRefreshes >= 2);
+  await p.waitForFunction(() => window.pageRefreshes >= 1);
+  const refreshCount = await p.evaluate(() => window.pageRefreshes);
+  await p.waitForTimeout(3500);
+  assert.equal(
+    await p.evaluate(() => window.pageRefreshes),
+    refreshCount,
+    "Unchanged polls must preserve the rendered buttons",
+  );
   assert.ok(
     await p.evaluate(() => Math.abs(scrollY - window.readingPosition) < 3),
     "Background refresh must preserve scrolling while adopting new content",
   );
   await p.evaluate(() => window.refreshObserver.disconnect());
+  const openEventButton = p
+    .locator("article.card")
+    .filter({
+      has: p.getByRole("heading", { name: "Dinner One", exact: true }),
+    })
+    .getByRole("button", { name: "View Event", exact: true });
+  await openEventButton.scrollIntoViewIfNeeded();
+  const heldButton = await openEventButton.elementHandle();
+  const heldBox = await openEventButton.boundingBox();
+  await p.mouse.move(
+    heldBox.x + heldBox.width / 2,
+    heldBox.y + heldBox.height / 2,
+  );
+  await p.mouse.down();
+  const pendingRefreshEvent = store.get("event", e2.id, household.id);
+  store.put(
+    "event",
+    e2.id,
+    household.id,
+    { ...pendingRefreshEvent },
+    pendingRefreshEvent.version,
+  );
+  await p.waitForTimeout(3500);
+  assert.equal(
+    await heldButton.evaluate((el) => el.isConnected),
+    true,
+    "A poll must not replace the control during a click",
+  );
+  await p.mouse.up();
+  await p
+    .locator(".event-hero h1")
+    .getByText("Dinner One", { exact: true })
+    .waitFor();
+  await click(p, "Home");
   await p.setViewportSize({ width: 1440, height: 900 });
   await p.evaluate(() => {
     Object.defineProperty(navigator, "share", {
@@ -534,7 +601,36 @@ try {
     origin + "/h/" + household.slug,
   );
   stage("shared Contacts rows, search, menus and formatting");
+  let preferenceReads = 0;
+  await p.route("**/api/family/preferences", async (route) => {
+    preferenceReads++;
+    await route.continue();
+  });
   await click(p, "Contacts");
+  await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
+  assert.equal(
+    preferenceReads,
+    0,
+    "Contacts renders without loading sort preferences",
+  );
+  await p.unroute("**/api/family/preferences");
+  assert.equal(
+    await p
+      .locator(
+        '#top-navigation [data-action="contacts-search"],#top-navigation summary[aria-label="Create"]',
+      )
+      .count(),
+    0,
+  );
+  await p.locator('.toolbar [data-action="contacts-search"]').waitFor();
+  await p.locator('.toolbar summary[aria-label="Create"]').waitFor();
+  const titleCenter = await p
+    .locator(".top-shell .browse-heading")
+    .evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return Math.abs(r.left + r.width / 2 - innerWidth / 2);
+    });
+  assert.ok(titleCenter < 2, "Page title stays centered in the viewport");
   await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
   assert.equal(
     await p.getByRole("button", { name: "Sync AnyList", exact: true }).count(),
@@ -672,52 +768,70 @@ try {
     .locator(".browse-row-icon path")
     .getAttribute("d");
   assert.notEqual(childIcon, adultIcon);
-  await click(p, "Invite Guests");
+  assert.equal(await p.locator("[data-contact-invite]").count(), 0);
+  await click(p, "Select Contacts");
+  assert.equal(
+    await p.getByRole("button", { name: "Uninvite", exact: true }).isDisabled(),
+    true,
+  );
   assert.equal(
     await p.getByRole("button", { name: "Casey Example", exact: true }).count(),
     1,
   );
   assert.ok(
-    await p
-      .getByRole("button", { name: "Select Event", exact: true })
-      .isDisabled(),
+    await p.getByRole("button", { name: "Invite", exact: true }).isDisabled(),
   );
   await p.getByLabel("Select Riley New", { exact: true }).check();
+  assert.equal(
+    await p.getByLabel("Select Jordan New", { exact: true }).isChecked(),
+    false,
+  );
+  await click(p, "Invite");
+  await p.locator(".contacts-event-picker").waitFor();
   assert.equal(
     await p.getByLabel("Select Jordan New", { exact: true }).isChecked(),
     true,
   );
   assert.equal(
     await p
-      .getByRole("button", { name: "Select Event", exact: true })
-      .evaluate((el) => getComputedStyle(el).backgroundColor),
-    "rgb(31, 122, 63)",
+      .getByRole("button", { name: "Select Contacts", exact: true })
+      .count(),
+    0,
+  );
+  const versionBeforeChoice = store.get("event", e2.id, host.household).version;
+  await click(p, "Uninvite");
+  await p.waitForFunction(
+    (id) =>
+      document.querySelector(`[data-contact-invite="${id}"]`)?.checked ===
+      false,
+    inviteAdult.id,
+  );
+  assert.equal(
+    await p.getByLabel("Select Riley New", { exact: true }).isChecked(),
+    true,
+  );
+  await click(p, "Invite");
+  await p.waitForFunction(
+    (id) =>
+      document.querySelector(`[data-contact-invite="${id}"]`)?.checked === true,
+    inviteAdult.id,
+  );
+  assert.equal(
+    store.get("event", e2.id, host.household).version,
+    versionBeforeChoice,
   );
   for (const width of [390, 1440]) {
     await p.setViewportSize({ width, height: 900 });
     await p.evaluate(() =>
       window.scrollTo(0, document.documentElement.scrollHeight),
     );
-    await p.waitForFunction(
-      () =>
-        Math.abs(
-          document
-            .querySelector(".contacts-invite-tools")
-            .getBoundingClientRect().top -
-            document.querySelector(".top-shell").getBoundingClientRect().bottom,
-        ) < 2,
-    );
     assert.ok(
-      await p.evaluate(
-        () =>
-          Math.abs(
-            document
-              .querySelector(".contacts-invite-tools")
-              .getBoundingClientRect().top -
-              document.querySelector(".top-shell").getBoundingClientRect()
-                .bottom,
-          ) < 2,
-      ),
+      await p
+        .locator('.toolbar [data-action="contacts-invite"]')
+        .evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return r.top >= 0 && r.bottom <= innerHeight;
+        }),
     );
     assert.ok(
       await p.evaluate(
@@ -729,7 +843,6 @@ try {
       fullPage: true,
     });
   }
-  await click(p, "Select Event");
   await p.locator(".contacts-event-picker").waitFor();
   await p
     .locator(".contacts-event-picker")
@@ -749,13 +862,18 @@ try {
     false,
   );
   stage("confirmed uninviting from one chosen event");
-  await click(p, "Uninvite Guests");
+  await click(p, "Select Contacts");
   await p.getByLabel("Select Jordan New", { exact: true }).check();
+  assert.equal(
+    await p.getByLabel("Select Riley New", { exact: true }).isChecked(),
+    false,
+  );
+  await click(p, "Uninvite");
+  await p.locator(".contacts-event-picker").waitFor();
   assert.equal(
     await p.getByLabel("Select Riley New", { exact: true }).isChecked(),
     true,
   );
-  await click(p, "Select Event");
   const beforeUninvite = store.get("event", e2.id, host.household);
   p.once("dialog", (dialog) => dialog.dismiss());
   await p
@@ -779,10 +897,10 @@ try {
   assert.ok(store.get("guest", inviteAdult.id, host.household));
   assert.ok(store.get("guest", inviteChild.id, host.household));
   const unchanged = store.get("event", e2.id, host.household).version;
-  await click(p, "Invite Guests");
+  await click(p, "Select Contacts");
   await p.getByLabel("Select Casey Example", { exact: true }).check();
   await p
-    .locator(".contacts-invite-tools")
+    .locator(".toolbar")
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
   assert.equal(store.get("event", e2.id, host.household).version, unchanged);
@@ -1309,6 +1427,26 @@ try {
     await p.locator(".page-appearance-settings .mode-option").allTextContents(),
     ["Default Mode", "Custom Colors Mode"],
   );
+  assert.equal(await p.locator(".inline-household-details").count(), 0);
+  const eventSettings = p.locator(".inline-event-details");
+  await eventSettings.getByLabel("Event title", { exact: true }).waitFor();
+  assert.equal(
+    await eventSettings.getByLabel("Event title", { exact: true }).inputValue(),
+    "Dinner One",
+  );
+  await eventSettings
+    .getByLabel("Description", { exact: true })
+    .fill("Inline event Settings description");
+  await eventSettings
+    .getByRole("button", { name: "Save event", exact: true })
+    .click();
+  await p.getByText("Event saved.", { exact: true }).waitFor();
+  assert.equal(
+    (await api(owner, "/api/host")).body.events.find((e) => e.id === e1.id)
+      .description,
+    "Inline event Settings description",
+  );
+
   assert.ok(
     await p
       .locator(".page-appearance-settings .mode-option")
@@ -1394,13 +1532,9 @@ try {
   ]);
   await click(p, "Home");
   const offered = async () => {
-    await p.getByLabel("Sorting and options", { exact: true }).click();
     assert.equal(await p.locator("#top-navigation .mode-option").count(), 0);
-    await p
-      .getByRole("menuitem", { name: "Household Link and QR", exact: true })
-      .waitFor();
-    await p.getByRole("menuitem", { name: "Settings", exact: true }).waitFor();
-    await p.getByLabel("Sorting and options", { exact: true }).click();
+    await p.locator('.toolbar [data-action="share-details"]').waitFor();
+    await p.locator('.toolbar [data-action="settings"]').waitFor();
     await click(p, "Settings");
     assert.deepEqual(
       await p
@@ -1408,6 +1542,43 @@ try {
         .allTextContents(),
       ["Light Mode", "Dark Mode", "Custom Colors Mode"],
     );
+    assert.equal(
+      await p
+        .locator(".page-appearance-settings.panel,.settings-details.panel")
+        .count(),
+      0,
+    );
+    const modeRow = p.locator(".page-appearance-settings");
+    assert.equal(await modeRow.locator("button svg").count(), 3);
+    assert.equal(
+      await modeRow.evaluate(
+        (el) =>
+          el.previousElementSibling.querySelector(
+            "[data-action=family-members]",
+          ) !== null,
+      ),
+      true,
+    );
+    const originalWidth = p.viewportSize().width;
+    for (const width of [390, 1440]) {
+      await p.setViewportSize({ width, height: 900 });
+      assert.equal(
+        await modeRow
+          .locator(".settings-mode-row")
+          .evaluate(
+            (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+          ),
+        3,
+      );
+      assert.ok(
+        await modeRow.evaluate((el) => el.scrollWidth <= el.clientWidth),
+      );
+      await p.screenshot({
+        path: `test-results/settings-mode-row-${width}.png`,
+        fullPage: true,
+      });
+    }
+    await p.setViewportSize({ width: originalWidth, height: 900 });
     assert.ok(
       await p
         .locator(".inline-household-details")

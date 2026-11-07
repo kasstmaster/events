@@ -158,7 +158,6 @@ export function familyTools(ctx) {
             : "manual"
           : d.preferences.collectionSort,
       ),
-      { action: "family-refresh", label: "Refresh household" },
       { action: "family-mine", label: "My Tasks" },
     ];
     if (r?.type === "list")
@@ -185,7 +184,7 @@ export function familyTools(ctx) {
     });
     let content = "";
     if (selected === "__settings__")
-      content = `${ctx.appearanceSettings?.() || ""}<ul class="browse-rows">${row({ title: C("Notification settings"), action: "family-preferences", symbol: "settings" })}${row({ title: C("Change Password"), action: "family-password", symbol: "edit" })}${manager() ? row({ title: C("Family Members"), action: "family-members", symbol: "contacts" }) : ""}${row({ title: C("Sign Out"), action: "logout", symbol: "logout" })}</ul>${ctx.householdDetails?.() || ""}`;
+      content = `<ul class="browse-rows">${row({ title: C("Notification settings"), action: "family-preferences", symbol: "settings" })}${row({ title: C("Change Password"), action: "family-password", symbol: "edit" })}${manager() ? row({ title: C("Family Members"), action: "family-members", symbol: "contacts" }) : ""}${ctx.appearanceSettings?.() || ""}${row({ title: C("Sign Out"), action: "logout", symbol: "logout" })}</ul>${ctx.householdDetails?.() || ""}`;
     else if (search) {
       const found = ordered(
         d.records.filter((r) =>
@@ -648,6 +647,9 @@ export function familyTools(ctx) {
         return true;
       }
       if (actionName === "family-settings") {
+        if (!state.familyData) await refresh();
+        state.view = "family";
+        state.event = null;
         selected = "__settings__";
         search = "";
         render();
