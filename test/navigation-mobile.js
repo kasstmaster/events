@@ -440,9 +440,7 @@ try {
     await click(p, "Close editor");
   }
   assert.equal(
-    await p
-      .getByRole("heading", { name: "You’re invited to gather", exact: true })
-      .count(),
+    await p.getByRole("heading", { name: "Your events", exact: true }).count(),
     1,
   );
   assert.equal(await p.locator(".home-events .eyebrow").count(), 0);

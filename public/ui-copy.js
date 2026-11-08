@@ -910,6 +910,7 @@ export const copyCatalog = [
   "Your cards & templates",
   "Your current host password",
   "Your current password",
+  "Your events",
   "Your gathering place",
   "Your host will add your invitations here.",
   "Your household address:",
