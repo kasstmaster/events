@@ -4,11 +4,11 @@ import { pathToFileURL } from "node:url";
 
 export const ACCOUNT = "37d068144865a0b725ee272bc7b2eb71";
 export const NAMESPACE = "8203f4cd7fde45d2ab49de62e239d744";
-export const RELEASE = "0e3c2a97ff46d7f64ce927245c335233f0563e07";
+export const RELEASE = "8fc6aae0c483f883adf8227f60a97e303eab549b";
 const ORIGIN = "https://events.kassandraraudman.workers.dev";
 const SCRIPT = `/accounts/${ACCOUNT}/workers/scripts/events`;
 const REQUIRED_FLAGS = ["nodejs_compat", "global_fetch_strictly_public"];
-const EXPECTED_PREVIOUS_VERSION = "cb530501-898d-4457-b39c-e5fa290c175a";
+const EXPECTED_PREVIOUS_VERSION = "8fa985b3-2c91-42fa-8c7b-5e1331a8ecf7";
 const digest = (value) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 class ReleaseCheckError extends Error {}
