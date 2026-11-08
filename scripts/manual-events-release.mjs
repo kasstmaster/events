@@ -8,7 +8,7 @@ export const RELEASE = "1aef574679d05971ac48c6183c1138e3e057680c";
 const ORIGIN = "https://events.kassandraraudman.workers.dev";
 const SCRIPT = `/accounts/${ACCOUNT}/workers/scripts/events`;
 const REQUIRED_FLAGS = ["nodejs_compat", "global_fetch_strictly_public"];
-const EXPECTED_PREVIOUS_VERSION = "2f06e9cd-7816-4c13-9e98-659ef9de572f";
+const EXPECTED_PREVIOUS_VERSION = "8d0c3b81-496e-4f6b-a9c2-ab3068d3ce28";
 const digest = (value) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 class ReleaseCheckError extends Error {}
