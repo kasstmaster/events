@@ -353,6 +353,11 @@ export function appearanceEditor({
           return;
         editing.draft[name] =
           input.type === "number" ? Number(input.value) : input.value;
+        if (name === "container") {
+          revision++;
+          pendingImage = Promise.resolve();
+          editing.draft.containerImage = "";
+        }
         preview();
       }
     },
