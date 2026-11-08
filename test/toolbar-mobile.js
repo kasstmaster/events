@@ -346,10 +346,18 @@ try {
         els.map((el) => {
           const box = el.getBoundingClientRect(),
             icon = el.querySelector("svg").getBoundingClientRect();
-          return { width: box.width, center: icon.x + icon.width / 2 };
+          return {
+            width: box.width,
+            center: icon.x + icon.width / 2,
+            iconY: icon.y,
+          };
         }),
       );
     for (let i = 1; i < items.length; i++) {
+      assert.ok(
+        Math.abs(items[i].iconY - items[0].iconY) < 1,
+        "Toolbar icons share the same row even when labels wrap",
+      );
       assert.ok(
         Math.abs(items[i].width - items[0].width) < 1,
         "All pages use equal-width toolbar slots",
