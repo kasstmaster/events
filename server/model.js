@@ -539,6 +539,10 @@ export class Store {
           name: text(input.name, 100, true),
           slug: existing.slug,
           logo: image(input.logo ?? existing.logo ?? ""),
+          logoRequested:
+            (input.logo ?? existing.logo)
+              ? false
+              : existing.logoRequested === true,
           timezone,
           design: nextDesign,
           ...(nextMode ? { appearanceMode: nextMode } : {}),
@@ -746,10 +750,18 @@ export class Store {
         normalizeLabel(input.subdomain) !== label
       )
         fail(400, "The address must match the household name.");
+      const logoChoice = input.logoChoice ?? "request";
+      if (!["request", "upload"].includes(logoChoice))
+        fail(400, "Choose an icon option.");
+      const logo = logoChoice === "upload" ? image(input.logo) : "";
+      if (logoChoice === "upload" && !logo)
+        fail(400, "Upload a family icon or ask Kassandra to create one.");
       const household = id(),
         user = id();
       this.put("household", household, household, {
         name,
+        logo,
+        logoRequested: logoChoice === "request",
         slug: randomBytes(18).toString("base64url"),
         design: {},
         subdomain: this.claimDomain(label, household),

@@ -53,6 +53,36 @@ const { existsSync, mkdirSync } = require("node:fs");
   async function register(page, email, name) {
     await page.goto(origin);
     await click(page, "Create your account");
+    assert.equal(
+      await page
+        .getByRole("radio", {
+          name: "Ask Kassandra to create an icon for me",
+          exact: true,
+        })
+        .isChecked(),
+      true,
+    );
+    await page
+      .getByRole("radio", { name: "Upload my own icon", exact: true })
+      .check();
+    assert.equal(
+      await page
+        .getByLabel("Upload family logo / icon", { exact: true })
+        .isVisible(),
+      true,
+    );
+    await page
+      .getByRole("radio", {
+        name: "Ask Kassandra to create an icon for me",
+        exact: true,
+      })
+      .check();
+    assert.equal(
+      await page
+        .getByLabel("Upload family logo / icon", { exact: true })
+        .isVisible(),
+      false,
+    );
     await page.getByLabel("Email address").fill(email);
     await page.getByLabel("Password", { exact: true }).fill(password);
     await page.getByLabel("Family household name").fill(name);

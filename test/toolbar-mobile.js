@@ -782,13 +782,14 @@ try {
   await card.getByRole("button", { name: "View Event", exact: true }).click();
   await footer(p, [
     "Home",
+    "Print",
     "Family",
     "Contacts",
     "Edit Event",
-    "Share Invitation",
     "Settings",
   ]);
-  assert.equal(await p.locator(".top-shell [data-action=print]").count(), 1);
+  assert.equal(await p.locator(".top-shell [data-action=print]").count(), 0);
+  assert.equal(await p.locator(".toolbar [data-action=print]").count(), 1);
   stage("event appearance independence and description coverage");
   await click(p, "Edit Event");
   await editValue(p, "Description", "Color", "Description color", "#554433");

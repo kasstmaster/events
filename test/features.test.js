@@ -1124,3 +1124,51 @@ test("QR color and transparency persist through templates/cards without changing
   qr.qrTransparent = "false";
   assert.throws(() => cardInput(design), /formatting/);
 });
+
+test("registration defaults to an administrator icon request and accepts an optional validated upload", async (t) => {
+  const f = await fixture(t);
+  const requested = await f.host("IconRequest");
+  assert.equal(requested.household.logoRequested, true);
+  assert.equal(requested.household.logo, "");
+  const adminHosts = (await f.request("/api/admin", { cookie: f.admin })).body
+    .hosts;
+  assert.equal(
+    adminHosts.find((h) => h.household === requested.household.id)
+      .logoRequested,
+    true,
+  );
+  await f.request("/api/admin/approvals", {
+    method: "POST",
+    cookie: f.admin,
+    data: { email: "iconupload@example.test" },
+  });
+  const register = (extra) =>
+    f.request("/api/register", {
+      method: "POST",
+      data: {
+        email: "iconupload@example.test",
+        password,
+        name: "IconUpload",
+        ...extra,
+      },
+    });
+  assert.equal((await register({ logoChoice: "invalid" })).status, 400);
+  assert.equal((await register({ logoChoice: "upload" })).status, 400);
+  assert.equal(
+    (
+      await register({
+        logoChoice: "upload",
+        logo: "https://example.test/icon.png",
+      })
+    ).status,
+    400,
+  );
+  const logo = "data:image/png;base64,aWNvbg==";
+  const upload = await register({ logoChoice: "upload", logo });
+  assert.equal(upload.status, 201);
+  const household = (await f.request("/api/host", { cookie: upload.cookie }))
+    .body.household;
+  assert.equal(household.logo, logo);
+  assert.equal(household.logoRequested, false);
+  assert.equal(f.store.household(requested.household.id).logoRequested, true);
+});

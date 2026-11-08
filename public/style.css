@@ -2363,7 +2363,40 @@ body.editing-active
 }
 
 .home-events {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.home-events > .card {
+  min-width: 0;
+}
+.invitations-title {
+  margin: 0 0 18px;
+}
+@media (max-width: 759px) {
+  .home-events {
+    gap: 12px;
+  }
+  .home-events > .card {
+    padding: 12px;
+  }
+  .home-events .host-event-choice {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .home-events .event-home-actions {
+    width: 100%;
+  }
+  .home-events .event-overview > h2 {
+    font-size: min(var(--title-size, 24px), 20px);
+    overflow-wrap: anywhere;
+  }
+  body #app .home-events .event-overview > p.muted {
+    font-size: min(var(--description-size), 14px);
+    overflow-wrap: anywhere;
+  }
+  .home-events button {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 .home-workspace-cards {
   display: grid;
@@ -2380,11 +2413,6 @@ body.editing-active
 }
 @media (min-width: 600px) {
   .home-workspace-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (min-width: 760px) {
-  .home-events.multiple-events {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
