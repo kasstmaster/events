@@ -238,6 +238,7 @@ window.addEventListener("blur", () => {
   pointerInteraction = false;
 });
 const isEditing = () =>
+  !!state.eventLayoutDraft ||
   pointerInteraction ||
   pendingActions > 0 ||
   state.view === "card-editor" ||
@@ -486,18 +487,8 @@ function topActions(event) {
       title: "",
       extra: tool("print", "Print", "", "print"),
       sort:
-        role === "host"
-          ? [
-              { action: "event-details", label: "Edit event details" },
-              ...(state.session.platformAdmin
-                ? [
-                    {
-                      action: "preview-guest",
-                      label: "Preview guest experience",
-                    },
-                  ]
-                : []),
-            ]
+        role === "host" && state.session.platformAdmin
+          ? [{ action: "preview-guest", label: "Preview guest experience" }]
           : [],
     });
   return "";
@@ -566,9 +557,47 @@ function eventCard(event) {
     .join("")}</div></article>`;
 }
 
+function eventInformation(
+  event,
+  preview = false,
+  layout = event.informationLayout,
+) {
+  const edit = (name) =>
+    preview ? 'data-host-content=""' : `data-event-edit="${name}"`;
+  if (layout === "invitation") {
+    const parts = event.date
+      ? Object.fromEntries(
+          new Intl.DateTimeFormat("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+            timeZone: "UTC",
+          })
+            .formatToParts(new Date(event.date + "T12:00:00Z"))
+            .map((p) => [p.type, p.value]),
+        )
+      : null;
+    const date = parts
+      ? `${parts.weekday} ${parts.month} ${parts.day} ${parts.year}`
+      : String(C("Date to come"));
+    const deadline = event.deadline
+      ? new Date(event.deadline + "T12:00:00Z")
+      : null;
+    const rsvp = deadline
+      ? new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
+          .format(deadline)
+          .replace(/\.$/, "") +
+        ". " +
+        deadline.getUTCDate()
+      : "";
+    return ui`<div class="event-meta event-information-invitation"><div class="invitation-date" ${edit("date")}>${escape(date)}</div>${event.time ? ui`<div class="invitation-time" ${edit("time")}>${escape(event.time)}</div>` : ""}${event.address ? ui`<div class="invitation-address" ${edit("eventAddress")}>${escape(event.address)}</div>` : ""}${deadline ? ui`<div class="invitation-rsvp"><span>${C("Kindly RSVP by")}</span> <span ${edit("deadline")}>${escape(rsvp)}</span></div>` : ""}</div>`;
+  }
+  return ui`<div class="event-meta"><div><b>When</b><span ${edit("date")}>${escape(dateLabel(event.date))}</span><span ${edit("time")}>${escape(event.time)}</span></div>${event.address ? ui`<div><b>Where</b><span class="event-details" ${edit("eventAddress")}>${escape(event.address)}</span></div>` : ""}</div>${event.deadline ? ui`<div class="event-deadline"><b>RSVP By</b><span ${edit("deadline")}>${escape(dateLabel(event.deadline))}</span></div>` : ""}`;
+}
 function eventPage(event) {
   const own = event.response || { version: 0, attendance: {}, claims: {} };
-  return ui`<section class="event-hero">${event.icon ? ui`<img class="event-icon" data-event-edit="iconUpload" src="${escape(event.icon)}" alt="Event artwork">` : ""}<h1 data-event-edit="title">${escape(event.title)}</h1><p class="event-details" data-event-edit="description">${escape(event.description)}</p><div class="event-meta"><div><b>When</b><span data-event-edit="date">${escape(dateLabel(event.date))}</span><span data-event-edit="time">${escape(event.time)}</span></div>${event.address ? ui`<div><b>Where</b><span class="event-details" data-event-edit="eventAddress">${escape(event.address)}</span></div>` : ""}</div>${event.deadline ? ui`<div class="event-deadline"><b>RSVP By</b><span data-event-edit="deadline">${escape(dateLabel(event.deadline))}</span></div>` : ""}</section><div class="row no-print" data-event-actions>${button("rsvp", C("RSVP"), "", "")}${(event.registries || []).length ? ui`<div class="registry-buttons" aria-label="Gift registries">${event.registries.map((r) => ui`<a class="button registry-button" href="${escape(r.url)}" target="_blank" rel="noopener noreferrer">${escape(r.title)}</a>`).join("")}</div>` : ""}${event.uploadURL ? ui`<a class="button secondary" data-event-edit="uploadURL" href="${escape(event.uploadURL)}" target="_blank" rel="noopener noreferrer">Upload Photos & Videos</a>` : ""}</div><div class="grid"><section class="panel" data-event-section="menus"><p class="eyebrow">Something to share</p><h2>At the table</h2>${event.menu.length ? event.menu.map((item) => ui`<div class="menu-item" data-event-edit="table" data-menu-item="${escape(item.id)}"><div><strong>${escape(item.name)}</strong><div class="muted small">${item.kind === "drink" ? C("Drinks") : C("Potluck")}</div></div><span class="pill">${Math.max(0, item.quantity - (item.claimed || 0))} needed</span></div>`).join("") : M('<p class="muted">Just bring yourself. Your host hasn’t added any menu items yet.</p>')}</section>${
+  const content = ui`<section class="event-hero">${event.icon ? ui`<img class="event-icon" data-event-edit="iconUpload" src="${escape(event.icon)}" alt="Event artwork">` : ""}<h1 data-event-edit="title">${escape(event.title)}</h1><p class="event-details" data-event-edit="description">${escape(event.description)}</p>${eventInformation(event)}</section><div class="row no-print" data-event-actions>${button("rsvp", C("RSVP"), "", "")}${(event.registries || []).length ? ui`<div class="registry-buttons" aria-label="Gift registries">${event.registries.map((r) => ui`<a class="button registry-button" href="${escape(r.url)}" target="_blank" rel="noopener noreferrer">${escape(r.title)}</a>`).join("")}</div>` : ""}${event.uploadURL ? ui`<a class="button secondary" data-event-edit="uploadURL" href="${escape(event.uploadURL)}" target="_blank" rel="noopener noreferrer">Upload Photos & Videos</a>` : ""}</div><div class="grid"><section class="panel" data-event-section="menus"><p class="eyebrow">Something to share</p><h2>At the table</h2>${event.menu.length ? event.menu.map((item) => ui`<div class="menu-item" data-event-edit="table" data-menu-item="${escape(item.id)}"><div><strong>${escape(item.name)}</strong><div class="muted small">${item.kind === "drink" ? C("Drinks") : C("Potluck")}</div></div><span class="pill">${Math.max(0, item.quantity - (item.claimed || 0))} needed</span></div>`).join("") : M('<p class="muted">Just bring yourself. Your host hasn’t added any menu items yet.</p>')}</section>${
     own
       ? ui`<section class="panel" data-event-section="personal"><p class="eyebrow">Your plans</p><h2>Your RSVP & items</h2>${
           own.version
@@ -588,6 +617,9 @@ function eventPage(event) {
           '<section class="panel"><p class="eyebrow">Made for this gathering</p><h2>Your invitation</h2><p>Choose an administrator-provided template in Edit event. Event details populate automatically.</p>',
         ) + "</section>"
   }</div>`;
+  return event.containerLayout === "single"
+    ? ui`<section class="panel event-content-shell" data-event-shell>${content}</section>`
+    : content;
 }
 const pageTrail = [];
 let currentPage = null,
@@ -605,6 +637,7 @@ function rememberPage() {
     pageTrail.length = 0;
     currentPage = null;
     state.settingsReturn = null;
+    state.eventLayoutDraft = null;
     state.settingsEvent = null;
     state.settingsOpen = false;
     pageIdentity = identity;
@@ -906,6 +939,12 @@ function render(target = $("#app"), example = false) {
       );
     }
   }
+  const layoutEvent = settingsAppearanceEvent();
+  if (layoutEvent)
+    for (const preview of target.querySelectorAll(
+      ".layout-information-preview",
+    ))
+      applyDesign(layoutEvent.ui.design, preview);
   if (!example) {
     if (state.view === "management" && existingEditor)
       target.querySelector("#main").append(existingEditor);
@@ -1689,6 +1728,7 @@ document.addEventListener("submit", async (event) => {
   const form = event.target.closest("form[data-form]");
   if (!form) return;
   event.preventDefault();
+  if (!leaveEventLayout(form)) return;
   if (form.dataset.saving === "true") return;
   form.dataset.saving = "true";
   pendingActions++;
@@ -1795,6 +1835,7 @@ document.addEventListener("click", async (event) => {
   loadGeneration++;
   target.closest('[role="menu"]')?.closest("details")?.removeAttribute("open");
   try {
+    if (!leaveEventLayout(target)) return;
     if (await appearance.action(action, target)) return;
     if (
       appearance.active() &&
@@ -2229,6 +2270,73 @@ document.addEventListener("click", async (event) => {
     }
     if (action === "new-event") {
       eventEditor();
+      return;
+    }
+    if (action.startsWith("event-layout-")) {
+      if (
+        state.session.role !== "host" ||
+        state.preview ||
+        state.eventLayoutSaving
+      )
+        return;
+      const event = settingsAppearanceEvent();
+      if (!state.settingsOpen || !event) return;
+      if (action === "event-layout-open") {
+        if (!state.eventLayoutDraft) {
+          const fresh = await api("/api/host");
+          const current = fresh.events.find((e) => e.id === event.id);
+          if (!current) throw new Error(C("The event is no longer available."));
+          state.data = { ...state.data, ...fresh };
+          state.eventLayoutError = "";
+          state.eventLayoutDraft = {
+            event: current.id,
+            record: structuredClone(current),
+            informationLayout: current.informationLayout || "default",
+            containerLayout: current.containerLayout || "separate",
+            dirty: false,
+          };
+        }
+      } else if (action === "event-layout-select" && state.eventLayoutDraft) {
+        const field = target.dataset.layoutField;
+        if (
+          !{
+            informationLayout: ["default", "invitation"],
+            containerLayout: ["separate", "single"],
+          }[field]?.includes(key)
+        )
+          return;
+        state.eventLayoutDraft[field] = key;
+        state.eventLayoutDraft.dirty = true;
+      } else if (action === "event-layout-cancel")
+        state.eventLayoutDraft = null;
+      else if (action === "event-layout-save" && state.eventLayoutDraft) {
+        const draft = state.eventLayoutDraft,
+          record = draft.record;
+        state.eventLayoutSaving = true;
+        state.eventLayoutError = "";
+        render();
+        try {
+          await api("/api/host/events/" + record.id, {
+            method: "PUT",
+            version: record.version,
+            data: {
+              ...Object.fromEntries(
+                Object.entries(record).filter(([key]) => key !== "ui"),
+              ),
+              informationLayout: draft.informationLayout,
+              containerLayout: draft.containerLayout,
+            },
+          });
+          state.eventLayoutDraft = null;
+          await load();
+          notify(C("Layout saved."));
+        } catch (error) {
+          state.eventLayoutError = error.message;
+        } finally {
+          state.eventLayoutSaving = false;
+        }
+      }
+      render();
       return;
     }
     if (
@@ -2749,19 +2857,59 @@ function settingsAppearanceEvent() {
 }
 function appearanceSettingsMarkup() {
   if (state.session.role !== "host") return "";
-  const event = state.example ? null : settingsAppearanceEvent();
+  const event = settingsAppearanceEvent();
   const unavailable = !state.example && state.settingsEvent && !event;
   const modes = event
     ? [
         ["page-default-mode", "Default Mode", "home"],
         ["page-custom-mode", "Custom Colors Mode", "palette"],
+        ["event-layout-open", "Layout", "layout"],
       ]
     : [
         ["page-light-mode", "Light Mode", "sun"],
         ["page-dark-mode", "Dark Mode", "moon"],
         ["page-custom-mode", "Custom Colors Mode", "palette"],
       ];
-  return ui`<li class="browse-row page-appearance-settings"><div class="settings-mode-row" role="group" aria-label="${H("Appearance")}">${modes.map(([action, label, symbol]) => button(action, ui`${icon(symbol)}<span>${C(label)}</span>`, unavailable ? "disabled" : "", "browse-open mode-option")).join("")}</div></li>`;
+  return ui`<li class="browse-row page-appearance-settings"><div class="settings-mode-row" role="group" aria-label="${H("Appearance")}">${modes.map(([action, label, symbol]) => button(action, ui`${icon(symbol)}<span>${C(label)}</span>`, unavailable ? "disabled" : "", "browse-open mode-option")).join("")}</div></li>${event && state.eventLayoutDraft?.event === event.id ? eventLayoutEditor(event) : ""}`;
+}
+function eventLayoutEditor(event) {
+  const draft = state.eventLayoutDraft;
+  return ui`<li class="event-layout-editor" aria-busy="${!!state.eventLayoutSaving}"><h2>Layout</h2><fieldset ${state.eventLayoutSaving ? "disabled" : ""}><legend>Event information</legend><div class="event-layout-options" role="radiogroup" aria-label="${H("Event information layout")}">${[
+    ["default", "Default"],
+    ["invitation", "Invitation style"],
+  ]
+    .map(
+      ([value, label]) =>
+        ui`<button type="button" role="radio" aria-checked="${draft.informationLayout === value}" data-action="event-layout-select" data-layout-field="informationLayout" data-id="${value}"><strong>${C(label)}</strong><div class="layout-information-preview">${eventInformation(event, true, value)}</div></button>`,
+    )
+    .join(
+      "",
+    )}</div></fieldset><fieldset ${state.eventLayoutSaving ? "disabled" : ""}><legend>Containers</legend><div class="event-layout-options" role="radiogroup" aria-label="${H("Event container layout")}">${[
+    ["separate", "Separate containers"],
+    ["single", "One container"],
+  ]
+    .map(
+      ([value, label]) =>
+        ui`<button type="button" role="radio" aria-checked="${draft.containerLayout === value}" data-action="event-layout-select" data-layout-field="containerLayout" data-id="${value}"><strong>${C(label)}</strong><div class="layout-container-preview ${value}" aria-hidden="true"><span>${C("Event information")}</span><span>${C("RSVP")}</span><span>${C("Menus and plans")}</span></div></button>`,
+    )
+    .join(
+      "",
+    )}</div></fieldset><div class="row">${button("event-layout-save", H("Save Layout"), state.eventLayoutSaving ? "disabled" : "")}${button("event-layout-cancel", H("Cancel"), state.eventLayoutSaving ? "disabled" : "")}</div><p role="alert">${escape(state.eventLayoutError || "")}</p></li>`;
+}
+function leaveEventLayout(target) {
+  if (
+    !state.eventLayoutDraft ||
+    target.closest(".event-layout-editor") ||
+    target.dataset.action === "event-layout-open"
+  )
+    return true;
+  if (
+    state.eventLayoutDraft.dirty &&
+    !confirm(String(C("Discard unsaved layout changes?")))
+  )
+    return false;
+  state.eventLayoutDraft = null;
+  return true;
 }
 function visibleAppearanceEvent() {
   return !state.adminMode && state.view === "home"
@@ -2943,7 +3091,7 @@ function applyLayoutDOM(event, role, target = $("#app")) {
     const sections = grid ? [...grid.children] : [];
     if (grid) grid.remove();
     move(
-      main,
+      main.querySelector("[data-event-shell]") || main,
       [
         { id: "information", element: info },
         { id: "actions", element: actions },

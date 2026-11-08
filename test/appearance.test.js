@@ -386,3 +386,123 @@ test("shared page modes cascade to default events while preserving custom events
   );
   assert.equal((await apply("invalid", {})).status, 400);
 });
+
+test("event layout presets are versioned, tenant-scoped and preserve content, responses and appearance", async (t) => {
+  const f = await application(t),
+    host = await f.host("LayoutAlpha"),
+    other = await f.host("LayoutBeta");
+  const guest = await f.guest(host),
+    event = await f.event(host, [guest], {
+      date: "2089-06-12",
+      time: "Two o'clock in the afternoon",
+      address: "123 Example Lane\nExample Town",
+      deadline: "2089-06-01",
+      design: { descriptionColor: "#123456" },
+    });
+  const sibling = await f.event(host, [], { title: "Untouched sibling" });
+  const cookie = (await f.guestLogin(host, guest)).cookie;
+  assert.equal(
+    (
+      await f.request(`/api/guest/events/${event.id}/rsvp`, {
+        cookie,
+        method: "PUT",
+        data: { version: 0, attendance: { [guest.id]: "yes" }, claims: {} },
+      })
+    ).status,
+    200,
+  );
+  const responses = structuredClone(
+    f.store.list("response", host.household.id),
+  );
+  const household = structuredClone(f.store.household(host.household.id));
+  const beforeSibling = structuredClone(
+    f.store.get("event", sibling.id, host.household.id),
+  );
+  const write = (
+    record,
+    changes = {},
+    user = host.cookie,
+    version = record.version,
+  ) =>
+    f.request(`/api/host/events/${event.id}`, {
+      cookie: user,
+      method: "PUT",
+      version,
+      data: { ...record, ...changes },
+    });
+  assert.equal(event.informationLayout, "default");
+  assert.equal(event.containerLayout, "separate");
+  for (const changes of [
+    { informationLayout: "invalid" },
+    { containerLayout: "invalid" },
+  ])
+    assert.equal((await write(event, changes)).status, 400);
+  assert.equal(
+    (await write(event, { informationLayout: "invitation" }, other.cookie))
+      .status,
+    404,
+  );
+  for (const user of [cookie, f.admin])
+    assert.equal(
+      (await write(event, { containerLayout: "single" }, user)).status,
+      403,
+    );
+  assert.equal(
+    (
+      await write(event, {
+        informationLayout: "invitation",
+        containerLayout: "single",
+      })
+    ).status,
+    200,
+  );
+  const selected = f.store.get("event", event.id, host.household.id);
+  assert.equal(selected.informationLayout, "invitation");
+  assert.equal(selected.containerLayout, "single");
+  for (const field of [
+    "title",
+    "description",
+    "date",
+    "time",
+    "address",
+    "deadline",
+    "menu",
+    "invited",
+    "design",
+  ])
+    assert.deepEqual(selected[field], event[field]);
+  const projection = (
+    await f.request("/api/guest", { cookie })
+  ).body.events.find((e) => e.id === event.id);
+  assert.equal(projection.informationLayout, "invitation");
+  assert.equal(projection.containerLayout, "single");
+  assert.equal(Object.hasOwn(projection, "notes"), false);
+  assert.equal(
+    (await write(event, { informationLayout: "default" })).status,
+    409,
+  );
+  const { informationLayout, containerLayout, ...ordinaryEdit } = selected;
+  assert.equal(
+    (await write(ordinaryEdit, { description: "Edited content, same layouts" }))
+      .status,
+    200,
+  );
+  const edited = f.store.get("event", event.id, host.household.id);
+  assert.equal(edited.informationLayout, "invitation");
+  assert.equal(edited.containerLayout, "single");
+  assert.deepEqual(f.store.list("response", host.household.id), responses);
+  assert.deepEqual(f.store.household(host.household.id), household);
+  assert.deepEqual(
+    f.store.get("event", sibling.id, host.household.id),
+    beforeSibling,
+  );
+  assert.equal(
+    (
+      await write(edited, {
+        informationLayout: "default",
+        containerLayout: "separate",
+      })
+    ).status,
+    200,
+  );
+});

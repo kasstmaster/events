@@ -1044,6 +1044,15 @@ try {
   await promoted
     .getByRole("toolbar", { name: "Administrator tools", exact: true })
     .waitFor();
+  assert.equal(
+    await promoted.locator("#top-navigation .browse-menu").count(),
+    1,
+    "Administrator-only preview keeps its menu available",
+  );
+  assert.equal(
+    await promoted.locator('[data-action="event-details"]').count(),
+    0,
+  );
   await option(promoted, "Preview guest experience");
   await promoted
     .getByLabel("Event (optional)", { exact: true })

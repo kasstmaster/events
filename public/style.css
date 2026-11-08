@@ -2798,3 +2798,133 @@ body #app .toolbar :is(.nav-control, .toolbar-create summary) span {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* Event-only layout presets share the same renderer for hosts, guests and examples. */
+body #app .event-information-invitation {
+  display: block;
+  text-align: center;
+  color: var(--description-color);
+  margin: 24px auto;
+  max-width: 100%;
+}
+body #app .event-information-invitation :is(div, span) {
+  color: inherit;
+  font: inherit;
+}
+body #app .event-information-invitation .invitation-date {
+  font-family: system-ui, sans-serif;
+  font-weight: 750;
+  font-size: clamp(20px, 3.4vw, calc(var(--description-size) * 1.75));
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  line-height: 1.4;
+  margin-bottom: 24px;
+}
+body #app .event-information-invitation .invitation-time {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  font-size: clamp(18px, 2.8vw, calc(var(--description-size) * 1.4));
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+body #app .event-information-invitation .invitation-address {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-size: clamp(18px, 2.8vw, calc(var(--description-size) * 1.4));
+  letter-spacing: 0.08em;
+  white-space: pre-line;
+  line-height: 1.7;
+}
+body #app .event-information-invitation .invitation-rsvp {
+  display: block;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(18px, 2.8vw, calc(var(--description-size) * 1.4));
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  margin-top: 24px;
+}
+.event-layout-editor {
+  list-style: none;
+  padding: 16px;
+}
+.event-layout-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--action-gap);
+}
+.event-layout-options > button {
+  min-width: 0;
+  white-space: normal;
+  padding: 16px;
+  text-align: center;
+}
+.event-layout-options > button[aria-checked="true"] {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -3px;
+}
+.layout-information-preview {
+  margin-top: 12px;
+  pointer-events: none;
+}
+body #app .layout-information-preview :is(.event-meta, .event-deadline) {
+  font-size: 14px;
+}
+body
+  #app
+  .layout-information-preview
+  .event-information-invitation
+  :is(
+    .invitation-date,
+    .invitation-time,
+    .invitation-address,
+    .invitation-rsvp
+  ) {
+  font-size: 14px;
+}
+.layout-container-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px;
+}
+.layout-container-preview.separate span,
+.layout-container-preview.single {
+  border: 1px solid currentColor;
+  border-radius: 8px;
+}
+.layout-container-preview span {
+  padding: 12px;
+}
+body #app [data-event-shell] > [data-event-section] {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  margin: 0;
+  border-radius: 0;
+  padding: 20px 0;
+}
+body #app [data-event-shell] > [data-event-section]::before {
+  background-image: none;
+}
+body #app [data-event-shell] > .event-hero {
+  padding: 20px 0 24px;
+  margin: 0;
+}
+@media (max-width: 600px) {
+  .event-layout-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.layout-information-preview {
+  background: var(--bg);
+  padding: 12px;
+  border-radius: 8px;
+}
+
+body #app .event-information-invitation .invitation-rsvp span {
+  display: inline;
+}

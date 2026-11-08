@@ -81,6 +81,9 @@ export function featureTools(ctx) {
         Object.entries({
           ...viewLabels,
           event: "Host event page",
+          eventInvitation: "Event information · invitation layout",
+          eventSingleContainer: "Event · one container",
+          eventSettings: "Event Settings · layout choices",
           guestEvent: "Guest event · RSVP saved",
           guestEventUnanswered: "Guest event · no RSVP yet",
           guestLoginSuffix: "Guest sign-in · suffix revealed",
