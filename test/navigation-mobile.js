@@ -1565,6 +1565,11 @@ try {
     .getByRole("button", { name: "Save event", exact: true })
     .click();
   await p.getByText("Event saved.", { exact: true }).waitFor();
+  await p.waitForFunction(
+    () =>
+      document.querySelector(".inline-event-details")?.dataset.saving !==
+      "true",
+  );
   assert.equal(
     (await api(owner, "/api/host")).body.events.find((e) => e.id === e1.id)
       .description,
@@ -1799,6 +1804,11 @@ try {
     .getByRole("button", { name: "Save event", exact: true })
     .click();
   await p.getByText("Event saved.", { exact: true }).waitFor();
+  await p.waitForFunction(
+    () =>
+      document.querySelector(".inline-event-details")?.dataset.saving !==
+      "true",
+  );
   await p.getByRole("button", { name: "Back", exact: true }).click();
   const extra = p.locator('[data-event-section="additional-information"]');
   await extra.waitFor();
@@ -1847,7 +1857,13 @@ try {
     .getByRole("button", { name: "Save event", exact: true })
     .click();
   await p.getByText("Event saved.", { exact: true }).waitFor();
+  await p.waitForFunction(
+    () =>
+      document.querySelector(".inline-event-details")?.dataset.saving !==
+      "true",
+  );
   await p.getByRole("button", { name: "Back", exact: true }).click();
+  await p.locator(".event-hero").waitFor();
   assert.equal(await extra.count(), 0);
   assert.equal(await p.locator('[data-event-section="menus"]').count(), 1);
   stage(

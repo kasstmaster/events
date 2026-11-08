@@ -2866,6 +2866,10 @@ function measureChrome() {
     );
     const heading = primary.querySelector(".browse-heading"),
       title = heading?.querySelector("h1");
+    primary.classList.toggle(
+      "crowded-top",
+      !!title && rect.width - (Math.max(left, right) + 8) * 2 < 100,
+    );
     if (title) {
       title.style.fontSize = "";
       const style = getComputedStyle(title),
@@ -2881,6 +2885,10 @@ function measureChrome() {
               (parseFloat(style.fontSize) * heading.clientWidth) / width,
             ) + "px";
       }
+      primary.style.setProperty(
+        "--crowded-title-height",
+        heading.scrollHeight + 8 + "px",
+      );
       primary.style.minHeight = Math.max(64, heading.scrollHeight + 16) + "px";
     }
   }
