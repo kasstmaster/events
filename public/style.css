@@ -1614,7 +1614,7 @@ main {
   flex: 1;
   min-width: 0;
   padding: 8px 2px;
-  max-width: 130px;
+  max-width: none;
 }
 .toolbar .nav-control span {
   white-space: normal;
@@ -2787,8 +2787,13 @@ body #app .settings-mode-row .mode-option span {
 }
 .toolbar {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: var(--action-gap);
+}
+.toolbar .toolbar-create summary {
+  width: 100%;
 }
 .toolbar > :is(.nav-control, .browse-menu) {
   width: 100%;

@@ -167,3 +167,5 @@ Event Print uses bottom navigation for hosts and guests; the top toolbar keeps t
 Signed-in invitation choosers have one shared title above the cards: “Your events” for owned host events and “You’re invited to gather” for guest invitations, with two columns at every screen width. Keep the title and grid together through administrator ordering. On phones, host actions stack below each card’s details to fit the two-column grid without horizontal overflow; View Event fills the same width as those actions. Desktop View Event keeps its natural width. Household icons remain on their cards.
 
 Bottom Create/Sort menu triggers reuse the same toolContents renderer and nav-control formatting as other toolbar actions. Menu wrappers have no details border or padding; expanded triggers have no underline.
+
+All bottom navigation uses one shared equal-column layout so actions, including Create/Sort menus, spread evenly across the toolbar on phones and desktops.
