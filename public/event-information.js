@@ -182,6 +182,18 @@ export function bindInformationEditor(doc = document) {
       input = controls.querySelector("input"),
       error = field.querySelector("[data-information-error]");
     const action = button.dataset.informationAction;
+    if (
+      ![
+        "bold",
+        "italic",
+        "underline",
+        "link",
+        "unlink",
+        "apply-link",
+        "cancel-link",
+      ].includes(action)
+    )
+      return;
     error.textContent = "";
     if (action === "link") {
       controls.hidden = false;
