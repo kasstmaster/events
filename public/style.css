@@ -2786,3 +2786,15 @@ body #app .toolbar .contacts-select-event {
 #app :is(div, nav, section):has(> :is(button, .button) ~ :is(button, .button)) {
   gap: var(--action-gap);
 }
+
+/* Every bottom action label, including Create/Sort summaries, inherits toolbar formatting. */
+body #app .toolbar :is(.nav-control, .toolbar-create summary) span {
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.85em;
+  font-weight: inherit;
+  font-style: inherit;
+  line-height: 1.15;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

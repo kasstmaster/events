@@ -117,7 +117,9 @@ function applyDesign(settings = {}, target = document.documentElement) {
   root.setProperty("--panel-solid", d.container);
   root.setProperty(
     "--panel",
-    `color-mix(in srgb, ${d.container} ${d.opacity}%, transparent)`,
+    d.containerImage
+      ? d.background
+      : `color-mix(in srgb, ${d.container} ${d.opacity}%, transparent)`,
   );
   for (const prefix of ["toolbar", "button"]) {
     root.setProperty(`--${prefix}-surface`, d[prefix + "Surface"]);

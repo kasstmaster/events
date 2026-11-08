@@ -459,6 +459,72 @@ try {
     ).backgroundImage.includes("data:image/png"),
   );
   await p.getByLabel("Container image opacity (%)", { exact: true }).fill("25");
+  const pageBackground = await p
+    .locator("body")
+    .evaluate((el) => getComputedStyle(el).backgroundColor);
+  assert.equal(
+    await p
+      .locator("[data-home-card=contacts]")
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+    pageBackground,
+    "Container images blend over the page color rather than container color",
+  );
+  await p.getByLabel("Container image opacity (%)", { exact: true }).fill("0");
+  assert.equal(
+    await p
+      .locator("[data-home-card=contacts]")
+      .evaluate((el) => getComputedStyle(el, "::before").opacity),
+    "0",
+  );
+  assert.equal(
+    await p
+      .locator("[data-home-card=contacts]")
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+    pageBackground,
+  );
+  await editValue(p, "Background", "Color", "Background color", "#daeafb");
+  assert.equal(
+    await p
+      .locator("[data-home-card=contacts]")
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+    "rgb(218, 234, 251)",
+  );
+  await editValue(
+    p,
+    "Containers",
+    "Background",
+    "Containers background",
+    "#e1e2e3",
+  );
+  assert.equal(
+    await p
+      .locator("[data-home-card=contacts]")
+      .evaluate((el) => getComputedStyle(el, "::before").backgroundImage),
+    "none",
+    "Choosing a container color replaces its image",
+  );
+  await p
+    .getByLabel("Appearance actions", { exact: true })
+    .getByRole("button", { name: "Image", exact: true })
+    .click();
+  await p
+    .getByLabel("Containers image (up to 2 MB)", { exact: true })
+    .setInputFiles({
+      name: "container.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    });
+  await p.waitForFunction(() =>
+    getComputedStyle(
+      document.querySelector("[data-home-card=contacts]"),
+      "::before",
+    ).backgroundImage.includes("data:image/png"),
+  );
+  await p.getByLabel("Container image opacity (%)", { exact: true }).fill("25");
+
   assert.equal(
     await p
       .locator("[data-home-card=contacts]")
@@ -532,6 +598,35 @@ try {
     "rgba(0, 0, 0, 0)",
   );
   await p.getByText("Formatting options", { exact: true }).click();
+  await editValue(p, "Toolbars", "Color", "Toolbars color", "#483399");
+  await editValue(p, "Toolbars", "Font", "Toolbars font", "Verdana");
+  await editValue(p, "Toolbars", "Style", "Toolbars style", "boldItalic");
+  await editValue(p, "Toolbars", "Size", "Toolbars size", "20");
+  const footerLabels = await p
+    .locator(".toolbar > .nav-control, .toolbar .toolbar-create summary")
+    .evaluateAll((els) =>
+      els.map((el) => {
+        const label = el.querySelector("span"),
+          style = getComputedStyle(label),
+          control = getComputedStyle(el);
+        return [
+          style.color,
+          style.fontFamily,
+          style.fontSize,
+          style.fontWeight,
+          style.fontStyle,
+          control.backgroundColor,
+          control.borderTopWidth,
+        ];
+      }),
+    );
+  assert.ok(footerLabels.length >= 3);
+  for (const appearance of footerLabels)
+    assert.deepEqual(
+      appearance,
+      footerLabels[0],
+      "Create uses the same toolbar formatting as its neighboring actions",
+    );
   await geometry(p);
   await click(p, "Save");
   await p.getByText("Appearance saved.", { exact: true }).waitFor();
@@ -558,6 +653,13 @@ try {
     "italic",
   );
   await click(p, "Edit House");
+  await editValue(
+    p,
+    "Containers",
+    "Background",
+    "Containers background",
+    "#e1e2e3",
+  );
   await editValue(p, "Containers", "Background", "Container opacity (%)", "0");
   assert.equal(
     await p
