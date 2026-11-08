@@ -1,6 +1,6 @@
 # Manual events deployment
 
-This manual-only workflow deploys release `da67b6bbfd7bfc36d7d2c3aa0bfe19229ad21808` to the existing `events` Worker in account `37d068144865a0b725ee272bc7b2eb71`. It never deploys the gateway, changes automatic/preview build settings, creates credentials, sends messages or resets storage. The helper is checked out from the workflow commit separately from the approved application release, so new safety checks run without changing the approved application code.
+This manual-only workflow deploys release `0e3c2a97ff46d7f64ce927245c335233f0563e07` to the existing `events` Worker in account `37d068144865a0b725ee272bc7b2eb71`. It never deploys the gateway, changes automatic/preview build settings, creates credentials, sends messages or resets storage. The helper is checked out from the workflow commit separately from the approved application release, so new safety checks run without changing the approved application code.
 
 Before running, production/preview builds must remain disabled. These controls were inspected while preparing this correction; production uses `feat/cloudflare-deployment`, Disable builds is checked and preview branch builds are off. Recheck them if settings have changed. The workflow does not enable them.
 
