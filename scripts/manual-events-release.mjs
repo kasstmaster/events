@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 
 export const ACCOUNT = "37d068144865a0b725ee272bc7b2eb71";
 export const NAMESPACE = "8203f4cd7fde45d2ab49de62e239d744";
-export const RELEASE = "8fc6aae0c483f883adf8227f60a97e303eab549b";
+export const RELEASE = "fd5bd9d86d1d441258ee683dbfbacdf3f4cb8527";
 const ORIGIN = "https://events.kassandraraudman.workers.dev";
 const SCRIPT = `/accounts/${ACCOUNT}/workers/scripts/events`;
 const REQUIRED_FLAGS = ["nodejs_compat", "global_fetch_strictly_public"];
