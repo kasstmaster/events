@@ -169,3 +169,5 @@ Signed-in invitation choosers have one shared title above the cards: “Your eve
 Bottom Create/Sort menu triggers reuse the same toolContents renderer and nav-control formatting as other toolbar actions. Menu wrappers have no details border or padding; expanded triggers have no underline.
 
 All bottom navigation uses one shared equal-column layout so actions, including Create/Sort menus, spread evenly across the toolbar on phones and desktops.
+
+Home event cards show the inviting household’s saved icon, or the shared house symbol until one is uploaded. Event artwork remains inside the event.

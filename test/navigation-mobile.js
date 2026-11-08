@@ -444,6 +444,10 @@ try {
     1,
   );
   assert.equal(await p.locator(".home-events .eyebrow").count(), 0);
+  assert.equal(
+    await p.locator(".home-events .household-icon-fallback").count(),
+    2,
+  );
   for (const width of [320, 390, 1440]) {
     await p.setViewportSize({ width, height: 900 });
     assert.equal(
@@ -1249,6 +1253,10 @@ try {
     "Dinner Two",
     "Dinner One",
   ]);
+  assert.equal(
+    await g.locator(".home-events .household-icon-fallback").count(),
+    2,
+  );
   const guestCard = (title) =>
     g
       .locator("article.card")
