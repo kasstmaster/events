@@ -463,6 +463,7 @@ try {
         return {
           heading: box(choice.querySelector(".event-choice-heading")),
           overview: box(choice.querySelector(".event-overview")),
+          viewEvent: box(choice.querySelector('[data-action="open-event"]')),
           actions: box(choice.querySelector(".event-home-actions")),
           buttons: [
             ...choice.querySelectorAll(".event-home-actions button"),
@@ -470,7 +471,19 @@ try {
         };
       }),
     );
-    for (const { heading, overview, actions, buttons } of cards) {
+    for (const { heading, overview, viewEvent, actions, buttons } of cards) {
+      if (width < 760) {
+        assert.ok(
+          Math.abs(viewEvent.width - actions.width) < 1,
+          "View Event matches the stacked actions on phones",
+        );
+        assert.ok(Math.abs(viewEvent.x - actions.x) < 1);
+      } else {
+        assert.ok(
+          viewEvent.width < overview.width,
+          "Desktop View Event retains its natural width",
+        );
+      }
       assert.ok(heading.y + heading.height <= overview.y + 1);
       assert.ok(heading.y + heading.height <= actions.y + 1);
       assert.ok(

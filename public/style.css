@@ -2385,6 +2385,9 @@ body.editing-active
   .home-events .event-home-actions {
     width: 100%;
   }
+  .home-events .event-overview > [data-action="open-event"] {
+    width: 100%;
+  }
   .home-events .event-overview > h2 {
     font-size: min(var(--title-size, 24px), 20px);
     overflow-wrap: anywhere;
