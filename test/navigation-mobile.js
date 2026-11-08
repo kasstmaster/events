@@ -311,6 +311,13 @@ try {
   stage("host home, per-event actions and native share");
   const p = await page(owner, 1440);
   await p.locator("[data-home-card]").first().waitFor();
+  assert.equal(await p.locator("[data-home-card] h2").count(), 0);
+  for (const name of [
+    "Open Contacts",
+    "Open Cards & Invites",
+    "Open Family Workspace",
+  ])
+    assert.equal(await p.getByRole("button", { name, exact: true }).count(), 1);
   assert.equal(await p.locator("[data-action=preview-guest]").count(), 0);
   assert.deepEqual(
     await p

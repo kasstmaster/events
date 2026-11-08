@@ -3185,7 +3185,7 @@ function applyLayoutDOM(event, role, target = $("#app")) {
     if (role === "host" && hero && !state.adminMode) {
       const cards = document.createElement("div");
       cards.className = "home-workspace-cards";
-      cards.innerHTML = ui`<section class="panel" data-home-card="contacts"><h2>Contacts</h2><p>Keep your guests and shared addresses together, then invite them to an event.</p>${button("addresses", H("Open Contacts"))}</section><section class="panel" data-home-card="cards"><h2>${C("Cards & Invites")}</h2><p>Create invitations, cards and reusable templates.</p>${button("cards", H("Open Cards & Invites"))}</section><section class="panel" data-home-card="family"><h2>Family Workspace</h2><p>Share lists, tasks, records and chores with your household.</p>${button("family-workspace", H("Open Family Workspace"))}</section>`;
+      cards.innerHTML = ui`<section class="panel" data-home-card="contacts" aria-label="${H("Contacts")}"><p>Keep your guests and shared addresses together, then invite them to an event.</p>${button("addresses", H("Open Contacts"))}</section><section class="panel" data-home-card="cards" aria-label="${H("Cards & Invites")}"><p>Create invitations, cards and reusable templates.</p>${button("cards", H("Open Cards & Invites"))}</section><section class="panel" data-home-card="family" aria-label="${H("Family Workspace")}"><p>Share lists, tasks, records and chores with your household.</p>${button("family-workspace", H("Open Family Workspace"))}</section>`;
       if (events) events.before(cards);
       else hero.after(cards);
     }

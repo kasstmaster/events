@@ -171,3 +171,5 @@ Bottom Create/Sort menu triggers reuse the same toolContents renderer and nav-co
 All bottom navigation uses one shared equal-column layout so actions, including Create/Sort menus, spread evenly across the toolbar on phones and desktops.
 
 Home event cards show the inviting household’s saved icon, or the shared house symbol until one is uploaded. Event artwork remains inside the event.
+
+The Home Contacts, Cards & Invites and Family Workspace containers omit visible headings while retaining their descriptions, labeled Open buttons and accessible section names.
