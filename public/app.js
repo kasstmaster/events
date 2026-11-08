@@ -541,7 +541,7 @@ function eventCard(event) {
   const logo = event.invitingHousehold
     ? event.invitingHousehold.logo
     : state.data.household.logo;
-  const heading = ui`<div class="event-choice-heading">${logo ? ui`<img class="family-logo" src="${escape(logo)}" alt="Family logo">` : ""}</div>`;
+  const heading = ui`<div class="event-choice-heading">${logo ? ui`<img class="family-logo" src="${escape(logo)}" alt="Family logo">` : ui`<span class="family-logo household-icon-fallback" role="img" aria-label="${H("Household icon")}">${icon("home")}</span>`}</div>`;
   const content = ui`${event.invitingHousehold ? ui`<p class="eyebrow">${escape(event.invitingHousehold.name)}</p>` : ""}<p class="muted small">${escape(dateLabel(event.date))}</p><h2>${escape(event.title)}</h2><p class="muted">${escape(event.description.slice(0, 120))}</p><div class="row"><span class="pill">${event.totals.attending} attending</span>${event.response?.version ? M('<span class="pill">RSVP saved</span>') : ""}</div>${button("open-event", H("View Event"), `data-id="${event.invitationKey || event.id}"`)}`;
   if (state.session.role !== "host")
     return ui`<article class="card event-choice">${heading}<div class="event-overview">${content}</div></article>`;
@@ -3185,7 +3185,7 @@ function applyLayoutDOM(event, role, target = $("#app")) {
     if (role === "host" && hero && !state.adminMode) {
       const cards = document.createElement("div");
       cards.className = "home-workspace-cards";
-      cards.innerHTML = ui`<section class="panel" data-home-card="contacts"><h2>Contacts</h2><p>Keep your guests and shared addresses together, then invite them to an event.</p>${button("addresses", H("Open Contacts"))}</section><section class="panel" data-home-card="cards"><h2>${C("Cards & Invites")}</h2><p>Create invitations, cards and reusable templates.</p>${button("cards", H("Open Cards & Invites"))}</section><section class="panel" data-home-card="family"><h2>Family Workspace</h2><p>Share lists, tasks, records and chores with your household.</p>${button("family-workspace", H("Open Family Workspace"))}</section>`;
+      cards.innerHTML = ui`<section class="panel" data-home-card="contacts" aria-label="${H("Contacts")}"><p>Keep your guests and shared addresses together, then invite them to an event.</p>${button("addresses", H("Open Contacts"))}</section><section class="panel" data-home-card="cards" aria-label="${H("Cards & Invites")}"><p>Create invitations, cards and reusable templates.</p>${button("cards", H("Open Cards & Invites"))}</section><section class="panel" data-home-card="family" aria-label="${H("Family Workspace")}"><p>Share lists, tasks, records and chores with your household.</p>${button("family-workspace", H("Open Family Workspace"))}</section>`;
       if (events) events.before(cards);
       else hero.after(cards);
     }

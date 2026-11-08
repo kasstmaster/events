@@ -311,6 +311,13 @@ try {
   stage("host home, per-event actions and native share");
   const p = await page(owner, 1440);
   await p.locator("[data-home-card]").first().waitFor();
+  assert.equal(await p.locator("[data-home-card] h2").count(), 0);
+  for (const name of [
+    "Open Contacts",
+    "Open Cards & Invites",
+    "Open Family Workspace",
+  ])
+    assert.equal(await p.getByRole("button", { name, exact: true }).count(), 1);
   assert.equal(await p.locator("[data-action=preview-guest]").count(), 0);
   assert.deepEqual(
     await p
@@ -444,6 +451,10 @@ try {
     1,
   );
   assert.equal(await p.locator(".home-events .eyebrow").count(), 0);
+  assert.equal(
+    await p.locator(".home-events .household-icon-fallback").count(),
+    2,
+  );
   for (const width of [320, 390, 1440]) {
     await p.setViewportSize({ width, height: 900 });
     assert.equal(
@@ -463,6 +474,7 @@ try {
         return {
           heading: box(choice.querySelector(".event-choice-heading")),
           overview: box(choice.querySelector(".event-overview")),
+          viewEvent: box(choice.querySelector('[data-action="open-event"]')),
           actions: box(choice.querySelector(".event-home-actions")),
           buttons: [
             ...choice.querySelectorAll(".event-home-actions button"),
@@ -470,7 +482,19 @@ try {
         };
       }),
     );
-    for (const { heading, overview, actions, buttons } of cards) {
+    for (const { heading, overview, viewEvent, actions, buttons } of cards) {
+      if (width < 760) {
+        assert.ok(
+          Math.abs(viewEvent.width - actions.width) < 1,
+          "View Event matches the stacked actions on phones",
+        );
+        assert.ok(Math.abs(viewEvent.x - actions.x) < 1);
+      } else {
+        assert.ok(
+          viewEvent.width < overview.width,
+          "Desktop View Event retains its natural width",
+        );
+      }
       assert.ok(heading.y + heading.height <= overview.y + 1);
       assert.ok(heading.y + heading.height <= actions.y + 1);
       assert.ok(
@@ -1236,6 +1260,10 @@ try {
     "Dinner Two",
     "Dinner One",
   ]);
+  assert.equal(
+    await g.locator(".home-events .household-icon-fallback").count(),
+    2,
+  );
   const guestCard = (title) =>
     g
       .locator("article.card")

@@ -406,6 +406,7 @@ export const copyCatalog = [
   "Household content requires an owner or administrator.",
   "Household details",
   "Household home",
+  "Household icon",
   "Household link",
   "Household link and QR",
   "Household name",

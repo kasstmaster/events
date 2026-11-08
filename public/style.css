@@ -1614,7 +1614,7 @@ main {
   flex: 1;
   min-width: 0;
   padding: 8px 2px;
-  max-width: 130px;
+  max-width: none;
 }
 .toolbar .nav-control span {
   white-space: normal;
@@ -2075,6 +2075,12 @@ html {
 }
 .event-choice-heading .family-logo {
   display: block;
+  max-width: 100%;
+}
+.household-icon-fallback svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .event-overview {
   min-width: 0;
@@ -2383,6 +2389,9 @@ body.editing-active
     grid-template-columns: minmax(0, 1fr);
   }
   .home-events .event-home-actions {
+    width: 100%;
+  }
+  .home-events .event-overview > [data-action="open-event"] {
     width: 100%;
   }
   .home-events .event-overview > h2 {
@@ -2728,7 +2737,7 @@ body #app .settings-mode-row .mode-option span {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 4px;
   padding: 8px 3px;
   white-space: normal;
@@ -2784,8 +2793,15 @@ body #app .settings-mode-row .mode-option span {
 }
 .toolbar {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  align-items: stretch;
   gap: var(--action-gap);
+}
+.toolbar .toolbar-create summary {
+  width: 100%;
+  height: 100%;
 }
 .toolbar > :is(.nav-control, .browse-menu) {
   width: 100%;

@@ -337,7 +337,43 @@ try {
     "Share",
     "Settings",
   ]);
-  await geometry(p);
+  for (const width of [320, 390, 1440]) {
+    await p.setViewportSize({ width, height: 900 });
+    await geometry(p);
+    const items = await p
+      .locator(".toolbar > .nav-control, .toolbar > .browse-menu")
+      .evaluateAll((els) =>
+        els.map((el) => {
+          const box = el.getBoundingClientRect(),
+            icon = el.querySelector("svg").getBoundingClientRect();
+          return {
+            width: box.width,
+            center: icon.x + icon.width / 2,
+            iconY: icon.y,
+          };
+        }),
+      );
+    for (let i = 1; i < items.length; i++) {
+      assert.ok(
+        Math.abs(items[i].iconY - items[0].iconY) < 1,
+        "Toolbar icons share the same row even when labels wrap",
+      );
+      assert.ok(
+        Math.abs(items[i].width - items[0].width) < 1,
+        "All pages use equal-width toolbar slots",
+      );
+      if (i > 1)
+        assert.ok(
+          Math.abs(
+            items[i].center -
+              items[i - 1].center -
+              (items[1].center - items[0].center),
+          ) < 1,
+          "Home icons are evenly distributed, including Create",
+        );
+    }
+  }
+  await p.setViewportSize({ width: 390, height: 844 });
   await click(p, "Family");
   await click(p, "Lists");
   await click(p, "Shared folder");

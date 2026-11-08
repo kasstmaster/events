@@ -164,6 +164,12 @@ Host bottom navigation has one Share Invitation action, using the existing share
 
 Event Print uses bottom navigation for hosts and guests; the top toolbar keeps the logo and attendance counts. Registration defaults to requesting a family icon from Kassandra, with an explicit optional upload choice. Persist the request on the new household and show its status in administrator Hosts; send no email or messages. Existing household icons and other household records remain unchanged.
 
-Signed-in invitation choosers have one shared title above the cards: “Your events” for owned host events and “You’re invited to gather” for guest invitations, with two columns at every screen width. Keep the title and grid together through administrator ordering. On phones, host actions stack below each card’s details to fit the two-column grid without horizontal overflow; household icons remain on their cards.
+Signed-in invitation choosers have one shared title above the cards: “Your events” for owned host events and “You’re invited to gather” for guest invitations, with two columns at every screen width. Keep the title and grid together through administrator ordering. On phones, host actions stack below each card’s details to fit the two-column grid without horizontal overflow; View Event fills the same width as those actions. Desktop View Event keeps its natural width. Household icons remain on their cards.
 
 Bottom Create/Sort menu triggers reuse the same toolContents renderer and nav-control formatting as other toolbar actions. Menu wrappers have no details border or padding; expanded triggers have no underline.
+
+All bottom navigation uses one shared equal-column layout so actions, including Create/Sort menus, spread evenly across the toolbar on phones and desktops.
+
+Home event cards show the inviting household’s saved icon, or the shared house symbol until one is uploaded. Event artwork remains inside the event.
+
+The Home Contacts, Cards & Invites and Family Workspace containers omit visible headings while retaining their descriptions, labeled Open buttons and accessible section names.
