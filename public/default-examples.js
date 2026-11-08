@@ -30,6 +30,8 @@ export function exampleState(view, ui) {
   ];
   const event = {
     id: "example-event",
+    version: 1,
+    invited: members.map((member) => member.id),
     title: "An afternoon together",
     description: "Good food, familiar faces and a little time together.",
     date: "2089-06-12",
@@ -63,6 +65,8 @@ export function exampleState(view, ui) {
     members,
     customItemsEnabled: true,
   };
+  if (view === "eventInvitation") event.informationLayout = "invitation";
+  if (view === "eventSingleContainer") event.containerLayout = "single";
   const guestView = [
     "guestHome",
     "guestSettings",
@@ -83,7 +87,7 @@ export function exampleState(view, ui) {
   }
   const familyView =
     (view.startsWith("family") && view !== "familyLogin") ||
-    view === "hostSettings";
+    ["hostSettings", "eventSettings"].includes(view);
   const kid = view.startsWith("familyKid");
   const familyMembers = [
     { id: "example-owner", name: "Alex", role: "owner" },
@@ -182,6 +186,18 @@ export function exampleState(view, ui) {
     "familyLogin",
   ].includes(view);
   return {
+    example: true,
+    settingsEvent: view === "eventSettings" ? event.id : null,
+    eventLayoutDraft:
+      view === "eventSettings"
+        ? {
+            event: event.id,
+            record: event,
+            informationLayout: "default",
+            containerLayout: "separate",
+            dirty: false,
+          }
+        : null,
     setup: { required: false, enabled: false },
     preview: null,
     platformUI: ui,
@@ -190,7 +206,7 @@ export function exampleState(view, ui) {
     session: {
       role: anonymous
         ? null
-        : view === "hostSettings"
+        : ["hostSettings", "eventSettings"].includes(view)
           ? "host"
           : familyView
             ? "family"
@@ -226,13 +242,20 @@ export function exampleState(view, ui) {
       "guestEvent",
       "guestEventUnanswered",
       "eventInformation",
+      "eventInvitation",
+      "eventSingleContainer",
       "eventButtons",
       "toolbar",
     ].includes(view)
       ? event.id
       : null,
     data: familyView
-      ? family
+      ? {
+          ...family,
+          ...(["hostSettings", "eventSettings"].includes(view)
+            ? { events: [event], guests: members, addresses: [] }
+            : {}),
+        }
       : {
           household,
           ui,
@@ -255,6 +278,7 @@ export function exampleState(view, ui) {
     exampleRecord:
       {
         hostSettings: "__settings__",
+        eventSettings: "__settings__",
         familySettings: "__settings__",
         familyList: "example-list",
         familyRecord: "example-record",
@@ -283,7 +307,7 @@ export function annotateExample(root, config) {
   const doc = root.ownerDocument;
   // These values belong to the host, even if their sample happens to resemble interface wording.
   for (const el of root.querySelectorAll(
-    ".event-hero>h1,.event-hero>p.event-details,.event-meta>div>span,.hero>h1,.card h2,.card h3,.card p.muted,.private-notes textarea",
+    ".event-hero>h1,.event-hero>p.event-details,.event-meta:not(.event-information-invitation)>div>span,.event-information-invitation [data-event-edit],.layout-information-preview [data-event-edit],.hero>h1,.card h2,.card h3,.card p.muted,.private-notes textarea",
   ))
     el.dataset.hostContent = "";
   const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT),

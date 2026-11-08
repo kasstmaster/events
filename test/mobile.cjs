@@ -313,7 +313,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       .waitFor();
     await click(alpha.page, "✕");
     await click(alpha.page, "View Event");
-    await click(alpha.page, "Edit event details");
+    await click(alpha.page, "Settings");
     await alpha.page
       .getByLabel("Registry title")
       .first()
@@ -322,10 +322,12 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByRole("button", { name: "Move registry down", exact: true })
       .first()
       .click();
-    await dialog(alpha.page)
+    await alpha.page
+      .locator(".inline-event-details")
       .getByRole("button", { name: "Save event", exact: true })
       .click();
-    await dialog(alpha.page).waitFor({ state: "hidden" });
+    await alpha.page.getByText("Event saved.", { exact: true }).waitFor();
+    await click(alpha.page, "Back");
     // The second browser session refreshes itself through the normal polling path.
     await secondDevice.page
       .getByRole("link", { name: "Our wedding wishes", exact: true })
@@ -334,7 +336,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       await secondDevice.page.locator(".registry-button").allTextContents(),
       ["Amazon Registry", "Our wedding wishes"],
     );
-    await click(alpha.page, "Edit event details");
+    await click(alpha.page, "Settings");
     await alpha.page
       .getByRole("button", { name: "Remove registry", exact: true })
       .first()
@@ -343,10 +345,12 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByRole("button", { name: "Remove registry", exact: true })
       .first()
       .click();
-    await dialog(alpha.page)
+    await alpha.page
+      .locator(".inline-event-details")
       .getByRole("button", { name: "Save event", exact: true })
       .click();
-    await dialog(alpha.page).waitFor({ state: "hidden" });
+    await alpha.page.getByText("Event saved.", { exact: true }).waitFor();
+    await click(alpha.page, "Back");
     await guest.page.reload();
     await guest.page
       .getByRole("heading", { name: "The Alpha Family", exact: true })

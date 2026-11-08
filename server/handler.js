@@ -291,7 +291,18 @@ function eventInput(input, store, household, existing) {
     !["inherit", "custom"].includes(appearanceMode)
   )
     fail(400, "Choose a supported event appearance mode.");
+  const informationLayout =
+    input.informationLayout ?? existing?.informationLayout ?? "default";
+  const containerLayout =
+    input.containerLayout ?? existing?.containerLayout ?? "separate";
+  if (
+    !["default", "invitation"].includes(informationLayout) ||
+    !["separate", "single"].includes(containerLayout)
+  )
+    fail(400, "Choose a supported event layout.");
   return {
+    informationLayout,
+    containerLayout,
     title: text(input.title, 160, true),
     description: text(input.description ?? "", 5000),
     date: date(input.date),

@@ -134,7 +134,7 @@ try {
   assert.ok(eventMetaStructure.includes("Where"));
   assert.equal(await example.locator("[data-action=rsvp]").count(), 1);
   await example
-    .locator("[data-action=event-details]")
+    .locator('.toolbar [data-action="settings"]')
     .waitFor({ state: "attached" });
   // Actual page components, scoped controls and all conditional sample sections.
   const requests = [];
@@ -168,6 +168,9 @@ try {
     "guestSettings",
     "familySettings",
     "eventInformation",
+    "eventInvitation",
+    "eventSingleContainer",
+    "eventSettings",
     "eventButtons",
     "toolbar",
     "homeButtons",
@@ -193,6 +196,23 @@ try {
       await example
         .getByRole("link", { name: "Upload Photos & Videos", exact: true })
         .waitFor();
+    }
+    if (view === "eventInvitation") {
+      await example.locator(".event-information-invitation").waitFor();
+      assert.equal(
+        await example.locator('[data-default-copy="Kindly RSVP by"]').count(),
+        1,
+      );
+      assert.equal(
+        await example.locator(".invitation-address[data-host-content]").count(),
+        1,
+      );
+    }
+    if (view === "eventSingleContainer")
+      await example.locator("[data-event-shell] .event-icon").waitFor();
+    if (view === "eventSettings") {
+      await example.locator(".event-layout-editor").waitFor();
+      assert.equal(await example.getByRole("radio").count(), 4);
     }
     if (view === "login") {
       await example.getByLabel("Invite Code", { exact: true }).waitFor();
@@ -236,7 +256,7 @@ try {
     .getByLabel("Example page", { exact: true })
     .selectOption("event");
   await example
-    .locator("[data-action=event-details]")
+    .locator('.toolbar [data-action="settings"]')
     .waitFor({ state: "attached" });
   await admin.page
     .frameLocator("#page-example-frame")
@@ -479,12 +499,13 @@ try {
     .selectOption("0");
   await h.page.locator("[data-action=appearance-copy]").click();
   await click(h.page, "Cancel");
-  await click(h.page, "Edit event details");
+  await click(h.page, "Settings");
   h.page.once("dialog", (d) => d.dismiss());
   await click(h.page, "Delete event");
-  assert.equal(await dialog(h.page).isVisible(), true);
+  assert.equal(await h.page.locator(".inline-event-details").isVisible(), true);
   assert.equal(store.list("event", host.household).length, 1);
-  await click(h.page, "Cancel");
+  h.page.once("dialog", (d) => d.accept());
+  await h.page.getByRole("button", { name: "Back", exact: true }).click();
   await h.page.getByText("Gathering time", { exact: true }).waitFor();
   await h.page.screenshot({
     path: "test-results/features-host-mobile.png",

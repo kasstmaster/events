@@ -1,4 +1,5 @@
 const paths = {
+  layout: "M3 3h18v18H3ZM3 10h18M12 10v11",
   sort: "M8 3v18m-4-4 4 4 4-4M16 21V3m-4 4 4-4 4 4",
   invite:
     "M6 8a3 3 0 1 0 6 0 3 3 0 0 0-6 0M3 21v-3a6 6 0 0 1 12 0v3M19 6v8m-4-4h8",

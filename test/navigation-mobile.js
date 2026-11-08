@@ -1142,11 +1142,17 @@ try {
         ),
       "RSVP spans the event containers",
     );
+    assert.equal(
+      await p.locator("#top-navigation .browse-menu").count(),
+      0,
+      "Ordinary event pages have no redundant menu",
+    );
+    assert.equal(await p.locator('[data-action="event-details"]').count(), 0);
+    await p.locator('.toolbar [data-action="settings"]').waitFor();
     const aligned = await p.locator(".top-primary").evaluate((el) => {
       const nodes = [
         el.querySelector(".brand"),
         el.querySelector(".event-summary"),
-        el.querySelector('summary[aria-label="Sorting and options"]'),
         el.querySelector("[data-action=print]"),
       ];
       const centers = nodes.map((node) => {
@@ -1155,10 +1161,7 @@ try {
       });
       return Math.max(...centers) - Math.min(...centers) < 3;
     });
-    assert.ok(
-      aligned,
-      "Gather, counts, options and Print share one toolbar row",
-    );
+    assert.ok(aligned, "Gather, counts and Print share one toolbar row");
     assert.ok(
       await p.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth + 1,
@@ -1221,12 +1224,14 @@ try {
   await click(p, "Edit Event");
   assert.equal(await p.locator(".appearance-categories button").count(), 7);
   await click(p, "Cancel");
-  await click(p, "Edit event details");
+  await click(p, "Settings");
   await p.getByText("Table templates", { exact: true }).waitFor();
   assert.ok(
     await p.locator("form[data-form=event]").evaluate((form) => {
       const sections = [
-        ...form.querySelectorAll(":scope > .dialog-body > fieldset"),
+        ...form.querySelectorAll(
+          ":scope > .dialog-body > fieldset,:scope > fieldset",
+        ),
       ].map((el) => el.querySelector("legend")?.textContent);
       return (
         sections.indexOf("Potluck & drinks") >= 0 &&
@@ -1250,7 +1255,8 @@ try {
     .getByRole("button", { name: "Delete Table Template", exact: true })
     .click();
   assert.equal(store.list("table-template", host.household).length, 1);
-  await click(p, "Cancel");
+  p.once("dialog", (d) => d.accept());
+  await p.getByRole("button", { name: "Back", exact: true }).click();
   await click(p, "Home");
   await p
     .locator("article.card")
@@ -1425,7 +1431,7 @@ try {
   await click(p, "Settings");
   assert.deepEqual(
     await p.locator(".page-appearance-settings .mode-option").allTextContents(),
-    ["Default Mode", "Custom Colors Mode"],
+    ["Default Mode", "Custom Colors Mode", "Layout"],
   );
   assert.equal(await p.locator(".inline-household-details").count(), 0);
   const eventSettings = p.locator(".inline-event-details");
@@ -1445,6 +1451,126 @@ try {
     (await api(owner, "/api/host")).body.events.find((e) => e.id === e1.id)
       .description,
     "Inline event Settings description",
+  );
+
+  const layoutBefore = store.get("event", e1.id, host.household);
+  await click(p, "Layout");
+  const layoutEditor = p.locator(".event-layout-editor");
+  await layoutEditor.waitFor();
+  const informationOptions = layoutEditor.getByRole("radiogroup", {
+    name: "Event information layout",
+    exact: true,
+  });
+  const containerOptions = layoutEditor.getByRole("radiogroup", {
+    name: "Event container layout",
+    exact: true,
+  });
+  assert.equal(await informationOptions.getByRole("radio").count(), 2);
+  assert.equal(await containerOptions.getByRole("radio").count(), 2);
+  await informationOptions
+    .getByRole("radio", { name: /Invitation style/ })
+    .click();
+  await containerOptions.getByRole("radio", { name: /One container/ }).click();
+  await layoutEditor
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  assert.deepEqual(store.get("event", e1.id, host.household), layoutBefore);
+  await click(p, "Layout");
+  await informationOptions
+    .getByRole("radio", { name: /Invitation style/ })
+    .click();
+  await containerOptions.getByRole("radio", { name: /One container/ }).click();
+  await layoutEditor
+    .getByRole("button", { name: "Save Layout", exact: true })
+    .click();
+  await p.getByText("Layout saved.", { exact: true }).waitFor();
+  await p.getByRole("button", { name: "Back", exact: true }).click();
+  await p.locator("[data-event-shell] .event-information-invitation").waitFor();
+  assert.equal(
+    await p.locator("[data-event-shell] > [data-event-section]").count(),
+    2,
+  );
+  assert.equal(await p.locator("#main > [data-event-section]").count(), 0);
+  assert.equal(
+    await p
+      .locator(".invitation-address")
+      .evaluate((el) => getComputedStyle(el).fontStyle),
+    "italic",
+  );
+  assert.match(
+    await p
+      .locator(".invitation-time")
+      .evaluate((el) => getComputedStyle(el).fontFamily),
+    /Georgia/,
+  );
+  assert.equal(
+    await p
+      .locator(".invitation-date")
+      .evaluate((el) => getComputedStyle(el).textTransform),
+    "uppercase",
+  );
+  assert.match(
+    await p.locator(".invitation-rsvp").innerText(),
+    /Kindly RSVP by Jun\. 1/,
+  );
+  for (const width of [390, 1440]) {
+    await p.setViewportSize({ width, height: 900 });
+    assert.ok(
+      await p.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    );
+    await p.screenshot({
+      path: `test-results/event-layout-${width}.png`,
+      fullPage: true,
+    });
+  }
+  const hostInformation = await p
+    .locator(".event-information-invitation")
+    .innerHTML();
+  const currentLayoutGuest = (await api(owner, "/api/host")).body.guests.find(
+    (g) => g.id === guest.id,
+  );
+  const layoutGuestCookie = (
+    await api(null, `/api/public/households/${household.slug}/login`, {
+      first: currentLayoutGuest.first,
+      last: currentLayoutGuest.last,
+      inviteCode: currentLayoutGuest.inviteCode,
+    })
+  ).cookie;
+  const layoutGuest = await page(layoutGuestCookie);
+  await layoutGuest
+    .locator("article.card")
+    .filter({
+      has: layoutGuest.getByRole("heading", {
+        name: "Dinner One",
+        exact: true,
+      }),
+    })
+    .getByRole("button", { name: "View Event", exact: true })
+    .click();
+  await layoutGuest
+    .locator("[data-event-shell] .event-information-invitation")
+    .waitFor();
+  assert.equal(
+    await layoutGuest.locator(".event-information-invitation").innerHTML(),
+    hostInformation,
+  );
+  assert.equal(
+    await layoutGuest.locator('[data-action="event-layout-open"]').count(),
+    0,
+  );
+  await click(p, "Settings");
+  await click(p, "Layout");
+  await informationOptions.getByRole("radio", { name: /^Default/ }).click();
+  await containerOptions
+    .getByRole("radio", { name: /Separate containers/ })
+    .click();
+  await layoutEditor
+    .getByRole("button", { name: "Save Layout", exact: true })
+    .click();
+  await p.waitForFunction(
+    () => !document.querySelector(".event-layout-editor"),
   );
 
   assert.ok(
@@ -1532,6 +1658,11 @@ try {
   ]);
   await click(p, "Home");
   const offered = async () => {
+    assert.equal(
+      await p.locator("#top-navigation .browse-menu").count(),
+      0,
+      "Pages with no unique options omit the three-dot menu",
+    );
     assert.equal(await p.locator("#top-navigation .mode-option").count(), 0);
     await p.locator('.toolbar [data-action="share-details"]').waitFor();
     await p.locator('.toolbar [data-action="settings"]').waitFor();
@@ -1618,11 +1749,24 @@ try {
     await p.locator(".inline-household-details").getAttribute("data-version"),
     unchangedDetailsVersion,
   );
-  p.once("dialog", (d) => d.dismiss());
+  const dismissedDetails = new Promise((resolve) =>
+    p.once("dialog", async (d) => {
+      await d.dismiss();
+      resolve();
+    }),
+  );
   await p.locator(".toolbar [data-action=home]").click();
+  await dismissedDetails;
   assert.equal(await detailsName.inputValue(), "Unsaved household draft");
-  p.once("dialog", (d) => d.accept());
+  const discardedDetails = new Promise((resolve) =>
+    p.once("dialog", async (d) => {
+      await d.accept();
+      resolve();
+    }),
+  );
   await p.getByRole("button", { name: "Back", exact: true }).click();
+  await discardedDetails;
+  await p.locator(".hero h1").waitFor();
   await p.waitForTimeout(3500);
   await click(p, "Settings");
   await p
