@@ -40,7 +40,9 @@ export function topbar({
   sort = [],
   extra = "",
 }) {
-  return ui`<div class="app-topbar no-print">${back ? tool("page-back", "Back", "", "back") : ""}<div class="browse-heading">${title ? ui`<h1>${title}</h1>` : ""}${subtitle ? ui`<p>${subtitle}</p>` : ""}</div><div class="browse-top-actions">${search ? tool(search, "Search", "", "search") : ""}${plus.length ? menu("Create", "plus", plus) : ""}${sort.length ? menu("Sorting and options", "more", sort) : ""}${extra}</div></div>`;
+  const create =
+    plus.find((item) => item.action !== "family-new-folder") || plus[0];
+  return ui`<div class="app-topbar no-print">${back ? tool("page-back", "Back", "", "back") : ""}<div class="browse-heading">${title ? ui`<h1>${title}</h1>` : ""}${subtitle ? ui`<p>${subtitle}</p>` : ""}</div><div class="browse-top-actions">${search ? tool(search, "Search", "", "search") : ""}${create ? tool(create.action, "Create", create.id || "", "plus") : ""}${sort.length ? menu("Sorting and options", "more", sort) : ""}${extra}</div></div>`;
 }
 export function bottom(items, label = "Main navigation") {
   return ui`<nav class="toolbar no-print" aria-label="${H(label)}">${items.map((i) => tool(i.action, i.label, i.id || "", i.icon || i.action, i.current ? 'aria-current="page"' : "")).join("")}</nav>`;
@@ -53,8 +55,10 @@ export function row({
   id = "",
   controls = "",
   attributes = "",
+  disabled = false,
+  buttonClass = "",
 }) {
-  return ui`<li class="browse-row" ${attributes}><span class="browse-row-icon">${icon(symbol)}</span><div class="browse-row-content">${action ? ui`<button type="button" class="browse-open" data-action="${action}" data-id="${id}">${title}</button>` : ui`<strong>${title}</strong>`}${meta ? ui`<p>${meta}</p>` : ""}</div><div class="browse-row-actions">${controls}</div></li>`;
+  return ui`<li class="browse-row" ${attributes}><span class="browse-row-icon">${icon(symbol)}</span><div class="browse-row-content">${action ? ui`<button type="button" class="browse-open ${buttonClass}" data-action="${action}" data-id="${id}" ${disabled ? "disabled" : ""}>${title}</button>` : ui`<strong>${title}</strong>`}${meta ? ui`<p>${meta}</p>` : ""}</div><div class="browse-row-actions">${controls}</div></li>`;
 }
 export function searchBox(prefix, value, escape, label = "Search") {
   return ui`<label class="browse-search">${C(label)}<input type="search" name="${prefix}Search" data-browse-search="${prefix}" value="${escape(value)}" autocomplete="off"></label>`;

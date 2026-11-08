@@ -591,7 +591,7 @@ try {
   );
   assert.deepEqual(
     await p
-      .getByRole("button", { name: "Open Contacts", exact: true })
+      .getByRole("button", { name: "Address Book", exact: true })
       .evaluate((el) => {
         const canvas = document.createElement("canvas"),
           ctx = canvas.getContext("2d");
@@ -639,7 +639,7 @@ try {
   await editValue(p, "Toolbars", "Style", "Toolbars style", "boldItalic");
   await editValue(p, "Toolbars", "Size", "Toolbars size", "20");
   const footerLabels = await p
-    .locator(".toolbar > .nav-control, .toolbar .toolbar-create summary")
+    .locator(".toolbar > .nav-control")
     .evaluateAll((els) =>
       els.map((el) => {
         const label = el.querySelector("span"),
@@ -656,20 +656,20 @@ try {
         ];
       }),
     );
-  assert.ok(footerLabels.length >= 3);
+  assert.ok(footerLabels.length >= 2);
   assert.equal(
-    await p.locator(".toolbar .toolbar-create > summary.nav-control").count(),
+    await p.locator('#top-navigation [data-icon="plus"].nav-control').count(),
     1,
   );
   assert.equal(
     await p
-      .locator(".toolbar .toolbar-create")
+      .locator('#top-navigation [data-icon="plus"]')
       .evaluate((el) => getComputedStyle(el).borderBottomWidth),
     "0px",
   );
   assert.equal(
     await p
-      .locator(".toolbar .toolbar-create summary")
+      .locator('#top-navigation [data-icon="plus"]')
       .evaluate((el) => getComputedStyle(el).textDecorationLine),
     "none",
   );
@@ -677,13 +677,36 @@ try {
     assert.deepEqual(
       appearance,
       footerLabels[0],
-      "Create uses the same toolbar formatting as its neighboring actions",
+      "Editing actions retain their shared button formatting",
     );
   await geometry(p);
   await click(p, "Save");
   await p.getByText("Appearance saved.", { exact: true }).waitFor();
   await p.reload();
   await p.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
+  const navigationLabels = await p
+    .locator('.toolbar > .nav-control, #top-navigation [data-icon="plus"]')
+    .evaluateAll((els) =>
+      els.map((el) => {
+        const style = getComputedStyle(el.querySelector("span"));
+        return [
+          style.color,
+          style.fontFamily,
+          style.fontSize,
+          style.fontWeight,
+          style.fontStyle,
+        ];
+      }),
+    );
+  assert.ok(navigationLabels.length >= 4);
+  for (const label of navigationLabels)
+    assert.deepEqual(
+      label,
+      navigationLabels[0],
+      "Top Create shares the normal toolbar label formatting",
+    );
+  assert.equal(navigationLabels[0][3], "700");
+  assert.equal(navigationLabels[0][4], "italic");
   assert.equal(store.household(host.household).design.textColor, "#123456");
   assert.equal(
     store.household(host.household).design.containerImageOpacity,
@@ -751,10 +774,9 @@ try {
   await click(p, "Cancel");
   stage("inline contacts: unsaved creation, address groups and scoped edits");
   await click(p, "Contacts");
-  await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
+  await p.getByRole("heading", { name: "Address Book", exact: true }).waitFor();
   const count = store.list("guest", host.household).length;
   await p.getByLabel("Create", { exact: true }).click();
-  await p.getByRole("menuitem", { name: "Add Guest", exact: true }).click();
   await p.locator(".inline-contact form").waitFor();
   assert.equal(await p.locator("#editor[open]").count(), 0);
   assert.equal(store.list("guest", host.household).length, count);
@@ -764,7 +786,6 @@ try {
     .click();
   assert.equal(await p.locator(".inline-contact").count(), 0);
   await p.getByLabel("Create", { exact: true }).click();
-  await p.getByRole("menuitem", { name: "Add Guest", exact: true }).click();
   await p.getByLabel("First name", { exact: true }).fill("New");
   await p.getByLabel("Last name", { exact: true }).fill("Contact");
   await p.getByRole("button", { name: "Save", exact: true }).click();
@@ -807,7 +828,7 @@ try {
   });
   await p.reload();
   await click(p, "Contacts");
-  await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
+  await p.getByRole("heading", { name: "Address Book", exact: true }).waitFor();
   assert.equal(await p.locator('[data-action^="contacts-sort-"]').count(), 0);
   await p.waitForFunction(
     () =>
@@ -946,17 +967,11 @@ try {
   );
   await admin.getByLabel("Create", { exact: true }).click();
   await admin
-    .getByRole("menuitem", { name: "Create shared template", exact: true })
-    .click();
-  await admin
     .getByRole("heading", { name: "Edit shared template", exact: true })
     .waitFor();
   await click(admin, "Close editor");
   await admin.getByText("Shared card templates", { exact: true }).waitFor();
   await admin.getByLabel("Create", { exact: true }).click();
-  await admin
-    .getByRole("menuitem", { name: "Create shared template", exact: true })
-    .click();
   await admin
     .getByRole("heading", { name: "Edit shared template", exact: true })
     .waitFor();

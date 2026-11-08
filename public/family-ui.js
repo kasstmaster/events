@@ -37,6 +37,7 @@ export function familyTools(ctx) {
     showSearch = false,
     addItemOpen = false;
   const itemDrafts = new Map();
+  const createDrafts = new Map();
   let saveStatus = "";
   function saving(value) {
     value = ["Saved", "Saving…"].includes(value) ? "" : value;
@@ -412,7 +413,8 @@ export function familyTools(ctx) {
         )}</dl><h2>${H("Maintenance history")}</h2>${(r.history || []).map((h) => row({ title: escape(h.date), symbol: "task" })).join("")}${action("family-files", adult() ? "Manage documents" : "View documents", r.id)}${manager() ? action("family-maintenance", "Create linked maintenance chore", r.id) : ""}</div>`;
     return `<div class="browse-detail">${controls}<p>${escape(r.instructions)}</p><p>${escape(r.assignees.map(name).join(", "))} · ${escape(r.repeat)} · ${escape(r.timezone)}</p>${r.linkedRecord ? action("family-open", "View linked home record", r.linkedRecord) : ""}${action("family-history", "View completion history", r.id)}${renderTasks(false, r.id)}</div>`;
   }
-  function recordEditor(r = { type: "list" }) {
+  function recordEditor(r = { type: "list" }, switching = false) {
+    if (!switching) createDrafts.clear();
     current = {
       ...r,
       section:
@@ -500,7 +502,24 @@ export function familyTools(ctx) {
       )}<label class="check"><input type="checkbox" name="cancelled" ${r.cancelled ? "checked" : ""}>Cancel future reminders and occurrences</label><p>Assigned children can access this chore independently of the child-access checkboxes. Remove their assignment to revoke that access. Linked home records keep their own permissions.</p><p>Reminders are in-app only. Repeating chores keep separate occurrence history. DST times that do not exist or occur twice are skipped.</p>`;
     modal(
       r.id ? C("Edit household record") : C("Create household record"),
-      common + categories + fields + acl,
+      (r.id
+        ? ""
+        : select(
+            H("New item type"),
+            "createType",
+            [
+              ["list", C("List")],
+              ["task", C("Task")],
+              ["record", C("Record")],
+              ["chore", C("Chore")],
+              ["folder", C("Folder")],
+            ],
+            r.type,
+          )) +
+        common +
+        categories +
+        fields +
+        acl,
       "family-record",
     );
   }
@@ -1054,6 +1073,39 @@ export function familyTools(ctx) {
       return true;
     },
     bind() {
+      document.addEventListener("change", (event) => {
+        const form = event.target.closest('form[data-form="family-record"]');
+        if (!form || event.target.name !== "createType" || current.id) return;
+        const fd = new FormData(form),
+          value = Object.fromEntries(fd);
+        const draft = {
+          ...current,
+          ...value,
+          type: current.type,
+          categories: String(value.categories || "").split("\n"),
+          childAccess: fd.getAll("childAccess"),
+          assignees: fd.getAll("assignees"),
+          details: Object.fromEntries(
+            String(value.details || "")
+              .split("\n")
+              .filter((v) => v.includes(":"))
+              .map((v) => [
+                v.slice(0, v.indexOf(":")),
+                v.slice(v.indexOf(":") + 1),
+              ]),
+          ),
+        };
+        createDrafts.set(current.type, draft);
+        recordEditor(
+          {
+            ...createDrafts.get(value.createType),
+            type: value.createType,
+            title: value.title,
+            folder: value.folder,
+          },
+          true,
+        );
+      });
       document.addEventListener("change", async (event) => {
         if (
           event.target.name !== "member" ||
