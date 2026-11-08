@@ -860,6 +860,8 @@ export function createHandler({
               .all("SELECT id,email,household FROM users WHERE role='host'")
               .map((host) => ({
                 ...host,
+                logoRequested:
+                  store.household(host.household)?.logoRequested === true,
                 platformAdmin: platformAdministrator(store, {
                   user: host.id,
                   household: host.household,

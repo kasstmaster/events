@@ -269,10 +269,10 @@ async function option(p, name) {
     .click();
 }
 async function footer(p, names) {
-  await p.locator(".toolbar .nav-control").first().waitFor();
+  await p.locator(".toolbar button.nav-control").first().waitFor();
   assert.deepEqual(
     await p
-      .locator(".toolbar .nav-control")
+      .locator(".toolbar button.nav-control")
       .evaluateAll((es) =>
         es
           .filter(
@@ -356,7 +356,7 @@ try {
       .evaluate(
         (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
       ),
-    1,
+    2,
   );
   await p.setViewportSize({ width: 1440, height: 900 });
 
@@ -439,8 +439,21 @@ try {
     assert.equal(await p.locator('[name="cardEvent"]').inputValue(), event.id);
     await click(p, "Close editor");
   }
+  assert.equal(
+    await p.getByRole("heading", { name: "Your events", exact: true }).count(),
+    1,
+  );
+  assert.equal(await p.locator(".home-events .eyebrow").count(), 0);
   for (const width of [320, 390, 1440]) {
     await p.setViewportSize({ width, height: 900 });
+    assert.equal(
+      await p
+        .locator(".home-events")
+        .evaluate(
+          (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+        ),
+      2,
+    );
     const cards = await p.evaluate(() =>
       [...document.querySelectorAll(".host-event-choice")].map((choice) => {
         const box = (el) => {
@@ -460,11 +473,18 @@ try {
     for (const { heading, overview, actions, buttons } of cards) {
       assert.ok(heading.y + heading.height <= overview.y + 1);
       assert.ok(heading.y + heading.height <= actions.y + 1);
-      assert.ok(heading.width >= overview.width + actions.width);
+      assert.ok(
+        heading.width >=
+          (width < 760
+            ? Math.max(overview.width, actions.width)
+            : overview.width + actions.width),
+      );
 
       assert.ok(
-        overview.x + overview.width <= actions.x + 1,
-        "Details remain left of event actions",
+        width < 760
+          ? overview.y + overview.height <= actions.y + 1
+          : overview.x + overview.width <= actions.x + 1,
+        "Event actions fit within each invitation card",
       );
       let bottom = 0;
       for (const box of buttons) {
@@ -1097,13 +1117,20 @@ try {
   await second.getByRole("button", { name: "View Event", exact: true }).click();
   await footer(p, [
     "Home",
+    "Print",
     "Family",
     "Contacts",
     "Edit Event",
-    "Share Invitation",
     "Settings",
   ]);
   assert.equal(await p.locator(".event-summary").count(), 1);
+  assert.equal(await p.locator('.toolbar [data-action="share"]').count(), 0);
+  assert.equal(
+    await p
+      .getByRole("button", { name: "Share Invitation", exact: true })
+      .count(),
+    1,
+  );
   for (const width of [320, 390, 1440]) {
     await p.setViewportSize({ width, height: 900 });
     // Viewport resize and the shared ResizeObserver finish on the next browser frame.
@@ -1153,7 +1180,6 @@ try {
       const nodes = [
         el.querySelector(".brand"),
         el.querySelector(".event-summary"),
-        el.querySelector("[data-action=print]"),
       ];
       const centers = nodes.map((node) => {
         const r = node.getBoundingClientRect();
@@ -1161,7 +1187,7 @@ try {
       });
       return Math.max(...centers) - Math.min(...centers) < 3;
     });
-    assert.ok(aligned, "Gather, counts and Print share one toolbar row");
+    assert.ok(aligned, "Gather and counts share one toolbar row");
     assert.ok(
       await p.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth + 1,
@@ -1188,6 +1214,24 @@ try {
     .waitFor();
   const g = await page(guestCookie);
   await g.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
+  assert.equal(
+    await g
+      .getByRole("heading", { name: "You’re invited to gather", exact: true })
+      .count(),
+    1,
+  );
+  assert.equal(
+    await g.getByRole("heading", { name: "Your events", exact: true }).count(),
+    0,
+  );
+  assert.equal(
+    await g
+      .locator(".home-events")
+      .evaluate(
+        (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+      ),
+    2,
+  );
   assert.deepEqual(await g.locator("article.card h2").allTextContents(), [
     "Dinner Two",
     "Dinner One",
@@ -1665,6 +1709,11 @@ try {
     );
     assert.equal(await p.locator("#top-navigation .mode-option").count(), 0);
     await p.locator('.toolbar [data-action="share-details"]').waitFor();
+    assert.equal(await p.locator('.toolbar [data-action="share"]').count(), 0);
+    assert.equal(
+      await p.locator('.toolbar [data-action="share-details"]').innerText(),
+      "Share Invitation",
+    );
     await p.locator('.toolbar [data-action="settings"]').waitFor();
     await click(p, "Settings");
     assert.deepEqual(

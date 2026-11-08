@@ -47,8 +47,8 @@ export async function clickNavigation(page, label) {
     return;
   }
   if (["Household link and QR", "Household Link and QR"].includes(label))
-    label = "Share Link";
-  if (["Settings", "Share Link"].includes(label)) {
+    label = "Share Invitation";
+  if (["Settings", "Share Link", "Share Invitation"].includes(label)) {
     await page
       .locator(
         `.toolbar [data-action="${label === "Settings" ? "settings" : "share-details"}"]`,
@@ -58,18 +58,6 @@ export async function clickNavigation(page, label) {
       await page
         .getByRole("heading", { name: "Settings", exact: true })
         .waitFor();
-    return;
-  }
-  if (
-    [
-      "Share",
-      "Share Household Link",
-      "Share Guest Link",
-      "Share Invitation",
-    ].includes(label) &&
-    (await page.locator(".toolbar [data-action=share]").count())
-  ) {
-    await page.locator(".toolbar [data-action=share]").click();
     return;
   }
   if (
