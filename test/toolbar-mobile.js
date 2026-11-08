@@ -248,10 +248,10 @@ async function option(p, name) {
     .click();
 }
 async function footer(p, names) {
-  await p.locator(".toolbar .nav-control").first().waitFor();
+  await p.locator(".toolbar button.nav-control").first().waitFor();
   assert.deepEqual(
     await p
-      .locator(".toolbar .nav-control")
+      .locator(".toolbar button.nav-control")
       .evaluateAll((es) =>
         es
           .filter(
@@ -621,6 +621,22 @@ try {
       }),
     );
   assert.ok(footerLabels.length >= 3);
+  assert.equal(
+    await p.locator(".toolbar .toolbar-create > summary.nav-control").count(),
+    1,
+  );
+  assert.equal(
+    await p
+      .locator(".toolbar .toolbar-create")
+      .evaluate((el) => getComputedStyle(el).borderBottomWidth),
+    "0px",
+  );
+  assert.equal(
+    await p
+      .locator(".toolbar .toolbar-create summary")
+      .evaluate((el) => getComputedStyle(el).textDecorationLine),
+    "none",
+  );
   for (const appearance of footerLabels)
     assert.deepEqual(
       appearance,

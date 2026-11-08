@@ -102,3 +102,5 @@ Host bottom navigation has one Share Invitation action, using the existing share
 Event Print uses bottom navigation for hosts and guests; the top toolbar keeps the logo and attendance counts. Registration defaults to requesting a family icon from Kassandra, with an explicit optional upload choice. Persist the request on the new household and show its status in administrator Hosts; send no email or messages. Existing household icons and other household records remain unchanged.
 
 Signed-in invitation choosers have one shared “You’re invited to gather” title above the cards, with two columns at every screen width. Keep the title and grid together through administrator ordering. On phones, host actions stack below each card’s details to fit the two-column grid without horizontal overflow; household icons remain on their cards.
+
+Bottom Create/Sort menu triggers reuse the same toolContents renderer and nav-control formatting as other toolbar actions. Menu wrappers have no details border or padding; expanded triggers have no underline.

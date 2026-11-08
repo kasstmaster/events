@@ -269,10 +269,10 @@ async function option(p, name) {
     .click();
 }
 async function footer(p, names) {
-  await p.locator(".toolbar .nav-control").first().waitFor();
+  await p.locator(".toolbar button.nav-control").first().waitFor();
   assert.deepEqual(
     await p
-      .locator(".toolbar .nav-control")
+      .locator(".toolbar button.nav-control")
       .evaluateAll((es) =>
         es
           .filter(

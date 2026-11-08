@@ -1430,6 +1430,8 @@ body.card-editor-active {
 }
 .browse-menu {
   position: relative;
+  border: 0;
+  padding: 0;
 }
 .browse-menu summary {
   border: 0;
@@ -1632,7 +1634,6 @@ main {
 .toolbar .nav-control[aria-current="page"],
 .browse-menu[open] summary {
   background: var(--panel);
-  text-decoration: underline;
 }
 .top-shell :is(button, summary):focus-visible,
 .toolbar button:focus-visible {

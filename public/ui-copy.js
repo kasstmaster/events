@@ -758,7 +758,6 @@ export const copyCatalog = [
   "Something to bring",
   "Something to share",
   "Something went wrong. Please try again.",
-  "Sort",
   "Sorting and options",
   "Start from a template",
   "State",

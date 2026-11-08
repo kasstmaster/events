@@ -2,6 +2,7 @@ import { appearanceEditor } from "/appearance-editor.js";
 import {
   bindBrowseMenus,
   tool,
+  toolContents,
   menu,
   sorting,
   topbar,
@@ -855,9 +856,9 @@ function render(target = $("#app"), example = false) {
       )) {
         if (control.matches(".browse-menu")) {
           control.classList.add("toolbar-create");
-          control
-            .querySelector("summary")
-            .insertAdjacentHTML("beforeend", ui`<span>${C("Create")}</span>`);
+          const summary = control.querySelector("summary");
+          summary.classList.add("nav-control");
+          summary.innerHTML = toolContents("Create", "plus");
         }
         footer.append(control);
       }
@@ -881,9 +882,9 @@ function render(target = $("#app"), example = false) {
         );
         const sortingMenu = footer.lastElementChild;
         sortingMenu.classList.add("toolbar-create");
-        sortingMenu
-          .querySelector("summary")
-          .insertAdjacentHTML("beforeend", ui`<span>${C("Sort")}</span>`);
+        const summary = sortingMenu.querySelector("summary");
+        summary.classList.add("nav-control");
+        summary.innerHTML = toolContents("Sort", "sort");
         sortItems.forEach((el) => el.remove());
       }
       const tasks = target.querySelector(
