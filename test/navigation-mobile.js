@@ -1214,6 +1214,24 @@ try {
     .waitFor();
   const g = await page(guestCookie);
   await g.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
+  assert.equal(
+    await g
+      .getByRole("heading", { name: "You’re invited to gather", exact: true })
+      .count(),
+    1,
+  );
+  assert.equal(
+    await g.getByRole("heading", { name: "Your events", exact: true }).count(),
+    0,
+  );
+  assert.equal(
+    await g
+      .locator(".home-events")
+      .evaluate(
+        (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+      ),
+    2,
+  );
   assert.deepEqual(await g.locator("article.card h2").allTextContents(), [
     "Dinner Two",
     "Dinner One",
