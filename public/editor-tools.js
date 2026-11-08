@@ -88,7 +88,7 @@ export function featureTools(ctx) {
           guestEventUnanswered: "Guest event · no RSVP yet",
           guestLoginSuffix: "Guest sign-in · suffix revealed",
           familyLogin: "Family member sign-in",
-          contacts: "Contacts",
+          contacts: "Address Book",
           adminApprovals: "Administrator approvals",
           adminHosts: "Administrator hosts",
           adminSettings: "Administrator Settings",

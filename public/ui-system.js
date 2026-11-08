@@ -279,7 +279,7 @@ export const layoutLabels = {
   household: "Edit House",
   "new-event": "Create event",
   guests: "Guest list",
-  addresses: "Contacts",
+  addresses: "Address Book",
   share: "Share",
   cards: "Cards",
   reminders: "Reminders",

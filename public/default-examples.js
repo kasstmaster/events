@@ -34,6 +34,10 @@ export function exampleState(view, ui) {
     invited: members.map((member) => member.id),
     title: "An afternoon together",
     description: "Good food, familiar faces and a little time together.",
+    information: [
+      { text: "Parking is available by the entrance. ", bold: true },
+      { text: "Email your host", href: "mailto:host@example.test" },
+    ],
     date: "2089-06-12",
     time: "Two o’clock in the afternoon",
     address: "123 Example Lane\nExample Town, CA 90000",

@@ -506,3 +506,110 @@ test("event layout presets are versioned, tenant-scoped and preserve content, re
     200,
   );
 });
+
+test("Information stores bounded formatted runs and renders only escaped text and safe links", async () => {
+  const { informationInput, informationLink, renderInformation } =
+    await import("../public/event-information.js");
+  assert.deepEqual(informationInput([{ text: " \n " }]), []);
+  assert.equal(
+    informationLink("host@example.test"),
+    "mailto:host@example.test",
+  );
+  const markup = renderInformation([
+    {
+      text: '<img src=x onerror="alert(1)">',
+      bold: true,
+      italic: true,
+      underline: true,
+      href: "https://example.test/help",
+    },
+  ]);
+  assert.match(markup, /&lt;img/);
+  assert.doesNotMatch(markup, /<img|<script|onclick=/);
+  assert.match(markup, /<strong>/);
+  assert.match(markup, /rel="noopener noreferrer"/);
+  for (const value of [
+    "javascript:alert(1)",
+    "data:text/html,test",
+    "file:///tmp/test",
+    "//example.test",
+    "mailto:test@example.test?body=hi",
+    "https://user:pass@example.test",
+  ])
+    assert.throws(() => informationInput([{ text: "Link", href: value }]));
+  for (const value of [
+    [{ text: "x", onclick: "alert(1)" }],
+    [{ text: "x", bold: "yes" }],
+    [{ text: "x".repeat(10001) }],
+    Array.from({ length: 501 }, () => ({ text: "x" })),
+  ])
+    assert.throws(() => informationInput(value));
+});
+
+test("optional Information is versioned, host-owned, preserved when omitted and safe for guest projection", async (t) => {
+  const f = await application(t),
+    host = await f.host("InformationAlpha"),
+    other = await f.host("InformationBeta"),
+    guest = await f.guest(host),
+    event = await f.event(host, [guest]);
+  const sibling = await f.event(host, []),
+    cookie = (await f.guestLogin(host, guest)).cookie;
+  const write = (record, changes, user = host.cookie) =>
+    f.request(`/api/host/events/${event.id}`, {
+      cookie: user,
+      method: "PUT",
+      version: record.version,
+      data: { ...record, ...changes },
+    });
+  const information = [
+    { text: "Bring a jacket. ", bold: true },
+    {
+      text: "Email the host",
+      italic: true,
+      underline: true,
+      href: "mailto:host@example.test",
+    },
+  ];
+  assert.equal((await write(event, { information }, other.cookie)).status, 404);
+  assert.equal((await write(event, { information }, cookie)).status, 403);
+  assert.equal(
+    (
+      await write(event, {
+        information: [{ text: "bad", href: "javascript:alert(1)" }],
+      })
+    ).status,
+    400,
+  );
+  const responses = structuredClone(
+    f.store.list("response", host.household.id),
+  );
+  assert.equal((await write(event, { information })).status, 200);
+  assert.equal((await write(event, { information: [] })).status, 409);
+  const current = f.store.get("event", event.id, host.household.id);
+  assert.deepEqual(
+    (await f.request("/api/guest", { cookie })).body.events.find(
+      (e) => e.id === event.id,
+    ).information,
+    information,
+  );
+  const { information: omitted, ...ordinary } = current;
+  assert.equal(
+    (await write(ordinary, { description: "Unrelated edit" })).status,
+    200,
+  );
+  const retained = f.store.get("event", event.id, host.household.id);
+  assert.deepEqual(retained.information, information);
+  assert.deepEqual(f.store.list("response", host.household.id), responses);
+  assert.deepEqual(
+    f.store.get("event", sibling.id, host.household.id),
+    sibling,
+  );
+  assert.equal(
+    (await write(retained, { information: [{ text: " \n " }] })).status,
+    200,
+  );
+  assert.deepEqual(
+    f.store.get("event", event.id, host.household.id).information,
+    [],
+  );
+});

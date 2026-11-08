@@ -100,11 +100,14 @@ export async function clickNavigation(page, label) {
     return;
   }
   if (
-    ["Contacts", "Family", "Family Workspace"].includes(label) &&
+    ["Contacts", "Address Book", "Family", "Family Workspace"].includes(
+      label,
+    ) &&
     !(await page.locator("#editor[open]:not(.inline-management)").count())
   ) {
-    const target =
-      label === "Contacts" ? "Open Contacts" : "Open Family Workspace";
+    const target = ["Contacts", "Address Book"].includes(label)
+      ? "Address Book"
+      : "Open Family Workspace";
     if (
       !(await page.getByRole("button", { name: target, exact: true }).count())
     ) {
@@ -114,7 +117,9 @@ export async function clickNavigation(page, label) {
     await page.getByRole("button", { name: target, exact: true }).click();
     await page
       .getByRole("heading", {
-        name: label === "Contacts" ? "Contacts" : "Family Workspace",
+        name: ["Contacts", "Address Book"].includes(label)
+          ? "Address Book"
+          : "Family Workspace",
         level: 1,
         exact: true,
       })
@@ -263,12 +268,12 @@ export async function clickNavigation(page, label) {
   if (!inDialog) {
     if (name === "＋ Add adult or child")
       await page
-        .getByRole("heading", { name: "Contacts", exact: true })
+        .getByRole("heading", { name: "Address Book", exact: true })
         .waitFor();
     if (
       name === "Create Event" &&
       (await page
-        .getByRole("heading", { name: "Contacts", exact: true })
+        .getByRole("heading", { name: "Address Book", exact: true })
         .count())
     ) {
       await page.getByRole("button", { name: "Home", exact: true }).click();
@@ -301,6 +306,26 @@ export async function clickNavigation(page, label) {
       name === "Cards & templates";
     if (name === "＋ Add adult or child") name = "Add Guest";
     if (name === "Cards & templates") name = "Cards & Templates";
+    if (
+      create &&
+      (await page
+        .locator('#top-navigation button[aria-label="Create"]')
+        .count())
+    ) {
+      await page.locator('#top-navigation button[aria-label="Create"]').click();
+      const kind = {
+        "Create list": "list",
+        "Create task": "task",
+        "Create record": "record",
+        "Create chore": "chore",
+        "Create folder": "folder",
+      }[name];
+      if (kind)
+        await page
+          .getByLabel("New item type", { exact: true })
+          .selectOption(kind);
+      return;
+    }
     await page
       .getByLabel(
         create

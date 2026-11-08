@@ -2077,11 +2077,6 @@ html {
   display: block;
   max-width: 100%;
 }
-.household-icon-fallback svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
 .event-overview {
   min-width: 0;
   display: flex;
@@ -2380,10 +2375,7 @@ body.editing-active
 }
 @media (max-width: 759px) {
   .home-events {
-    gap: 12px;
-  }
-  .home-events > .card {
-    padding: 12px;
+    grid-template-columns: minmax(0, 1fr);
   }
   .home-events .host-event-choice {
     grid-template-columns: minmax(0, 1fr);
@@ -2395,11 +2387,9 @@ body.editing-active
     width: 100%;
   }
   .home-events .event-overview > h2 {
-    font-size: min(var(--title-size, 24px), 20px);
     overflow-wrap: anywhere;
   }
   body #app .home-events .event-overview > p.muted {
-    font-size: min(var(--description-size), 14px);
     overflow-wrap: anywhere;
   }
   .home-events button {
@@ -2507,9 +2497,6 @@ body
   font-weight: var(--button-label-weight);
   font-style: var(--button-label-style);
 }
-body #app .mode-option {
-  font-weight: 700;
-}
 body.editing-active
   #app
   :is(
@@ -2529,11 +2516,7 @@ body.editing-active
 .home-workspace-cards {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-body
-  #app
-  .home-workspace-cards
-  > :is([data-home-card="contacts"], [data-home-card="cards"])
-  > p {
+body #app .home-workspace-cards > [data-home-card] > p {
   font-size: 0.75em;
 }
 body
@@ -2650,9 +2633,6 @@ body #app .contacts-select-event {
   color: #ffffff;
   border-color: #1f7a3f;
 }
-body #app [role="menu"] button.mode-option {
-  font-weight: 700;
-}
 
 .address-title-row {
   flex-wrap: nowrap;
@@ -2684,10 +2664,6 @@ body.card-editor-active #app > header {
   );
 }
 
-body #app .page-appearance-settings .mode-option {
-  font-weight: 700;
-}
-
 /* Settings modes share the management rows, without separate panels. */
 .page-appearance-settings {
   display: block;
@@ -2696,35 +2672,42 @@ body #app .page-appearance-settings .mode-option {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   width: 100%;
+  gap: var(--action-gap);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.settings-mode-row > .browse-row {
+  padding: 0;
+  border: 0;
   gap: 8px;
+  min-width: 0;
+}
+.settings-mode-row .browse-row-content {
+  min-width: 0;
+  width: 100%;
+}
+.settings-mode-row .browse-row-actions:empty {
+  display: none;
 }
 .settings-mode-row .mode-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   min-width: 0;
   width: 100%;
   white-space: normal;
   overflow-wrap: anywhere;
-}
-.settings-mode-row .mode-option svg {
-  flex: 0 0 22px;
 }
 .settings-details {
   margin-top: 20px;
   padding: 0 16px;
 }
 @media (max-width: 480px) {
-  body #app .settings-mode-row .mode-option {
+  .settings-mode-row > .browse-row {
     flex-direction: column;
     text-align: center;
-    font-size: 13px;
   }
-}
-
-body #app .settings-mode-row .mode-option span {
-  font-size: inherit;
-  font-weight: inherit;
+  .settings-mode-row .mode-option {
+    text-align: center;
+  }
 }
 
 /* Bottom actions retain the scope of their originating page. */
@@ -2972,4 +2955,61 @@ body #app [data-event-shell] > .event-hero {
 
 body #app .event-information-invitation .invitation-rsvp span {
   display: inline;
+}
+
+.information-input,
+.event-additional-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.information-input {
+  min-height: 130px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--input-background);
+  color: var(--input-color);
+}
+.information-formatting {
+  margin: 0 0 12px;
+  flex-wrap: wrap;
+}
+.information-formatting button {
+  padding: 8px 10px;
+}
+:is(.information-input, .event-additional-content) strong {
+  font-weight: 700;
+}
+:is(.information-input, .event-additional-content) em {
+  font-style: italic;
+}
+:is(.information-input, .event-additional-content) a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+body #app .top-shell #top-navigation .labeled-tool {
+  font-weight: var(--toolbar-label-weight);
+  font-style: var(--toolbar-label-style);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  min-width: 44px;
+  padding: 8px 3px;
+  text-align: center;
+}
+body #app .top-shell #top-navigation .labeled-tool span {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+  font-size: 0.85em;
+  line-height: 1.15;
+}
+.information-error {
+  color: var(--danger-color);
 }

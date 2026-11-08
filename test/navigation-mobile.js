@@ -42,6 +42,7 @@ store.put(
   household.id,
   {
     ...household,
+    logo: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=",
     design: {
       toolbarBackground: "#e0efe7",
       toolbarColor: "#134b37",
@@ -312,8 +313,23 @@ try {
   const p = await page(owner, 1440);
   await p.locator("[data-home-card]").first().waitFor();
   assert.equal(await p.locator("[data-home-card] h2").count(), 0);
+  assert.ok(
+    await p.locator("[data-home-card] > p").evaluateAll((els) => {
+      const signature = (el) => {
+        const s = getComputedStyle(el);
+        return [
+          s.color,
+          s.fontFamily,
+          s.fontSize,
+          s.fontWeight,
+          s.fontStyle,
+        ].join("|");
+      };
+      return els.every((el) => signature(el) === signature(els[0]));
+    }),
+  );
   for (const name of [
-    "Open Contacts",
+    "Address Book",
     "Open Cards & Invites",
     "Open Family Workspace",
   ])
@@ -363,7 +379,7 @@ try {
       .evaluate(
         (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
       ),
-    2,
+    1,
   );
   await p.setViewportSize({ width: 1440, height: 900 });
 
@@ -395,11 +411,11 @@ try {
       .count(),
     0,
   );
-  await p.locator("summary[aria-label=Create]").click();
-  assert.deepEqual(await p.getByRole("menuitem").allTextContents(), [
-    "Create Event",
-  ]);
-  await p.locator("summary[aria-label=Create]").click();
+  await p.getByRole("button", { name: "Create", exact: true }).click();
+  await p
+    .getByRole("heading", { name: "A new reason to gather", exact: true })
+    .waitFor();
+  await click(p, "Cancel");
   for (const [event, title] of [
     [e1, "Dinner One"],
     [e2, "Dinner Two"],
@@ -451,10 +467,7 @@ try {
     1,
   );
   assert.equal(await p.locator(".home-events .eyebrow").count(), 0);
-  assert.equal(
-    await p.locator(".home-events .household-icon-fallback").count(),
-    2,
-  );
+  assert.equal(await p.locator(".home-events img.family-logo").count(), 2);
   for (const width of [320, 390, 1440]) {
     await p.setViewportSize({ width, height: 900 });
     assert.equal(
@@ -463,7 +476,7 @@ try {
         .evaluate(
           (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
         ),
-      2,
+      width < 760 ? 1 : 2,
     );
     const cards = await p.evaluate(() =>
       [...document.querySelectorAll(".host-event-choice")].map((choice) => {
@@ -651,7 +664,7 @@ try {
     await route.continue();
   });
   await click(p, "Contacts");
-  await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
+  await p.getByRole("heading", { name: "Address Book", exact: true }).waitFor();
   assert.equal(
     preferenceReads,
     0,
@@ -661,13 +674,21 @@ try {
   assert.equal(
     await p
       .locator(
-        '#top-navigation [data-action="contacts-search"],#top-navigation summary[aria-label="Create"]',
+        '#top-navigation [data-action="contacts-search"],#top-navigation button[aria-label="Create"]',
+      )
+      .count(),
+    2,
+  );
+  await p.locator('#top-navigation [data-action="contacts-search"]').waitFor();
+  await p.locator('#top-navigation button[aria-label="Create"]').waitFor();
+  assert.equal(
+    await p
+      .locator(
+        '.toolbar [data-action="contacts-search"],.toolbar button[aria-label="Create"]',
       )
       .count(),
     0,
   );
-  await p.locator('.toolbar [data-action="contacts-search"]').waitFor();
-  await p.locator('.toolbar summary[aria-label="Create"]').waitFor();
   const titleCenter = await p
     .locator(".top-shell .browse-heading")
     .evaluate((el) => {
@@ -675,7 +696,7 @@ try {
       return Math.abs(r.left + r.width / 2 - innerWidth / 2);
     });
   assert.ok(titleCenter < 2, "Page title stays centered in the viewport");
-  await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
+  await p.getByRole("heading", { name: "Address Book", exact: true }).waitFor();
   assert.equal(
     await p.getByRole("button", { name: "Sync AnyList", exact: true }).count(),
     1,
@@ -793,7 +814,7 @@ try {
     });
   await p.reload();
   await click(p, "Contacts");
-  await p.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
+  await p.getByRole("heading", { name: "Address Book", exact: true }).waitFor();
   const rowKinds = await p
     .locator(".browse-row[data-contact-kind]")
     .evaluateAll((rows) => rows.map((row) => row.dataset.contactKind));
@@ -813,7 +834,23 @@ try {
     .getAttribute("d");
   assert.notEqual(childIcon, adultIcon);
   assert.equal(await p.locator("[data-contact-invite]").count(), 0);
+  assert.equal(
+    await p
+      .locator(
+        '#top-navigation [data-action="contacts-invite"],#top-navigation [data-action="contacts-uninvite"]',
+      )
+      .count(),
+    0,
+  );
   await click(p, "Select Contacts");
+  assert.equal(
+    await p
+      .locator(
+        '#top-navigation [data-action="contacts-invite"],#top-navigation [data-action="contacts-uninvite"]',
+      )
+      .count(),
+    2,
+  );
   assert.equal(
     await p.getByRole("button", { name: "Uninvite", exact: true }).isDisabled(),
     true,
@@ -871,7 +908,7 @@ try {
     );
     assert.ok(
       await p
-        .locator('.toolbar [data-action="contacts-invite"]')
+        .locator('#top-navigation [data-action="contacts-invite"]')
         .evaluate((el) => {
           const r = el.getBoundingClientRect();
           return r.top >= 0 && r.bottom <= innerHeight;
@@ -1194,7 +1231,11 @@ try {
       "RSVP spans the event containers",
     );
     assert.equal(
-      await p.locator("#top-navigation .browse-menu").count(),
+      await p
+        .locator(
+          '#top-navigation .browse-menu:has(summary[aria-label="Sorting and options"])',
+        )
+        .count(),
       0,
       "Ordinary event pages have no redundant menu",
     );
@@ -1254,16 +1295,13 @@ try {
       .evaluate(
         (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
       ),
-    2,
+    1,
   );
   assert.deepEqual(await g.locator("article.card h2").allTextContents(), [
     "Dinner Two",
     "Dinner One",
   ]);
-  assert.equal(
-    await g.locator(".home-events .household-icon-fallback").count(),
-    2,
-  );
+  assert.equal(await g.locator(".home-events img.family-logo").count(), 2);
   const guestCard = (title) =>
     g
       .locator("article.card")
@@ -1272,6 +1310,14 @@ try {
     .getByRole("button", { name: "View Event", exact: true })
     .click();
   await g.locator(".event-hero").waitFor();
+  assert.equal(
+    await g
+      .locator(
+        '[data-event-section="menus"], [data-event-section="additional-information"]',
+      )
+      .count(),
+    0,
+  );
   assert.equal(
     await p.locator("#main").innerHTML(),
     await g.locator("#main").innerHTML(),
@@ -1648,9 +1694,30 @@ try {
   assert.ok(
     await p
       .locator(".page-appearance-settings .mode-option")
-      .evaluateAll((es) =>
-        es.every((el) => Number(getComputedStyle(el).fontWeight) >= 700),
-      ),
+      .evaluateAll((els) => {
+        const styles = (el) => {
+          const s = getComputedStyle(el);
+          return [
+            s.fontFamily,
+            s.fontSize,
+            s.fontWeight,
+            s.fontStyle,
+            s.color,
+          ].join("|");
+        };
+        const standard = document.querySelector(
+          ".browse-row .browse-open:not(.mode-option)",
+        );
+        return (
+          !!standard &&
+          els.every(
+            (el) =>
+              styles(el) === styles(standard) &&
+              !el.querySelector("svg") &&
+              !!el.closest(".browse-row").querySelector(".browse-row-icon svg"),
+          )
+        );
+      }),
   );
   await option(p, "Default Mode");
   const defaultView = (await api(owner, "/api/host")).body;
@@ -1676,6 +1743,113 @@ try {
   );
 
   await click(p, "Cancel");
+  stage(
+    "optional Information, selected-text formatting, email links and empty sections",
+  );
+  await click(p, "Settings");
+  const richField = p.locator("[data-information-editor]"),
+    richInput = richField.getByRole("textbox", {
+      name: "Information text",
+      exact: true,
+    });
+  await richInput.fill("Bring a jacket. Email the host");
+  async function selectInformation(text) {
+    await richInput.evaluate((el, text) => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const node = walker.currentNode,
+          start = node.textContent.indexOf(text);
+        if (start < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, start);
+        range.setEnd(node, start + text.length);
+        const selection = getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return;
+      }
+      throw Error("Selection text is missing");
+    }, text);
+  }
+  for (const label of ["Bold", "Italic", "Underline"]) {
+    await selectInformation("Bring a jacket.");
+    await richField.getByRole("button", { name: label, exact: true }).click();
+  }
+  await selectInformation("Email the host");
+  await richField
+    .getByRole("button", { name: "Add link", exact: true })
+    .click();
+  await richField
+    .getByLabel("Link URL or email", { exact: true })
+    .fill("javascript:alert(1)");
+  await richField
+    .getByRole("button", { name: "Apply link", exact: true })
+    .click();
+  await richField
+    .getByText("Enter a valid website URL or email address.", { exact: true })
+    .waitFor();
+  await richField
+    .getByLabel("Link URL or email", { exact: true })
+    .fill("host@example.test");
+  await richField
+    .getByRole("button", { name: "Apply link", exact: true })
+    .click();
+  await p
+    .locator(".inline-event-details")
+    .getByRole("button", { name: "Save event", exact: true })
+    .click();
+  await p.getByText("Event saved.", { exact: true }).waitFor();
+  await p.getByRole("button", { name: "Back", exact: true }).click();
+  const extra = p.locator('[data-event-section="additional-information"]');
+  await extra.waitFor();
+  assert.equal(await extra.locator("strong").innerText(), "Bring a jacket.");
+  assert.equal(
+    await extra
+      .getByRole("link", { name: "Email the host" })
+      .getAttribute("href"),
+    "mailto:host@example.test",
+  );
+  assert.equal(
+    await extra.evaluate((el) => el.nextElementSibling?.dataset.eventSection),
+    "menus",
+  );
+  const beforeInformation = await extra.innerHTML();
+  await layoutGuest.reload();
+  await layoutGuest
+    .locator("article.card")
+    .filter({
+      has: layoutGuest.getByRole("heading", {
+        name: "Dinner One",
+        exact: true,
+      }),
+    })
+    .getByRole("button", { name: "View Event", exact: true })
+    .click();
+  await layoutGuest
+    .locator('[data-event-section="additional-information"]')
+    .waitFor();
+  assert.equal(
+    await layoutGuest
+      .locator('[data-event-section="additional-information"]')
+      .innerHTML(),
+    beforeInformation,
+  );
+  await extra.locator("strong").dblclick();
+  await p
+    .getByRole("dialog")
+    .getByRole("textbox", { name: "Information text", exact: true })
+    .waitFor();
+  await click(p, "Cancel");
+  await click(p, "Settings");
+  await richInput.fill(" ");
+  await p
+    .locator(".inline-event-details")
+    .getByRole("button", { name: "Save event", exact: true })
+    .click();
+  await p.getByText("Event saved.", { exact: true }).waitFor();
+  await p.getByRole("button", { name: "Back", exact: true }).click();
+  assert.equal(await extra.count(), 0);
+  assert.equal(await p.locator('[data-event-section="menus"]').count(), 1);
   stage(
     "Back follows visited pages, including Contacts and cross-section workspace navigation",
   );
@@ -1731,7 +1905,11 @@ try {
   await click(p, "Home");
   const offered = async () => {
     assert.equal(
-      await p.locator("#top-navigation .browse-menu").count(),
+      await p
+        .locator(
+          '#top-navigation .browse-menu:has(summary[aria-label="Sorting and options"])',
+        )
+        .count(),
       0,
       "Pages with no unique options omit the three-dot menu",
     );
@@ -1757,7 +1935,8 @@ try {
       0,
     );
     const modeRow = p.locator(".page-appearance-settings");
-    assert.equal(await modeRow.locator("button svg").count(), 3);
+    assert.equal(await modeRow.locator("button svg").count(), 0);
+    assert.equal(await modeRow.locator(".browse-row-icon svg").count(), 3);
     assert.equal(
       await modeRow.evaluate(
         (el) =>

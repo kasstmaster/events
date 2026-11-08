@@ -1,3 +1,4 @@
+import { informationInput } from "../public/event-information.js";
 import {
   platformAdministrator,
   verifyPlatformLogin,
@@ -84,6 +85,7 @@ const files = new Map([
     "address-system.js",
     "browse-ui.js",
     "appearance-editor.js",
+    "event-information.js",
   ].map((file) => ["/" + file, [file, "text/javascript; charset=utf-8"]]),
 ]);
 const date = (value) => {
@@ -300,7 +302,16 @@ function eventInput(input, store, household, existing) {
     !["separate", "single"].includes(containerLayout)
   )
     fail(400, "Choose a supported event layout.");
+  let information;
+  try {
+    information = informationInput(
+      input.information ?? existing?.information ?? [],
+    );
+  } catch (problem) {
+    fail(400, problem.message);
+  }
   return {
+    information,
     informationLayout,
     containerLayout,
     title: text(input.title, 160, true),
