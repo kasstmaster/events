@@ -420,7 +420,7 @@ try {
     .getByLabel("Casey Example Jr.", { exact: true })
     .selectOption("yes");
   await guest.page
-    .getByLabel("Robin Example · child", { exact: true })
+    .getByLabel("Robin · child", { exact: true })
     .selectOption("yes");
   await guest.page
     .getByLabel("Custom items · one per line", { exact: true })

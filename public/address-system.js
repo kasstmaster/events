@@ -32,3 +32,25 @@ export function addressLines(parts) {
     .filter(Boolean)
     .join("\n");
 }
+
+// One household grouping/order for Address Book, RSVP selection and dashboards.
+export function householdGroups(guests, addresses = []) {
+  const groups = new Map();
+  for (const guest of guests) {
+    const key = guest.address || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(guest);
+  }
+  return [...groups]
+    .map(([key, people]) => ({
+      key,
+      address: addresses.find((a) => a.id === key),
+      label: addresses.find((a) => a.id === key)?.label || "No shared address",
+      people: people.toSorted(
+        (a, b) => Number(!!a.parent) - Number(!!b.parent),
+      ),
+    }))
+    .sort(
+      (a, b) => a.label.localeCompare(b.label) || a.key.localeCompare(b.key),
+    );
+}

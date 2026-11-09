@@ -843,7 +843,7 @@ try {
   const addressHeading = p.locator("[data-address-group]").filter({
     has: p.locator("[data-address-title]", { hasText: "Alpha address" }),
   });
-  assert.match(await addressHeading.textContent(), /Guest ID · \d{4}/);
+  assert.match(await addressHeading.textContent(), /Household ID · \d{4}/);
   assert.equal(
     await p.locator("[data-address-group] .address-guest-id").count(),
     2,
@@ -855,6 +855,7 @@ try {
   await card.getByRole("button", { name: "View Event", exact: true }).click();
   await footer(p, [
     "Home",
+    "Invite",
     "Print",
     "Family",
     "Contacts",

@@ -63,7 +63,7 @@ export function renderCard(card, context = {}, qr = "") {
             ? e.x - e.width
             : e.x;
       const clip = "field-" + card.elements.indexOf(e);
-      return `<g data-card-element="${card.elements.indexOf(e)}"><defs><clipPath id="${clip}"><rect x="${left}" y="${e.y}" width="${e.width}" height="${e.height}"/></clipPath></defs><text clip-path="url(#${clip})" x="${e.x}" y="${e.y + e.fontSize}" fill="${e.color}" font-family="${escapeCard(e.font)}" font-size="${e.fontSize}" font-weight="${e.bold ? "700" : "400"}" text-anchor="${e.align === "center" ? "middle" : e.align === "right" ? "end" : "start"}">${words.map((line, index) => `<tspan x="${e.x}" dy="${index ? "1.3em" : 0}">${escapeCard(line)}</tspan>`).join("")}</text></g>`;
+      return `<g data-card-element="${card.elements.indexOf(e)}"><defs><clipPath id="${clip}"><rect x="${left}" y="${e.y}" width="${e.width}" height="${e.height}"/></clipPath></defs><text xml:space="preserve" style="white-space:pre" clip-path="url(#${clip})" x="${e.x}" y="${e.y + e.fontSize}" fill="${e.color}" font-family="${escapeCard(e.font)}" font-size="${e.fontSize}" font-weight="${e.bold ? "700" : "400"}" text-anchor="${e.align === "center" ? "middle" : e.align === "right" ? "end" : "start"}">${words.map((line, index) => `<tspan x="${e.x}" dy="${index ? "1.3em" : 0}">${escapeCard(line)}</tspan>`).join("")}</text></g>`;
     })
     .join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${card.width}" height="${card.height}" viewBox="0 0 ${card.width} ${card.height}" role="img" aria-label="${escapeCard(card.name)}"><rect width="100%" height="100%" fill="${card.color}"/>${background}${fields}</svg>`;
@@ -127,26 +127,22 @@ export function newCard(name = "Untitled card") {
 export function cardTextLines(text, width, fontSize) {
   const limit = Math.max(1, Math.floor(width / (fontSize * 0.55))),
     lines = [];
-  for (const paragraph of text.split("\n")) {
-    let line = "";
-    for (let word of paragraph.split(/\s+/)) {
-      if (!word) continue;
-      const chars = [...word];
-      while (chars.length > limit) {
-        if (line) {
-          lines.push(line);
-          line = "";
-        }
-        lines.push(chars.splice(0, limit).join(""));
-      }
-      word = chars.join("");
-      if (line.length + word.length + 1 > limit && line) {
-        lines.push(line);
-        line = "";
-      }
-      line += (line ? " " : "") + word;
+  for (const paragraph of String(text).split("\n")) {
+    if (!paragraph) {
+      lines.push("");
+      continue;
     }
-    lines.push(line);
+    let remaining = [...paragraph];
+    while (remaining.length > limit) {
+      let at = remaining.lastIndexOf(" ", limit);
+      if (at <= 0 || !remaining.slice(0, at).join("").trim()) at = limit;
+      const line = remaining.slice(0, at).join("");
+      lines.push(line);
+      remaining = remaining.slice(
+        at + (remaining[at] === " " && line.trim() ? 1 : 0),
+      );
+    }
+    lines.push(remaining.join(""));
   }
   return lines;
 }

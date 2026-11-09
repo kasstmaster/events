@@ -470,7 +470,7 @@ test(
         .getByLabel("Casey Example", { exact: true })
         .selectOption("yes");
       await page
-        .getByLabel("Robin Example · child", { exact: true })
+        .getByLabel("Robin · child", { exact: true })
         .selectOption("yes");
       await page.getByLabel("Quantity for Juice").fill("0");
       await page
@@ -478,9 +478,7 @@ test(
         .getByRole("button", { name: "RSVP", exact: true })
         .click();
       await page.getByRole("dialog").waitFor({ state: "hidden" });
-      await page
-        .getByText("Robin Example: Attending", { exact: true })
-        .waitFor();
+      await page.getByText("Robin: Attending", { exact: true }).waitFor();
       assert.ok(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth + 1,

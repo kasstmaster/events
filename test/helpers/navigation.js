@@ -356,3 +356,18 @@ export async function clickNavigation(page, label) {
   }
   await button.click();
 }
+
+export async function selectEventGuest(page, name) {
+  await page
+    .getByRole("button", { name: "Invite guests", exact: true })
+    .click();
+  await page
+    .getByRole("checkbox", {
+      name: "Select " + name.replace(/ \(child\)$/, ""),
+      exact: true,
+    })
+    .check();
+  await page
+    .getByRole("button", { name: "Use selected guests", exact: true })
+    .click();
+}

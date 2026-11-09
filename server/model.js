@@ -26,14 +26,19 @@ export class Problem extends Error {
 export const fail = (status, message) => {
   throw new Problem(status, message);
 };
-export const text = (value, max = 200, required = false) => {
+export const text = (
+  value,
+  max = 200,
+  required = false,
+  preserveSpace = false,
+) => {
   if (
     typeof value !== "string" ||
     value.length > max ||
     (required && !value.trim())
   )
     fail(400, "Please check the supplied fields.");
-  return value.trim();
+  return preserveSpace ? value : value.trim();
 };
 export const email = (value) => {
   const result = text(value, 254, true).toLowerCase();
