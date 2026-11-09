@@ -1,3 +1,8 @@
+import { runEvites, processEviteStatus } from "./evites.js";
+import {
+  processAccountReply,
+  runAccountMessages,
+} from "./personal-accounts.js";
 import { sendText } from "./sms-provider.js";
 import { runRSVPNotifications, hasRSVPConsent } from "./rsvp-notifications.js";
 import { utcSchedule } from "../public/reminder-time.js";
@@ -90,6 +95,8 @@ export async function runReminders(
     !env.TWILIO_FROM
   )
     return;
+  await runEvites(store, env, { fetcher });
+  await runAccountMessages(store, env, { fetcher });
   await runRSVPNotifications(store, env, { fetcher, now });
   const households = store.all("SELECT household FROM users WHERE role='host'");
   for (const { household } of households) {
@@ -203,6 +210,8 @@ export function verifyTwilio(url, params, signature, token) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 export function processTwilio(store, params) {
+  processAccountReply(store, params);
+  processEviteStatus(store, params);
   const from = params.get("From"),
     message = (params.get("Body") || "").trim().toUpperCase();
   if (

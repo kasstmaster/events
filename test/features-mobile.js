@@ -88,8 +88,10 @@ const click = clickNavigation;
 const dialog = (page) => page.locator("#editor[open], form[data-form=guest]");
 async function login(page, email) {
   await page.goto(origin);
-  await page.getByLabel("Email address", { exact: true }).fill(email);
-  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByLabel("Name, email or username", { exact: true }).fill(email);
+  await page
+    .getByLabel("Password or Household ID", { exact: true })
+    .fill(password);
   await click(page, "Sign in");
 }
 try {
@@ -467,8 +469,9 @@ try {
     await h.page.getByLabel("Private event notes", { exact: true }).count(),
     0,
   );
-  await h.page.getByLabel("Casey Example", { exact: true }).check();
-  await h.page.getByLabel("Jordan Other", { exact: true }).check();
+  const { selectEventGuest } = await import("./helpers/navigation.js");
+  await selectEventGuest(h.page, "Casey Example");
+  await selectEventGuest(h.page, "Jordan Other");
   await dialog(h.page)
     .getByRole("button", { name: "Create event", exact: true })
     .click();

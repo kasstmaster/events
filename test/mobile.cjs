@@ -91,8 +91,12 @@ const { existsSync, mkdirSync } = require("node:fs");
   }
   async function login(page, email) {
     await page.goto(origin);
-    await page.getByLabel("Email address").fill(email);
-    await page.getByLabel("Password", { exact: true }).fill(password);
+    await page
+      .getByLabel("Name, email or username", { exact: true })
+      .fill(email);
+    await page
+      .getByLabel("Password or Household ID", { exact: true })
+      .fill(password);
     await click(page, "Sign in");
   }
   const dialog = (page) => page.locator("#editor[open], form[data-form=guest]");
@@ -167,10 +171,9 @@ const { existsSync, mkdirSync } = require("node:fs");
       .fill("Two O’Clock in the Afternoon");
     await alpha.page.getByLabel("RSVP deadline").fill("2028-06-01");
     await alpha.page.getByLabel("Event address").fill("The garden");
-    await alpha.page.getByLabel("Casey Example", { exact: true }).check();
-    await alpha.page
-      .getByLabel("Robin Example (child)", { exact: true })
-      .check();
+    const { selectEventGuest } = await import("./helpers/navigation.js");
+    await selectEventGuest(alpha.page, "Casey Example");
+    await selectEventGuest(alpha.page, "Robin");
     await click(alpha.page, "＋ Add item");
     await alpha.page.getByLabel("Item name").fill("Lemonade");
     await alpha.page.getByLabel("Menu", { exact: true }).selectOption("drink");
@@ -302,7 +305,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       .getByLabel("Casey Example", { exact: true })
       .selectOption("yes");
     await guest.page
-      .getByLabel("Robin Example · child", { exact: true })
+      .getByLabel("Robin · child", { exact: true })
       .selectOption("yes");
     await guest.page.getByLabel("Quantity for Lemonade").fill("2");
     await dialog(guest.page)

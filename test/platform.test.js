@@ -543,7 +543,7 @@ test("household and event styles are independent, versioned and shared across br
         method: "PUT",
         cookie: a.cookie,
         version: 1,
-        data: { name: "Renamed family", design },
+        data: { name: a.household.name, design },
       })
     ).status,
     200,
@@ -554,7 +554,7 @@ test("household and event styles are independent, versioned and shared across br
         method: "PUT",
         cookie: a.cookie,
         version: 1,
-        data: { name: "Stale", design: {} },
+        data: { name: a.household.name, design: {} },
       })
     ).status,
     409,
@@ -576,7 +576,7 @@ test("household and event styles are independent, versioned and shared across br
     })
   ).cookie;
   const view = (await f.request("/api/host", { cookie: secondDevice })).body;
-  assert.equal(view.household.name, "Renamed family");
+  assert.equal(view.household.name, a.household.name);
   assert.equal(view.household.design.background, "#abcdef");
   assert.equal(
     view.events.find((e) => e.id === first.id).design.background,
@@ -599,7 +599,7 @@ test("household and event styles are independent, versioned and shared across br
   );
   assert.equal(
     (await f.request("/api/public/households/" + a.household.slug)).body.name,
-    "Renamed family",
+    a.household.name,
   );
   assert.equal(
     (
@@ -607,7 +607,7 @@ test("household and event styles are independent, versioned and shared across br
         method: "PUT",
         cookie: a.cookie,
         version: 2,
-        data: { name: "No injection", design: { titleFont: "url(evil)" } },
+        data: { name: a.household.name, design: { titleFont: "url(evil)" } },
       })
     ).status,
     400,

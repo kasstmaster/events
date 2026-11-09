@@ -1,3 +1,4 @@
+import { mergeAnyListFields } from "./anylist-merge.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { fail, id, text, normalizeName } from "./model.js";
 import { addressInput } from "./addresses.js";
@@ -232,11 +233,19 @@ export function importAnyList(store, env, input, validateGuest) {
         skipped += source.people.length;
         continue;
       }
-      if (!address) address = store.put("address", id(), household, incoming);
+      const reconciledAddress = mergeAnyListFields(
+        address,
+        incoming,
+        mapping?.baseline,
+        ["label", "lines"],
+      );
+      const addressFields = addressInput(reconciledAddress.merged);
+      if (!address)
+        address = store.put("address", id(), household, addressFields);
       else if (
         mapping &&
         ["label", "lines", "street", "city", "state", "zip"].some(
-          (key) => address[key] !== incoming[key],
+          (key) => address[key] !== addressFields[key],
         )
       ) {
         address = store.put(
@@ -245,7 +254,7 @@ export function importAnyList(store, env, input, validateGuest) {
           household,
           {
             ...address,
-            ...incoming,
+            ...addressFields,
             notes: address.notes || "",
             phone: address.phone || "",
           },
@@ -253,8 +262,13 @@ export function importAnyList(store, env, input, validateGuest) {
         );
         updated++;
       }
-      if (!mapping)
-        store.put("anylist-link", mapId, household, { target: address.id });
+      store.put(
+        "anylist-link",
+        mapId,
+        household,
+        { target: address.id, baseline: reconciledAddress.baseline },
+        mapping?.version,
+      );
       const people = new Map(),
         seen = new Set();
       // Adults precede children so the designated-adult invariant stays explicit.
@@ -274,7 +288,7 @@ export function importAnyList(store, env, input, validateGuest) {
         let guest = link && store.get("guest", link.target, household);
         const fields = {
           first: text(person.first, 80, true),
-          last: text(person.last, 80, true),
+          last: text(person.last || "", 80, !person.parentId),
           suffix: text(person.suffix || "", 30),
           address: address.id,
           parent,
@@ -312,6 +326,12 @@ export function importAnyList(store, env, input, validateGuest) {
           skipped++;
           continue;
         }
+        const reconciled = mergeAnyListFields(guest, fields, link?.baseline, [
+          "first",
+          "last",
+          "suffix",
+        ]);
+        Object.assign(fields, reconciled.merged);
         if (!guest) {
           guest = store.put(
             "guest",
@@ -332,8 +352,13 @@ export function importAnyList(store, env, input, validateGuest) {
           );
           updated++;
         }
-        if (!link)
-          store.put("anylist-link", linkId, household, { target: guest.id });
+        store.put(
+          "anylist-link",
+          linkId,
+          household,
+          { target: guest.id, baseline: reconciled.baseline },
+          link?.version,
+        );
         people.set(external, guest.id);
       }
     }

@@ -26,14 +26,19 @@ export class Problem extends Error {
 export const fail = (status, message) => {
   throw new Problem(status, message);
 };
-export const text = (value, max = 200, required = false) => {
+export const text = (
+  value,
+  max = 200,
+  required = false,
+  preserveSpace = false,
+) => {
   if (
     typeof value !== "string" ||
     value.length > max ||
     (required && !value.trim())
   )
     fail(400, "Please check the supplied fields.");
-  return value.trim();
+  return preserveSpace ? value : value.trim();
 };
 export const email = (value) => {
   const result = text(value, 254, true).toLowerCase();
@@ -167,6 +172,7 @@ export class Store {
       CREATE UNIQUE INDEX IF NOT EXISTS guest_address_code ON records(json_extract(body,'$.code')) WHERE kind='guest-access-code';
       CREATE UNIQUE INDEX IF NOT EXISTS guest_code_hash ON records(json_extract(body,'$.codeHash')) WHERE kind='guest-identity';
       CREATE UNIQUE INDEX IF NOT EXISTS household_slugs ON records(json_extract(body,'$.slug')) WHERE kind='household';
+      CREATE UNIQUE INDEX IF NOT EXISTS private_account_username ON records(json_extract(body,'$.usernameHash')) WHERE kind='person-account' AND json_extract(body,'$.usernameHash') IS NOT NULL;
       CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user TEXT, household TEXT, guest TEXT, role TEXT NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS session_origins(token TEXT PRIMARY KEY, origin TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS gateway_nonces(nonce TEXT PRIMARY KEY, expires INTEGER NOT NULL);
@@ -345,7 +351,11 @@ export class Store {
       label,
       household,
     );
-    return !!claim && this.household(household)?.subdomain === label;
+    const record = this.household(household);
+    return (
+      !!claim &&
+      (record?.subdomain === label || record?.domainAliases?.includes(label))
+    );
   }
   routingJob(label) {
     return this.one("SELECT * FROM household_routing WHERE label=?", label);
@@ -452,10 +462,51 @@ export class Store {
       );
     return label;
   }
-  updateHousehold(household, input, version) {
+  renameHousehold(household, input, version) {
     return this.transaction(() => {
       const existing = this.household(household);
       if (!existing) fail(404, "Household not found.");
+      if (existing.version !== version)
+        fail(409, "Household changed. Refresh first.");
+      const name = text(input.name, 100, true);
+      const label = input.subdomain
+        ? normalizeLabel(input.subdomain)
+        : existing.subdomain;
+      if (input.subdomain && !label)
+        fail(400, "Choose a valid household web address.");
+      const aliases = new Set(existing.domainAliases || []);
+      if (label !== existing.subdomain) {
+        this.claimDomain(label, household);
+        if (existing.subdomain) aliases.add(existing.subdomain);
+        aliases.delete(label);
+        if (!this.routingJob(label))
+          this.run(
+            "INSERT INTO household_routing(label,household,id,probe) VALUES(?,?,?,?)",
+            label,
+            household,
+            id(),
+            randomBytes(32).toString("hex"),
+          );
+      }
+      return this.put(
+        "household",
+        household,
+        household,
+        { ...existing, name, subdomain: label, domainAliases: [...aliases] },
+        version,
+      );
+    });
+  }
+  updateHousehold(household, input, version, { administrator = false } = {}) {
+    return this.transaction(() => {
+      const existing = this.household(household);
+      if (!existing) fail(404, "Household not found.");
+      if (
+        !administrator &&
+        input.name !== undefined &&
+        input.name !== existing.name
+      )
+        fail(403, "Only the administrator can change household names.");
       if (
         input.subdomain !== undefined &&
         input.subdomain !== existing.subdomain
@@ -549,6 +600,9 @@ export class Store {
           notes: text(input.notes ?? existing.notes ?? "", 20000),
           ui: input.ui ?? existing.ui ?? {},
           ...(subdomain ? { subdomain } : {}),
+          ...(existing.domainAliases
+            ? { domainAliases: existing.domainAliases }
+            : {}),
         },
         version,
       );
@@ -560,7 +614,11 @@ export class Store {
       label,
     );
     const household = claim && this.household(claim.household);
-    if (!household || household.subdomain !== label)
+    if (
+      !household ||
+      (household.subdomain !== label &&
+        !household.domainAliases?.includes(label))
+    )
       fail(404, "This household address is unavailable.");
     return this.publicHousehold(household.slug);
   }
@@ -731,7 +789,7 @@ export class Store {
       "admin",
     );
   }
-  async register(input) {
+  async register(input, initialize = null) {
     const address = email(input.email),
       name = text(input.name, 100, true),
       password = await hashPassword(input.password);
@@ -781,8 +839,10 @@ export class Store {
         "host",
         household,
       );
+      const account = { user, household, role: "host" };
+      initialize?.(account);
       this.run("DELETE FROM approvals WHERE email=?", address);
-      return { user, household, role: "host" };
+      return account;
     });
   }
   totals(event, household) {

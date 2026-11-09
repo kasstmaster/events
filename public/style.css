@@ -3026,3 +3026,113 @@ body #app .top-shell #top-navigation .labeled-tool span {
   bottom: 0;
   transform: none;
 }
+
+/* Editing fields are always readable; saved content continues to use page formatting. */
+body
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not(
+        [type="range"]
+      ):not([type="file"]),
+    textarea,
+    select,
+    [contenteditable="true"],
+    [contenteditable="plaintext-only"]
+  ) {
+  background: #fff !important;
+  color: #111 !important;
+  caret-color: #111;
+}
+body :is(input, textarea)::placeholder {
+  color: #595959;
+  opacity: 1;
+}
+.rsvp-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--action-gap);
+  margin-bottom: 16px;
+}
+.rsvp-totals > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 0;
+}
+.rsvp-person {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--action-gap);
+  padding: 8px 0;
+}
+.rsvp-person > button {
+  margin-left: auto;
+}
+.rsvp-household {
+  list-style: none;
+}
+
+#appearance-toolbar .card-controls {
+  position: static;
+  display: block;
+  width: 100%;
+  max-height: 32dvh;
+  overflow: auto;
+  padding: 10px;
+  border: 0;
+  background: var(--toolbar-panel);
+}
+#appearance-toolbar .card-controls [hidden] {
+  display: none !important;
+}
+#appearance-toolbar .card-controls fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+#appearance-toolbar .card-controls label:not([hidden]) {
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 140px;
+  margin: 4px 8px;
+}
+.card-editor-page .card-workspace {
+  display: block;
+}
+.card-preview-page {
+  max-width: 760px;
+  margin: auto;
+}
+#card-preview-canvas svg {
+  width: 100%;
+  height: auto;
+}
+
+body #notice,
+body .connection,
+body .form-error {
+  background: transparent;
+  box-shadow: none;
+}
+body #notice {
+  color: var(--ink, #172c25);
+  backdrop-filter: none;
+  text-shadow: 0 0 2px var(--bg, #fff);
+}
+.personal-member-row {
+  display: grid;
+  gap: var(--action-gap);
+}
+
+/* Retain intentional indentation in saved event content. */
+[data-event-edit="title"],
+[data-event-edit="time"],
+.event-choice h2,
+.host-event-choice h2 {
+  white-space: pre-wrap;
+}
+
+body :is([contenteditable="true"], [contenteditable="plaintext-only"]) * {
+  color: inherit !important;
+}

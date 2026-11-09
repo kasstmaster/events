@@ -1,3 +1,16 @@
+import { eviteStatus, prepareEvites, eviteMedia } from "./evites.js";
+import { accessCandidates } from "./guest-access.js";
+import {
+  personalAPI,
+  accountProjection,
+  privateIdentity,
+  authenticateUsername,
+  registeredMethod,
+  autoAssociateContact,
+  initializeHostPersonal,
+  startRecovery,
+  savePersonalProfile,
+} from "./personal-accounts.js";
 import { informationInput } from "../public/event-information.js";
 import {
   platformAdministrator,
@@ -21,6 +34,8 @@ import {
   guestContact,
   authenticateGuest,
   invitationView,
+  invitationsForIdentity,
+  compareName,
   requestGuestLink,
   claimPermanentCode,
   guestBrandHousehold,
@@ -86,6 +101,7 @@ const files = new Map([
     "browse-ui.js",
     "appearance-editor.js",
     "event-information.js",
+    "personal-ui.js",
   ].map((file) => ["/" + file, [file, "text/javascript; charset=utf-8"]]),
 ]);
 const date = (value) => {
@@ -169,7 +185,7 @@ function guestInput(input, store, household, existing) {
       input.smsConsent === true
         ? new Date().toISOString()
         : existing?.consentRecorded || null,
-    last: text(input.last, 80, true),
+    last: text(input.last ?? (parent ? existing?.last || "" : ""), 80, !parent),
     suffix: text(input.suffix ?? "", 30),
     parent,
     address,
@@ -314,11 +330,11 @@ function eventInput(input, store, household, existing) {
     information,
     informationLayout,
     containerLayout,
-    title: text(input.title, 160, true),
-    description: text(input.description ?? "", 5000),
+    title: text(input.title, 160, true, true),
+    description: text(input.description ?? "", 5000, false, true),
     date: date(input.date),
-    time: text(input.time ?? "", 100),
-    address: text(input.address ?? "", 500),
+    time: text(input.time ?? "", 100, false, true),
+    address: text(input.address ?? "", 500, false, true),
     deadline: date(input.deadline),
     icon: image(input.icon),
     design: input.appearanceMode === "inherit" ? {} : nextDesign,
@@ -583,6 +599,173 @@ export function createHandler({
         return;
       }
       if (
+        await personalAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          body,
+          version,
+          json,
+          env,
+        })
+      )
+        return;
+      if (path === "/api/username-recovery" && method === "POST") {
+        authLimit("username-recovery", "phone");
+        json(res, startRecovery(store, env, (await body(req)).phone));
+        return;
+      }
+      if (path === "/api/sign-in" && method === "POST") {
+        const input = await body(req),
+          account = text(input.account, 200, true),
+          secret = text(input.secret, 256, true, true);
+        authLimit("sign-in", account.toLowerCase());
+        if (account.includes("@")) {
+          const user = store.one(
+            "SELECT * FROM users WHERE email=?",
+            account.toLowerCase(),
+          );
+          if (
+            !(await checkPassword(secret, user?.password)) ||
+            !user ||
+            store.one(
+              "SELECT disabled FROM family_members WHERE id=?",
+              user?.id || "",
+            )?.disabled ||
+            (selected && user.role !== "host") ||
+            (user.household &&
+              store.one(
+                "SELECT household FROM household_deletions WHERE household=?",
+                user.household,
+              ))
+          )
+            fail(401, "Unable to sign in with these details.");
+          if (selected && user.household !== selected.id) {
+            const identity = privateIdentity(store, {
+                ...user,
+                user: user.id,
+                role: "host",
+              }),
+              relation = invitationsForIdentity(store, identity).relations[0];
+            if (!relation) fail(401, "Unable to sign in with these details.");
+            cookie(
+              res,
+              newSession({
+                household: relation.household,
+                guest: relation.guest,
+                role: "guest",
+                identity,
+                entryHousehold: selected.id,
+              }),
+            );
+          } else {
+            verifyPlatformLogin(store, user);
+            cookie(
+              res,
+              newSession({
+                user: user.id,
+                household: user.household,
+                role: user.role,
+              }),
+            );
+          }
+        } else {
+          if (selected && !/^\d{4}$/.test(secret)) {
+            const member = store.one(
+              "SELECT * FROM family_members WHERE household=? AND login=?",
+              selected.id,
+              account.toLowerCase(),
+            );
+            const primary =
+              member &&
+              store.one("SELECT password FROM users WHERE id=?", member.id);
+            if (
+              !member ||
+              member.disabled ||
+              !(await checkPassword(
+                secret,
+                primary?.password || member.password,
+              ))
+            )
+              fail(401, "Unable to sign in with these details.");
+            cookie(
+              res,
+              newSession({
+                user: member.id,
+                household: selected.id,
+                role: "family",
+              }),
+            );
+            json(res, { ok: true });
+            return;
+          }
+          let proof = authenticateUsername(store, account, secret);
+          if (!proof) {
+            const candidates = accessCandidates(store, secret).filter(
+              (r) =>
+                !r.record.parent &&
+                compareName([r.record.first, r.record.last].join(" ")) ===
+                  compareName(account),
+            );
+            const ids = new Set(
+              candidates.map(
+                (r) => identityFor(store, r.record, r.household).id,
+              ),
+            );
+            const qualified =
+              ids.size > 1
+                ? candidates.filter(
+                    (r) =>
+                      compareName(r.record.suffix) ===
+                      compareName(input.suffix || ""),
+                  )
+                : candidates;
+            const unique = new Set(
+              qualified.map(
+                (r) => identityFor(store, r.record, r.household).id,
+              ),
+            );
+            if (unique.size === 1) {
+              const relation = qualified[0],
+                identity = identityFor(
+                  store,
+                  relation.record,
+                  relation.household,
+                ),
+                method = registeredMethod(store, identity.id);
+              if (method)
+                fail(
+                  401,
+                  method === "email"
+                    ? "Use your registered email and password."
+                    : "Use your registered username and Household ID.",
+                );
+              proof = { identity, relation };
+            }
+            if (!proof && ids.size > 1 && !input.suffix) {
+              json(res, { suffixRequired: true });
+              return;
+            }
+          }
+          if (!proof) fail(401, "Unable to sign in with these details.");
+          cookie(
+            res,
+            newSession({
+              household: proof.relation.household,
+              guest: proof.relation.guest,
+              role: "guest",
+              identity: proof.identity.id,
+              entryHousehold: selected?.id || proof.relation.household,
+            }),
+          );
+        }
+        json(res, { ok: true });
+        return;
+      }
+      if (
         await identityAPI({
           path,
           method,
@@ -703,7 +886,9 @@ export function createHandler({
         if (selected) fail(403, "Create host accounts on the main platform.");
         const input = await body(req);
         authLimit("register", String(input.email).toLowerCase());
-        const account = await store.register(input);
+        const account = await store.register(input, (account) =>
+          initializeHostPersonal(store, account, input),
+        );
         cookie(res, store.newSession(account, origin));
         json(res, { ok: true }, 201);
         return;
@@ -762,6 +947,20 @@ export function createHandler({
               }
             : null,
         });
+        return;
+      }
+      const mediaMatch = path.match(
+        /^\/api\/public\/evite-media\/([a-zA-Z0-9_-]{43})$/,
+      );
+      if (mediaMatch && method === "GET") {
+        const image = eviteMedia(store, mediaMatch[1]),
+          [head, data] = image.split(",");
+        res.writeHead(200, {
+          "Content-Type": head.slice(5).split(";")[0],
+          "Cache-Control": "private, max-age=3600",
+          "X-Content-Type-Options": "nosniff",
+        });
+        res.end(Buffer.from(data, "base64"));
         return;
       }
       if (path === "/api/subdomains" && method === "GET") {
@@ -860,6 +1059,26 @@ export function createHandler({
           );
           return;
         }
+        const rename = path.match(
+          /^\/api\/admin\/households\/([a-zA-Z0-9-]+)\/identity$/,
+        );
+        if (rename && method === "PUT") {
+          const input = await body(req);
+          store.limit("household-rename:" + session.user, 10);
+          const actor = store.one(
+            "SELECT password FROM users WHERE id=?",
+            session.user,
+          );
+          if (!(await checkPassword(input.password, actor?.password)))
+            fail(403, "Confirm your current password.");
+          json(
+            res,
+            presentHousehold(
+              store.renameHousehold(rename[1], input, version(req)),
+            ),
+          );
+          return;
+        }
         if (path === "/api/admin" && method === "GET") {
           json(res, {
             approvals: store.all("SELECT email,created FROM approvals"),
@@ -871,6 +1090,9 @@ export function createHandler({
               .all("SELECT id,email,household FROM users WHERE role='host'")
               .map((host) => ({
                 ...host,
+                householdName: store.household(host.household)?.name,
+                subdomain: store.household(host.household)?.subdomain,
+                householdVersion: store.household(host.household)?.version,
                 logoRequested:
                   store.household(host.household)?.logoRequested === true,
                 platformAdmin: platformAdministrator(store, {
@@ -915,9 +1137,51 @@ export function createHandler({
       if (path.startsWith("/api/host")) {
         requireRole("host");
         const household = session.household;
+        const eviteMatch = path.match(
+          /^\/api\/host\/events\/([a-zA-Z0-9-]+)\/evites$/,
+        );
+        if (eviteMatch) {
+          const event = store.get("event", eviteMatch[1], household);
+          if (!event) fail(404, "Event not found.");
+          if (method === "GET") {
+            json(res, eviteStatus(store, household, event, env));
+            return;
+          }
+          if (method === "POST") {
+            const input = await body(req);
+            input.version = version(req);
+            json(
+              res,
+              prepareEvites(
+                store,
+                env,
+                household,
+                event,
+                input,
+                canonicalOrigin,
+              ),
+            );
+            return;
+          }
+        }
         if (path === "/api/host" && method === "GET") {
           json(res, {
             household: presentHousehold(store.household(household)),
+            personal:
+              session.role === "host"
+                ? accountProjection(store, session)
+                : null,
+            receivedEvents:
+              session.role === "host"
+                ? invitationsForIdentity(
+                    store,
+                    privateIdentity(store, session),
+                  ).events.filter(
+                    (e) =>
+                      e.invitingHousehold?.slug !==
+                      store.household(household).slug,
+                  )
+                : [],
             guests: store
               .list("guest", household)
               .map((g) => guestContact(store, g, household)),
@@ -957,17 +1221,27 @@ export function createHandler({
           json(
             res,
             presentHousehold(
-              store.updateHousehold(
-                household,
-                {
-                  ...input,
-                  ui:
-                    input.ui === undefined
-                      ? store.household(household)?.ui || {}
-                      : hostUI(input.ui, store.household(household)?.ui),
-                },
-                version(req),
-              ),
+              store.transaction(() => {
+                const saved = store.updateHousehold(
+                  household,
+                  {
+                    ...input,
+                    ui:
+                      input.ui === undefined
+                        ? store.household(household)?.ui || {}
+                        : hostUI(input.ui, store.household(household)?.ui),
+                  },
+                  version(req),
+                );
+                if (input.personal)
+                  savePersonalProfile(
+                    store,
+                    session,
+                    input.personal,
+                    input.personalVersion,
+                  );
+                return saved;
+              }),
             ),
           );
           return;
@@ -1100,6 +1374,8 @@ export function createHandler({
                 identityFor(store, saved, household);
                 if (input.matchTicket)
                   requestGuestLink(store, household, saved, input.matchTicket);
+                const contact = guestContact(store, saved, household, existing);
+                autoAssociateContact(store, saved, household);
                 return guestContact(store, saved, household, existing);
               }
               return saved;
@@ -1179,6 +1455,7 @@ export function createHandler({
               suffix: guest.suffix,
             },
             events: view.events,
+            personal: accountProjection(store, session),
             defaults: effectiveUI(store).design,
             ui: effectiveUI(store, store.household(entry)),
           });

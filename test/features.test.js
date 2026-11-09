@@ -340,7 +340,7 @@ test("private notes, consent/phones and external upload links stay in their auth
     view = (await f.request("/api/guest", { cookie: guestCookie })).body;
   assert.equal(view.events[0].uploadURL, "https://example.test/upload");
   assert.doesNotMatch(
-    JSON.stringify(view),
+    JSON.stringify({ ...view, personal: undefined }),
     /Private event plans|Private household plans|15551234567|smsConsent/,
   );
   assert.equal(

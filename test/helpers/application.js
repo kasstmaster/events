@@ -131,6 +131,7 @@ export async function application(t, env = {}) {
     return r.body;
   };
   return {
+    url: "http://127.0.0.1:" + server.address().port,
     store,
     request,
     admin,

@@ -21,7 +21,7 @@ export function uiConfig(input = {}) {
       ["__proto__", "constructor", "prototype"].includes(key)
     )
       fail(400, "Invalid wording key.");
-    copy[key] = text(value, 3000, true);
+    copy[key] = text(value, 3000, true, true);
   }
   if (Object.keys(copy).length > 1000) fail(400, "Too many wording overrides.");
   const savedLayouts = {};
@@ -124,8 +124,8 @@ export function cardInput(input) {
     return {
       id: key,
       field: e.field,
-      text: text(e.text ?? "", 3000),
-      fallback: text(e.fallback ?? "", 500),
+      text: text(e.text ?? "", 3000, false, true),
+      fallback: text(e.fallback ?? "", 500, false, true),
       x: e.x,
       y: e.y,
       width: e.width,
