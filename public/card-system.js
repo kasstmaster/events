@@ -132,14 +132,17 @@ export function cardTextLines(text, width, fontSize) {
       lines.push("");
       continue;
     }
-    let remaining = paragraph;
+    let remaining = [...paragraph];
     while (remaining.length > limit) {
       let at = remaining.lastIndexOf(" ", limit);
-      if (at <= 0 || !remaining.slice(0, at).trim()) at = limit;
-      lines.push(remaining.slice(0, at));
-      remaining = remaining.slice(at + (remaining[at] === " " ? 1 : 0));
+      if (at <= 0 || !remaining.slice(0, at).join("").trim()) at = limit;
+      const line = remaining.slice(0, at).join("");
+      lines.push(line);
+      remaining = remaining.slice(
+        at + (remaining[at] === " " && line.trim() ? 1 : 0),
+      );
     }
-    lines.push(remaining);
+    lines.push(remaining.join(""));
   }
   return lines;
 }

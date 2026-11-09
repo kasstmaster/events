@@ -40,6 +40,8 @@ jobs:
       - name: Fixed toolbar and inline appearance browser checks
         timeout-minutes: 3
         run: node test/toolbar-mobile.js
+      - name: Household RSVP and event invitation selection on phones and desktop
+        run: node test/household-ui-mobile.js
       - name: Cloudflare runtime checks
         if: ${{ !cancelled() }}
         run: npm run test:cloudflare

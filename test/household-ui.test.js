@@ -1,3 +1,4 @@
+import { cardTextLines, newCard, renderCard } from "../public/card-system.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { householdGroups } from "../public/address-system.js";
@@ -64,4 +65,27 @@ test("child surnames can be omitted and legacy surnames survive unrelated edits;
   });
   assert.equal(dashboard.status, 200);
   assert.equal(dashboard.body.guests.length, 2);
+});
+
+test("card text keeps indentation and wraps Unicode without splitting characters", () => {
+  assert.deepEqual(cardTextLines("   Text is here", 1000, 20), [
+    "   Text is here",
+  ]);
+  const text = "🌻🎉🌻🎉🌻";
+  const lines = cardTextLines(text, 23, 20);
+  assert.equal(lines.join(""), text);
+  assert.ok(lines.every((line) => [...line].length <= 2));
+  const card = newCard("Indentation");
+  card.elements = [
+    {
+      ...card.elements[0],
+      field: "text",
+      text: "   Text is here",
+      width: 800,
+      fontSize: 20,
+    },
+  ];
+  const svg = renderCard(card);
+  assert.match(svg, /xml:space="preserve"/);
+  assert.match(svg, /   Text is here/);
 });

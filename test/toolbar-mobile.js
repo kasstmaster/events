@@ -855,6 +855,7 @@ try {
   await card.getByRole("button", { name: "View Event", exact: true }).click();
   await footer(p, [
     "Home",
+    "Invite",
     "Print",
     "Family",
     "Contacts",

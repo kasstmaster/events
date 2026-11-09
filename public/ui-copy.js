@@ -290,6 +290,7 @@ export const copyCatalog = [
   "Disable sign-in and revoke sessions",
   "Discard unsaved appearance changes?",
   "Discard unsaved details changes?",
+  "Discard unsaved event changes?",
   "Discard unsaved guest changes?",
   "Discard unsaved layout changes?",
   "Document",

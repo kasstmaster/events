@@ -339,7 +339,9 @@ const { existsSync, mkdirSync } = require("node:fs");
     await click(alpha.page, "View Event");
     await click(alpha.page, "RSVPs");
     await dialog(alpha.page)
-      .getByText("2 attending", { exact: true })
+      .locator(".rsvp-totals > div")
+      .filter({ has: alpha.page.getByText("Attending", { exact: true }) })
+      .getByText("1 Adults & 1 Children", { exact: true })
       .waitFor();
     await dialog(alpha.page)
       .getByText("2 / 3 · 1 remaining", { exact: true })
@@ -356,8 +358,8 @@ const { existsSync, mkdirSync } = require("node:fs");
       .first()
       .click();
     await alpha.page
-      .locator(".inline-event-details")
-      .getByRole("button", { name: "Save event", exact: true })
+      .locator("#top-navigation")
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     await alpha.page.getByText("Event saved.", { exact: true }).waitFor();
     await click(alpha.page, "Back");
@@ -379,8 +381,8 @@ const { existsSync, mkdirSync } = require("node:fs");
       .first()
       .click();
     await alpha.page
-      .locator(".inline-event-details")
-      .getByRole("button", { name: "Save event", exact: true })
+      .locator("#top-navigation")
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     await alpha.page.getByText("Event saved.", { exact: true }).waitFor();
     await click(alpha.page, "Back");

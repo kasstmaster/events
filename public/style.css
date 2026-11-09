@@ -3049,7 +3049,7 @@ body :is(input, textarea)::placeholder {
 .rsvp-totals {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--action-gap);
+  gap: var(--action-gap, 8px);
   margin-bottom: 16px;
 }
 .rsvp-totals > div {
@@ -3063,7 +3063,7 @@ body :is(input, textarea)::placeholder {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--action-gap);
+  gap: var(--action-gap, 8px);
   padding: 8px 0;
 }
 .rsvp-person > button {
@@ -3135,4 +3135,13 @@ body #notice {
 
 body :is([contenteditable="true"], [contenteditable="plaintext-only"]) * {
   color: inherit !important;
+}
+
+.rsvp-person small {
+  display: block;
+}
+@media (max-width: 600px) {
+  .rsvp-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

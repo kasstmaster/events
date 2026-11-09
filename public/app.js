@@ -1026,7 +1026,7 @@ function render(target = $("#app"), example = false) {
     }
     target
       .querySelectorAll(
-        ".inline-event-details > button,.inline-household-details > button",
+        '.inline-event-details > button:not([type="button"]),.inline-household-details > button:not([type="button"])',
       )
       .forEach((button) => button.remove());
     target
@@ -2051,6 +2051,26 @@ document.addEventListener("click", async (event) => {
   loadGeneration++;
   target.closest('[role="menu"]')?.closest("details")?.removeAttribute("open");
   try {
+    if (state.eventInviteDraft && action === "page-back") {
+      restoreEventInviteDraft(false);
+      return;
+    }
+    if (
+      state.eventInviteDraft &&
+      [
+        "home",
+        "settings",
+        "family-workspace",
+        "addresses",
+        "open-event",
+        "logout",
+        "new-event",
+      ].includes(action)
+    ) {
+      if (!confirm(String(C("Discard unsaved event changes?")))) return;
+      state.eventInviteDraft = null;
+      resetContactInvites();
+    }
     if (!leaveEventLayout(target)) return;
     if (await appearance.action(action, target)) return;
     if (

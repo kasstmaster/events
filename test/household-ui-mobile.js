@@ -1,3 +1,5 @@
+import { mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 // Synthetic loopback fixtures only; no provider calls or live accounts.
 import assert from "node:assert/strict";
 import { once } from "node:events";
@@ -22,7 +24,11 @@ const server = createApp({ store, origin });
 server.listen(3194, "127.0.0.1");
 await once(server, "listening");
 const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium",
+  executablePath:
+    process.env.CHROMIUM_PATH ||
+    (existsSync("/usr/bin/chromium")
+      ? "/usr/bin/chromium"
+      : chromium.executablePath()),
   args: ["--no-sandbox"],
 });
 async function api(path, data, cookie, method = "POST") {
@@ -42,6 +48,7 @@ async function api(path, data, cookie, method = "POST") {
   };
 }
 try {
+  await mkdir("test-results", { recursive: true });
   const login = await api("/api/login", {
     email: "host@example.test",
     password,
@@ -141,6 +148,10 @@ try {
       await page.locator(".rsvp-person button").first().innerText(),
       "RSVP",
     );
+    await page.screenshot({
+      path: `test-results/household-rsvp-${width}.png`,
+      fullPage: true,
+    });
     await page.locator('#editor [data-action="close"]').click();
     await page.getByRole("button", { name: "View Event", exact: true }).click();
     await page.locator('.toolbar [data-action="settings"]').click();
@@ -160,10 +171,30 @@ try {
     await page
       .getByRole("button", { name: "Invite guests", exact: true })
       .click();
+    await page.getByRole("button", { name: "Back", exact: true }).click();
+    assert.equal(
+      await page.getByLabel("Event title", { exact: true }).inputValue(),
+      "   Text is here",
+    );
+    await page
+      .getByRole("button", { name: "Invite guests", exact: true })
+      .click();
+    page.once("dialog", (dialog) => dialog.dismiss());
+    await page.locator('.toolbar [data-action="home"]').click();
+    assert.equal(
+      await page.locator('[data-action="event-invite-apply"]').count(),
+      1,
+    );
     await page.locator('[data-action="event-invite-apply"]').click();
     assert.equal(
       await page.getByLabel("Event title", { exact: true }).inputValue(),
       "   Text is here",
+    );
+    assert.equal(
+      await page
+        .getByRole("button", { name: "Delete event", exact: true })
+        .isVisible(),
+      true,
     );
     assert.deepEqual(errors, []);
     await context.close();

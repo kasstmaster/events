@@ -746,7 +746,7 @@ try {
     { ...syncJob, state: "complete", updated: 1 },
     syncJob.version,
   );
-  await p.getByText(/Adult guest.*15551230000/).waitFor();
+  await p.getByText(/15551230000/).waitFor();
   await p.getByText("Contacts synced.", { exact: true }).waitFor();
   assert.equal(
     await p
@@ -823,7 +823,7 @@ try {
     rowKinds.slice(rowKinds.indexOf("child")).every((kind) => kind === "child"),
   );
   const childIcon = await p
-    .getByRole("button", { name: "Riley New", exact: true })
+    .getByRole("button", { name: "Riley", exact: true })
     .locator("xpath=ancestor::li[1]")
     .locator(".browse-row-icon path")
     .getAttribute("d");
@@ -862,7 +862,7 @@ try {
   assert.ok(
     await p.getByRole("button", { name: "Invite", exact: true }).isDisabled(),
   );
-  await p.getByLabel("Select Riley New", { exact: true }).check();
+  await p.getByLabel("Select Riley", { exact: true }).check();
   assert.equal(
     await p.getByLabel("Select Jordan New", { exact: true }).isChecked(),
     false,
@@ -888,7 +888,7 @@ try {
     inviteAdult.id,
   );
   assert.equal(
-    await p.getByLabel("Select Riley New", { exact: true }).isChecked(),
+    await p.getByLabel("Select Riley", { exact: true }).isChecked(),
     true,
   );
   await click(p, "Invite");
@@ -946,13 +946,13 @@ try {
   await click(p, "Select Contacts");
   await p.getByLabel("Select Jordan New", { exact: true }).check();
   assert.equal(
-    await p.getByLabel("Select Riley New", { exact: true }).isChecked(),
+    await p.getByLabel("Select Riley", { exact: true }).isChecked(),
     false,
   );
   await click(p, "Uninvite");
   await p.locator(".contacts-event-picker").waitFor();
   assert.equal(
-    await p.getByLabel("Select Riley New", { exact: true }).isChecked(),
+    await p.getByLabel("Select Riley", { exact: true }).isChecked(),
     true,
   );
   const beforeUninvite = store.get("event", e2.id, host.household);
@@ -1178,6 +1178,7 @@ try {
   await second.getByRole("button", { name: "View Event", exact: true }).click();
   await footer(p, [
     "Home",
+    "Invite",
     "Print",
     "Family",
     "Contacts",
@@ -1353,8 +1354,7 @@ try {
       ].map((el) => el.querySelector("legend")?.textContent);
       return (
         sections.indexOf("Potluck & drinks") >= 0 &&
-        sections.indexOf("Potluck & drinks") <
-          sections.indexOf("Who’s invited?")
+        sections.indexOf("Potluck & drinks") < sections.indexOf("Guests")
       );
     }),
     "Potluck and drinks precede the invited-guest selector",
@@ -1520,7 +1520,7 @@ try {
     .getByRole("dialog")
     .getByText("Private household detail", { exact: true })
     .waitFor();
-  await p.getByRole("button", { name: "Record RSVP", exact: true }).click();
+  await p.getByRole("button", { name: "RSVP", exact: true }).click();
   await p
     .getByRole("heading", { name: "Record guest RSVP", exact: true })
     .waitFor();
@@ -1561,8 +1561,9 @@ try {
   await eventSettings
     .getByLabel("Description", { exact: true })
     .fill("Inline event Settings description");
-  await eventSettings
-    .getByRole("button", { name: "Save event", exact: true })
+  await p
+    .locator("#top-navigation")
+    .getByRole("button", { name: "Save", exact: true })
     .click();
   await p.getByText("Event saved.", { exact: true }).waitFor();
   await p.waitForFunction(
@@ -1800,8 +1801,8 @@ try {
     .getByRole("button", { name: "Apply link", exact: true })
     .click();
   await p
-    .locator(".inline-event-details")
-    .getByRole("button", { name: "Save event", exact: true })
+    .locator("#top-navigation")
+    .getByRole("button", { name: "Save", exact: true })
     .click();
   await p.getByText("Event saved.", { exact: true }).waitFor();
   await p.waitForFunction(
@@ -1853,8 +1854,8 @@ try {
   await click(p, "Settings");
   await richInput.fill(" ");
   await p
-    .locator(".inline-event-details")
-    .getByRole("button", { name: "Save event", exact: true })
+    .locator("#top-navigation")
+    .getByRole("button", { name: "Save", exact: true })
     .click();
   await p.getByText("Event saved.", { exact: true }).waitFor();
   await p.waitForFunction(
@@ -1987,10 +1988,10 @@ try {
         .locator(".inline-household-details")
         .evaluate(
           (form) =>
-            form.getBoundingClientRect().top >
+            form.getBoundingClientRect().bottom <
             document
               .querySelector('[data-action="logout"]')
-              .getBoundingClientRect().bottom,
+              .getBoundingClientRect().top,
         ),
     );
     await p.getByRole("button", { name: "Back", exact: true }).click();
@@ -2042,7 +2043,7 @@ try {
   await p.waitForTimeout(3500);
   await click(p, "Settings");
   await p
-    .locator(".inline-household-details")
+    .locator("#top-navigation")
     .getByRole("button", { name: "Save", exact: true })
     .click();
   await p.getByText("Details saved.", { exact: true }).waitFor();
