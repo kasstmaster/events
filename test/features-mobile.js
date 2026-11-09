@@ -467,8 +467,9 @@ try {
     await h.page.getByLabel("Private event notes", { exact: true }).count(),
     0,
   );
-  await h.page.getByLabel("Casey Example", { exact: true }).check();
-  await h.page.getByLabel("Jordan Other", { exact: true }).check();
+  const { selectEventGuest } = await import("./helpers/navigation.js");
+  await selectEventGuest(h.page, "Casey Example");
+  await selectEventGuest(h.page, "Jordan Other");
   await dialog(h.page)
     .getByRole("button", { name: "Create event", exact: true })
     .click();

@@ -60,7 +60,9 @@ export function featureTools(ctx) {
       ? []
       : state.data.guests.map((g) => [
           g.id,
-          [g.first, g.last, g.suffix].filter(Boolean).join(" "),
+          [g.first, ...(g.parent ? [] : [g.last, g.suffix])]
+            .filter(Boolean)
+            .join(" "),
         ]);
   async function uiEditor(scope = "global", key = "") {
     if (role() !== "admin" || scope !== "global")
@@ -624,11 +626,14 @@ export function featureTools(ctx) {
         event: event || {},
         recipient: recipient
           ? {
-              name: [recipient.first, recipient.last, recipient.suffix]
+              name: [
+                recipient.first,
+                ...(recipient.parent ? [] : [recipient.last, recipient.suffix]),
+              ]
                 .filter(Boolean)
                 .join(" "),
               first: recipient.first,
-              last: recipient.last,
+              last: recipient.parent ? "" : recipient.last,
               address: address?.lines || "",
               ...(editingCard.elements.some(
                 (e) => e.field === "recipient.inviteCode",
