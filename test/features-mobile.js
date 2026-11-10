@@ -3,7 +3,7 @@ import { clickNavigation } from "./helpers/navigation.js";
 // Isolated synthetic records, no production or messaging requests.
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { chromium } from "playwright";
 import { existsSync } from "node:fs";
 import { Store } from "../server/node-store.js";
@@ -217,11 +217,13 @@ try {
       assert.equal(await example.getByRole("radio").count(), 4);
     }
     if (view === "login") {
-      await example.getByLabel("Invite Code", { exact: true }).waitFor();
-      assert.equal(await example.locator("#guest-suffix").isVisible(), false);
+      await example
+        .getByLabel("Password or Household ID", { exact: true })
+        .waitFor();
+      assert.equal(await example.locator("#unified-suffix").isVisible(), false);
     }
     if (view === "guestLoginSuffix")
-      assert.equal(await example.locator("#guest-suffix").isVisible(), true);
+      assert.equal(await example.locator("#unified-suffix").isVisible(), true);
     if (view === "familyKidList")
       assert.equal(
         await example
@@ -535,201 +537,9 @@ try {
     .getByRole("button", { name: "Save", exact: true })
     .click();
   await dialog(h.page).waitFor({ state: "hidden" });
-  stage("card editor and SVG/PNG downloads");
-  await click(h.page, "Cards");
-  await click(h.page, "Create card / template");
-  await dialog(h.page).waitFor({ state: "hidden" });
-  assert.equal(await dialog(h.page).isVisible(), false);
-  await click(h.page, "Tools");
-  await h.page
-    .getByLabel("Card name", { exact: true })
-    .fill("Thank you, friends");
-  await h.page
-    .getByLabel("Card type", { exact: true })
-    .selectOption("thank-you");
-  await h.page
-    .getByLabel("Recipient", { exact: true })
-    .selectOption({ label: "Casey Example" });
-  await h.page.getByLabel("Selected item", { exact: true }).selectOption("2");
-  await h.page.getByLabel("QR color", { exact: true }).fill("#1a5b7c");
-  await h.page
-    .getByLabel("Card background color", { exact: true })
-    .fill("#e6d5c4");
-  await h.page.getByLabel("Transparent QR background", { exact: true }).check();
-  assert.equal(
-    await h.page.locator("#card-canvas [data-qr-background]").count(),
-    0,
-  );
-  assert.equal(
-    await h.page.locator("#card-canvas [data-qr-modules]").getAttribute("fill"),
-    "#1a5b7c",
-  );
-  const qrPixels = async () =>
-    h.page.evaluate(async () => {
-      const svg = document.querySelector("#card-canvas > svg").cloneNode(true);
-      svg
-        .querySelectorAll(".card-selection,[data-card-resize],.card-snap-guide")
-        .forEach((e) => e.remove());
-      const qr = svg.querySelector("[data-card-element='2']");
-      const x = Number(qr.getAttribute("x")),
-        y = Number(qr.getAttribute("y")),
-        w = Number(qr.getAttribute("width")),
-        h = Number(qr.getAttribute("height"));
-      const image = new Image();
-      image.src =
-        "data:image/svg+xml;base64," +
-        btoa(new XMLSerializer().serializeToString(svg));
-      await image.decode();
-      const canvas = document.createElement("canvas");
-      canvas.width = Number(svg.getAttribute("width"));
-      canvas.height = Number(svg.getAttribute("height"));
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(image, 0, 0);
-      const pixels = ctx.getImageData(x, y, w, h).data;
-      let colored = 0;
-      for (let i = 0; i < pixels.length; i += 4)
-        if (pixels[i] === 26 && pixels[i + 1] === 91 && pixels[i + 2] === 124)
-          colored++;
-      return {
-        corner: [...ctx.getImageData(x + 1, y + 1, 1, 1).data],
-        colored,
-      };
-    });
-  const transparent = await qrPixels();
-  assert.deepEqual(transparent.corner, [230, 213, 196, 255]);
-  assert.ok(
-    transparent.colored > 100,
-    "PNG rendering must retain colored QR modules",
-  );
-  await h.page
-    .getByLabel("Transparent QR background", { exact: true })
-    .uncheck();
-  assert.deepEqual((await qrPixels()).corner, [255, 255, 255, 255]);
-  await h.page.getByLabel("Transparent QR background", { exact: true }).check();
-  await click(h.page, "Add text above QR");
-  await h.page
-    .locator("#card-fields fieldset:not([hidden]) [name=fieldText]")
-    .fill("Scan here for invitations");
-  assert.ok(
-    await h.page
-      .locator("#card-canvas")
-      .innerHTML()
-      .then((s) => s.includes("Scan here")),
-  );
-  await h.page.getByLabel("Include QR code", { exact: true }).uncheck();
-  await h.page.screenshot({
-    path: "test-results/features-card-mobile.png",
-    fullPage: true,
-  });
-  const canvas = h.page.locator("#card-canvas");
-  assert.doesNotMatch(await canvas.innerHTML(), /data:image\/svg\+xml/);
-  stage("full-page variable palette, selected formatting and snapping");
-  await h.page.setViewportSize({ width: 1440, height: 950 });
-  const svgBox = await canvas.locator("svg").boundingBox();
-  await h.page
-    .locator('[data-card-variable="recipient.inviteCode"]')
-    .dragTo(canvas, {
-      targetPosition: { x: svgBox.width / 2, y: svgBox.height / 2 },
-    });
-  const selected = h.page.locator("#card-fields fieldset:not([hidden])");
-  await selected.getByLabel("Text size", { exact: true }).fill("30");
-  await selected.getByLabel("Text color", { exact: true }).fill("#772233");
-  await selected.getByLabel("Box width", { exact: true }).fill("240");
-  await selected.getByLabel("Horizontal position", { exact: true }).fill("300");
-  await selected.getByLabel("Vertical position", { exact: true }).fill("350");
-  const box = await canvas.locator("svg").boundingBox(),
-    scale = box.width / 600;
-  await h.page.mouse.move(box.x + 300 * scale, box.y + 370 * scale);
-  await h.page.mouse.down();
-  await h.page.mouse.move(box.x + 123 * scale, box.y + 370 * scale, {
-    steps: 8,
-  });
-  await h.page.mouse.up();
-  assert.equal(
-    Number(
-      await selected
-        .getByLabel("Horizontal position", { exact: true })
-        .inputValue(),
-    ),
-    120,
-  );
-  const resize = await canvas.locator("[data-card-resize]").boundingBox();
-  await h.page.mouse.move(
-    resize.x + resize.width / 2,
-    resize.y + resize.height / 2,
-  );
-  await h.page.mouse.down();
-  await h.page.mouse.move(
-    resize.x + resize.width / 2 + 20,
-    resize.y + resize.height / 2 + 10,
-    { steps: 4 },
-  );
-  await h.page.mouse.up();
-  assert.ok(
-    Number(
-      await selected.getByLabel("Box width", { exact: true }).inputValue(),
-    ) > 240,
-  );
-  const recipientCode = store.get(
-    "guest-access-code",
-    store.one(
-      "SELECT credential FROM guest_access_links WHERE guest=?",
-      store.list("guest", host.household)[0].id,
-    ).credential,
-    "platform",
-  ).code;
-  assert.ok((await canvas.innerText()).includes(recipientCode));
-  await h.page.screenshot({
-    path: "test-results/features-card-fullscreen-desktop.png",
-    fullPage: true,
-  });
-  const pending = h.page.waitForEvent("download");
-  await click(h.page, "Download SVG");
-  const download = await pending;
-  const path = await download.path();
-  const svg = await readFile(path, "utf8");
-  assert.match(svg, /Shared celebration/);
-  assert.ok(svg.includes(recipientCode));
-  assert.doesNotMatch(svg, /card-selection|card-snap-guide|data-card-resize/);
-  assert.doesNotMatch(svg, /data:image\/svg\+xml/);
-  const pngPending = h.page.waitForEvent("download");
-  await click(h.page, "Download PNG");
-  const png = await pngPending;
-  assert.ok((await readFile(await png.path())).length > 100);
-  stage("quantity printing without a native dialog");
-  await h.page.getByLabel("Print quantity", { exact: true }).fill("2");
-  await click(h.page, "Print cards");
-  assert.equal(
-    await h.page
-      .locator("iframe.print-frame")
-      .contentFrame()
-      .locator(".copy")
-      .count(),
-    2,
-  );
-  assert.equal(
-    await h.page
-      .locator("iframe.print-frame")
-      .contentFrame()
-      .locator("body")
-      .evaluate(() => window.__printCalls),
-    1,
-    "the real print action invokes the frame's print API exactly once",
-  );
-  assert.deepEqual(
-    await h.page
-      .locator("form[data-form=card] :invalid")
-      .evaluateAll((els) => els.map((el) => el.name)),
-    [],
-  );
-  await h.page.getByRole("button", { name: "Save card", exact: true }).click();
-  await h.page.locator("form[data-form=card]").waitFor({ state: "detached" });
+  // Dedicated full-page card workflows, QR exports and private templates are
+  // covered in cards-mobile.js using the shared three-level toolbar.
   const event = store.list("event", host.household)[0];
-  assert.equal(event.notes, "");
-  assert.equal(
-    store.list("card", host.household)[0].context.recipient.name,
-    "Casey Example",
-  );
   stage("read-only administrator preview");
   await click(admin.page, "Preview guest experience");
   await admin.page
@@ -757,11 +567,12 @@ try {
   const guest = await device(390),
     household = store.household(host.household);
   await guest.page.goto(origin + "/h/" + household.slug);
-  await guest.page.getByLabel("First name", { exact: true }).fill("Casey");
-  await guest.page.getByLabel("Last name", { exact: true }).fill("Example");
+  await guest.page
+    .getByLabel("Name, email or username", { exact: true })
+    .fill("Casey Example");
   const guestRecord = store.list("guest", host.household)[0];
   await guest.page
-    .getByLabel("Invite Code", { exact: true })
+    .getByLabel("Password or Household ID", { exact: true })
     .fill(
       store.get(
         "guest-access-code",
@@ -773,7 +584,21 @@ try {
         "platform",
       ).code,
     );
-  await click(guest.page, "See my invitations");
+  await click(guest.page, "Sign in");
+  await guest.page
+    .getByLabel("Username", { exact: true })
+    .fill("casey-editor-example");
+  await guest.page
+    .getByLabel("Recovery phone number", { exact: true })
+    .fill("+15005550123");
+  await guest.page
+    .locator('form[data-form="personal-account"]')
+    .getByRole("button", { name: "Save", exact: true })
+    .click();
+  await guest.page
+    .getByText("Household information saved.", { exact: true })
+    .waitFor();
+  await click(guest.page, "Home");
   await click(guest.page, "View Event");
   assert.ok(await guest.page.locator(".event-deadline").isVisible());
   assert.equal(
@@ -868,7 +693,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(external, []);
   console.log(
-    "PASS: global wording/role/layout editing, phone navigation, combined event editor, notes privacy, upload link, consent/reminder preview, card SVG/PNG/quantity export, and read-only guest preview.",
+    "PASS: global wording/role/layout editing, phone navigation, combined event editor, notes privacy, upload link, consent/reminder preview, unified guest sign-in and read-only guest preview.",
   );
 } catch (error) {
   console.error(`Shared editor browser check failed during: ${phase}`, error);

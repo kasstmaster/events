@@ -2041,7 +2041,7 @@ body #app .brand {
   overflow-wrap: normal;
 }
 .appearance-actions button {
-  flex: 1 0 64px;
+  flex: 1 0 max-content;
   white-space: nowrap;
   overflow-wrap: normal;
 }
@@ -3172,4 +3172,8 @@ body .information-error {
 }
 body #notice {
   backdrop-filter: none;
+}
+
+#appearance-toolbar .card-controls > h2 {
+  display: none;
 }

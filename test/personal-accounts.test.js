@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {
+  runAccountMessages,
+  processAccountReply,
+} from "../server/personal-accounts.js";
 import { application } from "./helpers/application.js";
 
 test("personal family bootstraps once, keeps host notes private and requires versions without granting host rights", async (t) => {
@@ -248,4 +252,125 @@ test("only a password-confirmed administrator may rename household identity and 
     ).status,
     409,
   );
+});
+
+test("recovery phone verification is one-use and username reminders require YES; NO and unknown sends do not retry", async (t) => {
+  // Fake provider settings are used only with the injected mock below. No live transport runs.
+  const env = {
+    SMS_ENABLED: "true",
+    TWILIO_ACCOUNT_SID: "synthetic-account",
+    TWILIO_AUTH_TOKEN: "synthetic-provider-secret",
+    TWILIO_FROM: "+15005550006",
+  };
+  const f = await application(t, env),
+    host = await f.host("VerifiedRecovery"),
+    adult = await f.guest(host),
+    login = await f.guestLogin(host, adult),
+    phone = "+15005550123";
+  let own = (await f.request("/api/personal", { cookie: login.cookie })).body;
+  assert.equal(
+    (
+      await f.request("/api/personal/account", {
+        cookie: login.cookie,
+        method: "PUT",
+        version: own.account.version,
+        data: { username: "private.recovery", recoveryPhone: phone },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await f.request("/api/personal/phone/start", {
+        cookie: login.cookie,
+        method: "POST",
+        data: {},
+      })
+    ).status,
+    200,
+  );
+  const challenge = f.store.list("phone-verification", "platform")[0],
+    code = challenge.message.match(/\b[0-9]{6}\b/)[0],
+    messages = [];
+  const fetcher = async (_url, request) => {
+    messages.push(new URLSearchParams(request.body).get("Body"));
+    return Response.json(
+      { sid: "synthetic-message-" + messages.length },
+      { status: 201 },
+    );
+  };
+  await runAccountMessages(f.store, env, { fetcher });
+  await runAccountMessages(f.store, env, { fetcher });
+  assert.equal(messages.length, 1);
+  assert.equal(
+    (
+      await f.request("/api/personal/phone/verify", {
+        cookie: login.cookie,
+        method: "POST",
+        data: { code: "000000" },
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await f.request("/api/personal/phone/verify", {
+        cookie: login.cookie,
+        method: "POST",
+        data: { code },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await f.request("/api/personal/phone/verify", {
+        cookie: login.cookie,
+        method: "POST",
+        data: { code },
+      })
+    ).status,
+    400,
+  );
+  own = (await f.request("/api/personal", { cookie: login.cookie })).body;
+  assert.equal(own.account.recoveryVerified, true);
+  const recover = () =>
+    f.request("/api/username-recovery", { method: "POST", data: { phone } });
+  assert.equal((await recover()).status, 200);
+  await runAccountMessages(f.store, env, { fetcher });
+  assert.doesNotMatch(messages.at(-1), /private.recovery/);
+  processAccountReply(
+    f.store,
+    new URLSearchParams({ From: phone, Body: "NO" }),
+  );
+  await runAccountMessages(f.store, env, { fetcher });
+  assert.equal(messages.length, 2);
+  assert.equal((await recover()).status, 200);
+  await runAccountMessages(f.store, env, { fetcher });
+  processAccountReply(
+    f.store,
+    new URLSearchParams({ From: phone, Body: "YES" }),
+  );
+  await runAccountMessages(f.store, env, { fetcher });
+  assert.match(messages.at(-1), /private.recovery/);
+  processAccountReply(
+    f.store,
+    new URLSearchParams({ From: phone, Body: "YES" }),
+  );
+  await runAccountMessages(f.store, env, { fetcher });
+  assert.equal(messages.length, 4);
+  assert.equal((await recover()).status, 200);
+  let attempts = 0;
+  const unknown = async () => {
+    attempts++;
+    throw Error("Synthetic transport interruption");
+  };
+  await runAccountMessages(f.store, env, { fetcher: unknown });
+  await runAccountMessages(f.store, env, { fetcher: unknown });
+  assert.equal(attempts, 1);
+  assert.equal(
+    f.store.list("username-recovery", "platform")[0].state,
+    "unknown",
+  );
+  assert.equal((await recover()).status, 429);
 });

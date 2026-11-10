@@ -2075,6 +2075,7 @@ document.addEventListener("click", async (event) => {
       state.eventInviteDraft = null;
       resetContactInvites();
     }
+    if (!tools.leaveCard(action)) return;
     if (!leaveEventLayout(target)) return;
     if (await appearance.action(action, target)) return;
     if (

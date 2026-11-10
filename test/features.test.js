@@ -1172,3 +1172,61 @@ test("registration defaults to an administrator icon request and accepts an opti
   assert.equal(household.logoRequested, false);
   assert.equal(f.store.household(requested.household.id).logoRequested, true);
 });
+
+test("editing saved card formatting preserves source snapshots and explicit source changes replace only that source", async (t) => {
+  const f = await fixture(t),
+    h = await f.host("CardSnapshots"),
+    g = await f.guest(h, "Casey"),
+    e = await f.event(h, [g]);
+  const saved = (
+    await f.request("/api/host/cards", {
+      method: "POST",
+      cookie: h.cookie,
+      data: { ...newCard("Snapshot"), event: e.id, recipient: g.id },
+    })
+  ).body;
+  await f.request(`/api/host/events/${e.id}`, {
+    method: "PUT",
+    cookie: h.cookie,
+    version: e.version,
+    data: { ...e, title: "Changed source" },
+  });
+  await f.request(`/api/host/guests/${g.id}`, {
+    method: "PUT",
+    cookie: h.cookie,
+    version: g.version,
+    data: { ...g, first: "Changed" },
+  });
+  const edited = await f.request(`/api/host/cards/${saved.id}`, {
+    method: "PUT",
+    cookie: h.cookie,
+    version: saved.version,
+    data: {
+      ...saved,
+      name: "Formatting edit",
+      context: { event: { title: "forged" } },
+      elements: saved.elements.map((el) => ({ ...el, color: "#123456" })),
+    },
+  });
+  assert.equal(edited.status, 200);
+  assert.deepEqual(edited.body.context, saved.context);
+  const other = await f.event(h, [g], { title: "Chosen replacement" });
+  const repopulated = await f.request(`/api/host/cards/${saved.id}`, {
+    method: "PUT",
+    cookie: h.cookie,
+    version: edited.body.version,
+    data: { ...edited.body, event: other.id },
+  });
+  assert.equal(repopulated.status, 200);
+  assert.equal(repopulated.body.context.event.title, "Chosen replacement");
+  assert.deepEqual(repopulated.body.context.recipient, saved.context.recipient);
+  const cleared = await f.request(`/api/host/cards/${saved.id}`, {
+    method: "PUT",
+    cookie: h.cookie,
+    version: repopulated.body.version,
+    data: { ...repopulated.body, event: "", recipient: "" },
+  });
+  assert.equal(cleared.status, 200);
+  assert.deepEqual(cleared.body.context.event, {});
+  assert.deepEqual(cleared.body.context.recipient, {});
+});

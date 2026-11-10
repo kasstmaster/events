@@ -357,11 +357,13 @@ export async function featureAPI({
       const input = await body(req);
       let record = cardInput({ ...existing, ...input });
       if (kind === "card") {
-        const event = input.event
-            ? owned("event", text(input.event, 100), household)
+        const eventId = input.event ?? existing?.event,
+          recipientId = input.recipient ?? existing?.recipient,
+          event = eventId
+            ? owned("event", text(eventId, 100), household)
             : null,
-          recipient = input.recipient
-            ? owned("guest", text(input.recipient, 100), household)
+          recipient = recipientId
+            ? owned("guest", text(recipientId, 100), household)
             : null;
         const address = recipient?.address
           ? owned("address", recipient.address, household)
@@ -371,34 +373,53 @@ export async function featureAPI({
           event: event?.id || "",
           recipient: recipient?.id || "",
           context: {
-            household: { name: store.household(household).name },
-            event: event
-              ? Object.fromEntries(
-                  [
-                    "title",
-                    "description",
-                    "date",
-                    "time",
-                    "address",
-                    "deadline",
-                  ].map((k) => [k, event[k]]),
-                )
-              : {},
+            household: existing?.context?.household || {
+              name: store.household(household).name,
+            },
+            event:
+              existing?.event === (event?.id || "") && existing?.context?.event
+                ? existing.context.event
+                : event
+                  ? Object.fromEntries(
+                      [
+                        "title",
+                        "description",
+                        "date",
+                        "time",
+                        "address",
+                        "deadline",
+                      ].map((k) => [k, event[k]]),
+                    )
+                  : {},
             recipient: recipient
               ? {
-                  name: [recipient.first, recipient.last, recipient.suffix]
-                    .filter(Boolean)
-                    .join(" "),
-                  first: recipient.first,
-                  last: recipient.last,
-                  address: address?.lines || "",
+                  ...(existing?.recipient === recipient.id &&
+                  existing?.context?.recipient
+                    ? existing.context.recipient
+                    : {
+                        name: [
+                          recipient.first,
+                          ...(recipient.parent
+                            ? []
+                            : [recipient.last, recipient.suffix]),
+                        ]
+                          .filter(Boolean)
+                          .join(" "),
+                        first: recipient.first,
+                        last: recipient.parent ? "" : recipient.last,
+                        address: address?.lines || "",
+                      }),
                   ...(record.elements.some(
                     (e) => e.field === "recipient.inviteCode",
                   )
                     ? {
-                        inviteCode: accessFor(store, recipient, household).code,
+                        inviteCode:
+                          existing?.recipient === recipient.id &&
+                          existing?.context?.recipient?.inviteCode
+                            ? existing.context.recipient.inviteCode
+                            : accessFor(store, recipient, household).code,
                       }
-                    : {}),
+                    : { inviteCode: undefined }),
                 }
               : {},
           },

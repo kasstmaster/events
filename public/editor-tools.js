@@ -37,7 +37,16 @@ export function featureTools(ctx) {
     render,
     startAppearance,
   } = ctx;
-  let editingPrivate = false;
+  let editingPrivate = false,
+    saveAsPrivate = false,
+    backgroundRead = Promise.resolve();
+  let cardBaseline = "",
+    artworkRevision = 0;
+  const draftSignature = () =>
+    JSON.stringify([editingCard, saveAsPrivate, artworkRevision]);
+  function markCardClean() {
+    cardBaseline = draftSignature();
+  }
   let selectedCardField = 0,
     snapGuides = {};
   let editingUI,
@@ -200,7 +209,7 @@ export function featureTools(ctx) {
     frame.onload = () => {
       const doc = frame.contentDocument;
       if (view === "guestLoginSuffix")
-        doc.querySelector("#guest-suffix")?.removeAttribute("hidden");
+        doc.querySelector("#unified-suffix")?.removeAttribute("hidden");
       doc.addEventListener("click", (event) => {
         if (!event.target.closest?.("summary")) event.preventDefault();
       });
@@ -531,15 +540,18 @@ export function featureTools(ctx) {
           ),
         )
         .join(""),
-      actions: cardActions[category]
-        .map((a) =>
-          button(
-            "card-tool-action",
-            C(a),
-            `data-id="${a}" aria-pressed="${a === action}"`,
-          ),
-        )
-        .join(""),
+      actions:
+        cardActions[category]
+          .map((a) =>
+            button(
+              "card-tool-action",
+              C(a),
+              `data-id="${a}" aria-pressed="${a === action}"`,
+            ),
+          )
+          .join("") +
+        tool("card-save", "Save", "", "save") +
+        tool("card-editor-back", "Close", "", "back"),
       controls: '<div id="card-toolbar-fields"></div>',
     });
     host.querySelector("#card-toolbar-fields").append(controls);
@@ -593,6 +605,9 @@ export function featureTools(ctx) {
     privateTemplate = false,
   ) {
     editingPrivate = privateTemplate;
+    saveAsPrivate = false;
+    backgroundRead = Promise.resolve();
+    artworkRevision = 0;
     selectedCardField = 0;
     editingCard = normalizeCard(card);
     if (source) {
@@ -617,6 +632,9 @@ export function featureTools(ctx) {
     document.querySelector("#editor").close();
     state.view = "card-editor";
     render();
+    collectCard();
+    markCardClean();
+    refreshCard();
   }
   async function qrURL() {
     const response = await fetch(
@@ -647,7 +665,7 @@ export function featureTools(ctx) {
         ["holiday", C("Holiday")],
       ],
       card.kind,
-    )}${role() === "host" ? `${select(H("Populate from event"), "cardEvent", options(), card.event || selectedEvent()?.id || "")}${select(H("Recipient"), "cardRecipient", [["", C("No recipient")], ...cardOptions()], card.recipient || "")}` : ""}${field(H("Background artwork"), "cardBackground", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input name="removeCardBackground" type="checkbox">Remove background artwork</label>${field(H("Card background color"), "cardColor", card.color, "color")}<div class="form-grid">${field(H("Canvas width"), "cardWidth", card.width, "number", 'min="300" max="2400"')}${field(H("Canvas height"), "cardHeight", card.height, "number", 'min="300" max="2400"')}</div><label class="check"><input name="includeQR" type="checkbox" ${card.includeQR ? "checked" : ""}>Include QR code</label>${role() === "host" ? M('<label class="check"><input name="savePrivateTemplate" type="checkbox">Save as a reusable private template</label>') : ""}<div id="card-fields">${card.elements
+    )}${role() === "host" ? `${select(H("Populate from event"), "cardEvent", options(), card.event || selectedEvent()?.id || "")}${select(H("Recipient"), "cardRecipient", [["", C("No recipient")], ...cardOptions()], card.recipient || "")}` : ""}${field(H("Background artwork"), "cardBackground", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input name="removeCardBackground" type="checkbox">Remove background artwork</label>${field(H("Card background color"), "cardColor", card.color, "color")}<div class="form-grid">${field(H("Canvas width"), "cardWidth", card.width, "number", 'min="300" max="2400"')}${field(H("Canvas height"), "cardHeight", card.height, "number", 'min="300" max="2400"')}</div><label class="check"><input name="includeQR" type="checkbox" ${card.includeQR ? "checked" : ""}>Include QR code</label>${role() === "host" ? ui`<label class="check"><input name="savePrivateTemplate" type="checkbox" ${saveAsPrivate ? "checked" : ""}>Save as a reusable private template</label>` : ""}<div id="card-fields">${card.elements
       .map(
         (e, index) =>
           ui`<fieldset data-card-index="${index}" ${index === selectedCardField ? "" : "hidden"}><legend>Field ${index + 1}</legend>${select(
@@ -714,7 +732,10 @@ export function featureTools(ctx) {
   function collectCard() {
     const form = document.querySelector("form[data-form=card]");
     if (!form) return;
-    const fd = new FormData(form);
+    const fd = new FormData(form),
+      previousEvent = editingCard.event || "",
+      previousRecipient = editingCard.recipient || "";
+    saveAsPrivate = fd.has("savePrivateTemplate");
     Object.assign(editingCard, {
       name: fd.get("cardName"),
       kind: fd.get("cardKind"),
@@ -762,24 +783,41 @@ export function featureTools(ctx) {
         ),
         address = state.data.addresses.find((a) => a.id === recipient?.address);
       cardContext = {
-        household: { name: state.data.household.name },
-        event: event || {},
+        household: editingCard.context?.household ||
+          cardContext.household || { name: state.data.household.name },
+        event:
+          previousEvent === editingCard.event && cardContext.event
+            ? cardContext.event
+            : event || {},
         recipient: recipient
           ? {
-              name: [
-                recipient.first,
-                ...(recipient.parent ? [] : [recipient.last, recipient.suffix]),
-              ]
-                .filter(Boolean)
-                .join(" "),
-              first: recipient.first,
-              last: recipient.parent ? "" : recipient.last,
-              address: address?.lines || "",
+              ...(previousRecipient === editingCard.recipient &&
+              cardContext.recipient
+                ? cardContext.recipient
+                : {
+                    name: [
+                      recipient.first,
+                      ...(recipient.parent
+                        ? []
+                        : [recipient.last, recipient.suffix]),
+                    ]
+                      .filter(Boolean)
+                      .join(" "),
+                    first: recipient.first,
+                    last: recipient.parent ? "" : recipient.last,
+                    address: address?.lines || "",
+                  }),
               ...(editingCard.elements.some(
                 (e) => e.field === "recipient.inviteCode",
               )
-                ? { inviteCode: recipient.inviteCode || "" }
-                : {}),
+                ? {
+                    inviteCode:
+                      (previousRecipient === editingCard.recipient &&
+                        cardContext.recipient?.inviteCode) ||
+                      recipient.inviteCode ||
+                      "",
+                  }
+                : { inviteCode: undefined }),
             }
           : {},
       };
@@ -832,14 +870,17 @@ export function featureTools(ctx) {
     collectCard();
     return renderCard(editingCard, cardContext, qrData);
   }
-  function download() {
-    const blob = new Blob([cardSVG()], { type: "image/svg+xml" }),
-      url = URL.createObjectURL(blob),
+  function downloadBlob(blob, extension) {
+    const url = URL.createObjectURL(blob),
       a = document.createElement("a");
     a.href = url;
-    a.download = editingCard.name.replace(/[^a-z0-9-]/gi, "-") + ".svg";
+    a.download =
+      editingCard.name.replace(/[^a-z0-9-]/gi, "-") + "." + extension;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function download() {
+    downloadBlob(new Blob([cardSVG()], { type: "image/svg+xml" }), "svg");
     notify(C("Card downloaded."));
   }
   async function pngCard() {
@@ -989,6 +1030,35 @@ export function featureTools(ctx) {
       (state.data.deletions || []).length
         ? ui`<section class="panel"><h2>Account cleanup</h2><ul>${state.data.deletions.map((job) => ui`<li>${escape(job.email || job.label || "Deleted household")}: ${escape(job.phase)} ${job.error ? escape(job.error) : ""}</li>`).join("")}</ul></section>`
         : "",
+    leaveCard(action) {
+      if (state.view !== "card-editor") return true;
+      if (
+        document.querySelector("#card-editor-form")?.dataset.saving === "true"
+      )
+        return false;
+      if (
+        ![
+          "home",
+          "page-back",
+          "settings",
+          "logout",
+          "cards",
+          "admin-templates",
+          "admin-hosts",
+          "admin-approvals",
+          "family-workspace",
+          "addresses",
+          "open-event",
+          "card-editor-back",
+        ].includes(action)
+      )
+        return true;
+      collectCard();
+      return (
+        draftSignature() === cardBaseline ||
+        confirm(String(C("Discard unsaved card changes?")))
+      );
+    },
     cardEditorPage,
     cardPreviewPage,
     cardsPage,
@@ -1233,13 +1303,7 @@ export function featureTools(ctx) {
         return true;
       }
       if (action === "download-png") {
-        const blob = await pngCard(),
-          url = URL.createObjectURL(blob),
-          a = document.createElement("a");
-        a.href = url;
-        a.download = "card.png";
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        downloadBlob(await pngCard(), "png");
         return true;
       }
       if (action === "download-card") {
@@ -1254,10 +1318,14 @@ export function featureTools(ctx) {
         const file = new File([await pngCard()], "card.png", {
           type: "image/png",
         });
-        if (navigator.canShare?.({ files: [file] }))
-          await navigator.share({ files: [file], title: editingCard.name });
-        else {
-          download();
+        if (navigator.canShare?.({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file], title: editingCard.name });
+          } catch (error) {
+            if (error.name !== "AbortError") throw error;
+          }
+        } else {
+          downloadBlob(file, "png");
           notify(
             C(
               "Attach the downloaded card in your text app. No message was sent.",
@@ -1267,13 +1335,15 @@ export function featureTools(ctx) {
         return true;
       }
       if (action === "email-card") {
-        download();
+        downloadBlob(await pngCard(), "png");
         location.href =
           "mailto:?subject=" +
           encodeURIComponent(editingCard.name) +
           "&body=" +
           encodeURIComponent("Please attach the card you downloaded.");
-        notify(C("Email composer opened. No email was sent."));
+        notify(
+          C("Attach the downloaded card in your email app. No email was sent."),
+        );
         return true;
       }
       if (action === "visual-up" || action === "visual-down") {
@@ -1358,30 +1428,44 @@ export function featureTools(ctx) {
       }
       if (kind === "card") {
         collectCard();
-        const upload = await fileData(form.elements.cardBackground);
-        if (upload) editingCard.background = upload;
-        if (fd.has("removeCardBackground")) editingCard.background = "";
-        const privateTemplate = fd.has("savePrivateTemplate") || editingPrivate,
-          base =
-            role() === "admin"
-              ? "/api/admin/templates"
-              : privateTemplate
-                ? "/api/host/private-templates"
-                : "/api/host/cards";
-        const key = privateTemplate && !editingPrivate ? null : editingCard.id;
-        const storedCard = await api(base + (key ? "/" + key : ""), {
-          method: key ? "PUT" : "POST",
-          version: key ? editingCard.version : undefined,
-          data: editingCard,
-        });
-        editingCard = normalizeCard(storedCard);
-        cardContext = editingCard.context || cardContext;
-        const returnTemplates =
-          role() === "admin" && state.cardReturnView === "management";
-        state.view = returnTemplates ? "home" : state.cardReturnView || "home";
-        await saved("Card saved. Source templates remain unchanged.");
-        if (returnTemplates || state.view === "cards-page") await cards();
-        return true;
+        const surfaces = [
+          form,
+          document.querySelector("#appearance-toolbar"),
+        ].filter(Boolean);
+        surfaces.forEach((surface) => (surface.inert = true));
+        try {
+          await backgroundRead;
+          if (fd.has("removeCardBackground")) editingCard.background = "";
+          const privateTemplate =
+              fd.has("savePrivateTemplate") || editingPrivate,
+            base =
+              role() === "admin"
+                ? "/api/admin/templates"
+                : privateTemplate
+                  ? "/api/host/private-templates"
+                  : "/api/host/cards";
+          const key =
+            privateTemplate && !editingPrivate ? null : editingCard.id;
+          const storedCard = await api(base + (key ? "/" + key : ""), {
+            method: key ? "PUT" : "POST",
+            version: key ? editingCard.version : undefined,
+            data: editingCard,
+          });
+          editingCard = normalizeCard(storedCard);
+          saveAsPrivate = false;
+          markCardClean();
+          cardContext = editingCard.context || cardContext;
+          const returnTemplates =
+            role() === "admin" && state.cardReturnView === "management";
+          state.view = returnTemplates
+            ? "home"
+            : state.cardReturnView || "home";
+          await saved("Card saved. Source templates remain unchanged.");
+          if (returnTemplates || state.view === "cards-page") await cards();
+          return true;
+        } finally {
+          surfaces.forEach((surface) => (surface.inert = false));
+        }
       }
       if (kind === "reminders") {
         await api(`/api/host/events/${selectedEvent().id}/reminders`, {
@@ -1428,14 +1512,20 @@ export function featureTools(ctx) {
       }
       if (event.target.closest("#default-design-controls")) styleExample();
       if (event.target.name === "cardBackground") {
-        fileData(event.target)
-          .then((value) => {
-            if (value) {
-              editingCard.background = value;
-              refreshCard();
-            }
-          })
-          .catch((error) => notify(error.message));
+        const draft = editingCard;
+        artworkRevision++;
+        backgroundRead = fileData(event.target).then((value) => {
+          if (draft === editingCard && value) {
+            draft.background = document.querySelector(
+              "[name=removeCardBackground]",
+            )?.checked
+              ? ""
+              : value;
+            refreshCard();
+          }
+        });
+        // Keep the rejection for Save while reporting it without an unhandled promise.
+        backgroundRead.catch((error) => notify(error.message));
       }
       const form = event.target.form || event.target.closest("form");
       if (form?.dataset.form === "card") {

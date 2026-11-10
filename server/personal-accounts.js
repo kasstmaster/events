@@ -851,6 +851,7 @@ export async function personalAPI({
       account = personalAccount(store, identity);
     if (
       !challenge ||
+      challenge.state === "complete" ||
       challenge.expires < Date.now() ||
       challenge.phone !== account?.recoveryPhone ||
       challenge.codeHash !== hash(String(input.code || ""))
@@ -867,7 +868,7 @@ export async function personalAPI({
       "phone-verification",
       identity,
       PLATFORM,
-      { ...challenge, state: "complete", message: "" },
+      { ...challenge, state: "complete", codeHash: "", message: "" },
       challenge.version,
     );
     json(res, { ok: true });

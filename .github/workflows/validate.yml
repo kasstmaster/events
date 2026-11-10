@@ -44,6 +44,8 @@ jobs:
         run: node test/household-ui-mobile.js
       - name: Selected Information pop-ups on phones and desktop
         run: node test/information-popups-mobile.js
+      - name: Dedicated card and template pages on phones and desktop
+        run: node test/cards-mobile.js
       - name: Cloudflare runtime checks
         if: ${{ !cancelled() }}
         run: npm run test:cloudflare
