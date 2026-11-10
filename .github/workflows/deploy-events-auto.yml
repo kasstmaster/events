@@ -43,7 +43,7 @@ jobs:
       - name: Run unit and release safety tests
         run: |
           npm test
-          node --test scripts/manual-events-release.test.mjs
+          node --test scripts/manual-events-release.test.mjs scripts/automatic-events-release.test.mjs
 
       - name: Install Chromium for integration tests
         run: npx playwright install --with-deps chromium
