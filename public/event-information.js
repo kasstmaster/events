@@ -37,7 +37,8 @@ export function informationLink(value) {
 export function informationInput(value = []) {
   if (!Array.isArray(value) || value.length > 500)
     throw new Error("Information must contain at most 500 text sections.");
-  let length = 0;
+  let length = 0,
+    popupLength = 0;
   const result = [];
   for (const run of value) {
     if (
@@ -46,7 +47,8 @@ export function informationInput(value = []) {
       Array.isArray(run) ||
       typeof run.text !== "string" ||
       Object.keys(run).some(
-        (k) => !["text", "bold", "italic", "underline", "href"].includes(k),
+        (k) =>
+          !["text", "bold", "italic", "underline", "href", "popup"].includes(k),
       ) ||
       ["bold", "italic", "underline"].some(
         (k) => run[k] !== undefined && typeof run[k] !== "boolean",
@@ -64,6 +66,23 @@ export function informationInput(value = []) {
         throw new Error("Enter a valid website URL or email address.");
       next.href = informationLink(run.href);
     }
+    if (run.popup !== undefined && run.popup !== "") {
+      if (
+        typeof run.popup !== "string" ||
+        !run.popup.trim() ||
+        run.popup.length > 3000 ||
+        run.popup.includes("\u0000")
+      )
+        throw new Error("Pop-up text must be 1–3,000 characters.");
+      popupLength += run.popup.length;
+      if (popupLength > 50000)
+        throw new Error("Pop-up text is too long across all sections.");
+      if (next.href)
+        throw new Error(
+          "Choose either a link or pop-up text for the same words.",
+        );
+      next.popup = run.popup;
+    }
     if (next.text) result.push(next);
   }
   return result.some((run) => run.text.trim()) ? result : [];
@@ -77,6 +96,8 @@ export function renderInformation(value) {
       if (run.underline) text = `<u>${text}</u>`;
       if (run.href)
         text = `<a href="${escape(run.href)}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+      if (run.popup)
+        text = `<span class="information-popup" role="button" tabindex="0" aria-haspopup="dialog" data-information-popup="${escape(run.popup)}">${text}</span>`;
       return text;
     })
     .join("");
@@ -114,7 +135,12 @@ export function readInformation(editor) {
     if (tag === "A") {
       try {
         next.href = informationLink(node.getAttribute("href"));
+        delete next.popup;
       } catch {}
+    }
+    if (node.hasAttribute("data-information-popup")) {
+      next.popup = node.getAttribute("data-information-popup");
+      delete next.href;
     }
     if (
       ["DIV", "P"].includes(tag) &&
@@ -133,8 +159,24 @@ export function readInformation(editor) {
   for (const child of editor.childNodes) walk(child);
   return informationInput(runs);
 }
-export function bindInformationEditor(doc = document) {
+export function bindInformationEditor(doc = document, { showPopup } = {}) {
   const ranges = new WeakMap();
+  const viewPopup = (target) => {
+    const popup = target.closest?.("[data-information-popup]");
+    if (!popup || popup.closest("[data-information-input]")) return false;
+    showPopup?.(popup.textContent, popup.dataset.informationPopup);
+    return true;
+  };
+  doc.addEventListener("click", (event) => viewPopup(event.target));
+  doc.addEventListener("keydown", (event) => {
+    if (
+      ["Enter", " "].includes(event.key) &&
+      event.target.matches?.("[data-information-popup]")
+    ) {
+      event.preventDefault();
+      viewPopup(event.target);
+    }
+  });
   doc.addEventListener("selectionchange", () => {
     const selection = doc.getSelection();
     const editor = selection?.anchorNode?.parentElement?.closest(
@@ -180,7 +222,9 @@ export function bindInformationEditor(doc = document) {
       editor = field.querySelector("[data-information-input]"),
       controls = field.querySelector("[data-information-links]"),
       input = controls.querySelector("input"),
-      error = field.querySelector("[data-information-error]");
+      error = field.querySelector("[data-information-error]"),
+      popupControls = field.querySelector("[data-information-popups]"),
+      popupInput = popupControls?.querySelector("textarea");
     const action = button.dataset.informationAction;
     if (
       ![
@@ -191,11 +235,48 @@ export function bindInformationEditor(doc = document) {
         "unlink",
         "apply-link",
         "cancel-link",
+        "popup",
+        "apply-popup",
+        "cancel-popup",
+        "remove-popup",
       ].includes(action)
     )
       return;
     error.textContent = "";
+    if (action === "popup") {
+      const range = ranges.get(editor);
+      if (!range || range.collapsed || !range.toString().trim()) {
+        error.textContent =
+          "Highlight the words that should open the pop-up first.";
+        return;
+      }
+      const node =
+        range.startContainer.nodeType === 1
+          ? range.startContainer
+          : range.startContainer.parentElement;
+      popupInput.value =
+        node.closest?.("[data-information-popup]")?.dataset.informationPopup ||
+        "";
+      controls.hidden = true;
+      popupControls.hidden = false;
+      popupInput.focus();
+      return;
+    }
+    if (action === "cancel-popup") {
+      popupControls.hidden = true;
+      editor.focus();
+      return;
+    }
+    if (
+      action === "apply-popup" &&
+      (!popupInput.value.trim() || popupInput.value.length > 3000)
+    ) {
+      error.textContent = "Pop-up text must be 1–3,000 characters.";
+      popupInput.focus();
+      return;
+    }
     if (action === "link") {
+      popupControls.hidden = true;
       controls.hidden = false;
       input.value = "";
       input.focus();
@@ -222,9 +303,35 @@ export function bindInformationEditor(doc = document) {
       controls.hidden = true;
       return;
     }
-    if (action === "apply-link") {
-      doc.execCommand("createLink", false, href);
+    if (["apply-link", "apply-popup", "remove-popup"].includes(action)) {
+      if (
+        !range ||
+        range.collapsed ||
+        !editor.contains(range.commonAncestorContainer)
+      ) {
+        error.textContent = "Highlight the words to format first.";
+        return;
+      }
+      const fragment = range.extractContents();
+      for (const node of [
+        ...fragment.querySelectorAll("a,[data-information-popup]"),
+      ])
+        node.replaceWith(...node.childNodes);
+      const wrapper = doc.createElement(action === "apply-link" ? "a" : "span");
+      if (action === "apply-link") wrapper.setAttribute("href", href);
+      if (action === "apply-popup")
+        wrapper.dataset.informationPopup = popupInput.value;
+      if (action === "remove-popup") wrapper.dataset.informationPopup = "";
+      wrapper.append(fragment);
+      range.insertNode(wrapper);
+      const selection = doc.getSelection(),
+        updated = doc.createRange();
+      updated.selectNodeContents(wrapper);
+      selection.removeAllRanges();
+      selection.addRange(updated);
+      ranges.set(editor, updated.cloneRange());
       controls.hidden = true;
+      popupControls.hidden = true;
     } else doc.execCommand(action, false);
     editor.dispatchEvent(new Event("input", { bubbles: true }));
   });

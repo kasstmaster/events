@@ -35,7 +35,10 @@ import {
 import { icon } from "/icons.js";
 import { suggestLabel } from "/household-address.js";
 bindBrowseMenus();
-bindInformationEditor();
+bindInformationEditor(document, {
+  showPopup: (title, text) =>
+    modal(title, `<p class="information-popup-content">${escape(text)}</p>`),
+});
 const $ = (selector) => document.querySelector(selector);
 const escape = (value) =>
   String(value ?? "").replace(
@@ -1497,6 +1500,7 @@ function informationEditor(value = []) {
     ["bold", "Bold"],
     ["italic", "Italic"],
     ["underline", "Underline"],
+    ["popup", "Pop-up text"],
     ["link", "Add link"],
     ["unlink", "Remove link"],
   ]
@@ -1506,7 +1510,7 @@ function informationEditor(value = []) {
     )
     .join(
       "",
-    )}</div><div data-information-links hidden><label>${C("Link URL or email")}<input type="text" maxlength="2048" aria-label="${H("Link URL or email")}"></label><div class="row"><button type="button" data-information-action="apply-link">${C("Apply link")}</button><button type="button" data-information-action="cancel-link">${C("Cancel link")}</button></div></div><div class="information-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${H("Information text")}" data-information-input data-host-content>${renderInformation(value)}</div><p class="information-error" role="alert" data-information-error></p></fieldset>`;
+    )}</div><div data-information-links hidden><label>${C("Link URL or email")}<input type="text" maxlength="2048" aria-label="${H("Link URL or email")}"></label><div class="row"><button type="button" data-information-action="apply-link">${C("Apply link")}</button><button type="button" data-information-action="cancel-link">${C("Cancel link")}</button></div></div><div data-information-popups hidden><label>${C("Pop-up text")}<textarea maxlength="3000" rows="5" aria-label="${H("Pop-up text")}"></textarea></label><div class="row"><button type="button" data-information-action="apply-popup">${C("Apply pop-up")}</button><button type="button" data-information-action="remove-popup">${C("Remove pop-up")}</button><button type="button" data-information-action="cancel-popup">${C("Cancel pop-up")}</button></div></div><div class="information-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${H("Information text")}" data-information-input data-host-content>${renderInformation(value)}</div><p class="information-error" role="alert" data-information-error></p></fieldset>`;
 }
 function eventDetailsFields(e, existing = true) {
   return ui`${field(H("Event title"), "title", e.title, "text", 'required maxlength="160" placeholder="Sunday around the table"')}${area(H("Description"), "description", e.description, 'maxlength="5000"')}${informationEditor(e.information)}<div class="form-grid">${field(H("Date"), "date", e.date, "date")}${field(H("Time · numbers or words"), "time", e.time, "text", 'maxlength="100" placeholder="Two O’Clock in the Afternoon"')}${field(H("RSVP deadline"), "deadline", e.deadline, "date")}</div>${area(H("Event address"), "eventAddress", e.address, 'maxlength="500"')}${field(H("Photo / video upload link (optional)"), "uploadURL", e.uploadURL || "", "url", 'maxlength="2048" placeholder="https://…"')}<p class="small muted">Use Dropbox File Requests, Google Drive, OneDrive, or another sharing service. Configure upload permissions at that destination. Clear the link to remove the guest upload button.</p>${field(H("Event artwork / image"), "iconUpload", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input type="checkbox" name="removeIcon">Remove current image</label>${select(H("Invitation template"), "template", [["", C("Simple invitation")], ...state.templates.map((t) => [t.id, t.name])], e.template || "")}<fieldset><legend>Gift registries · optional</legend><p class="small muted">Guest buttons appear directly below RSVP, in this order.</p><div id="registry-rows">${(e.registries || []).map(registryRow).join("")}</div>${button("add-registry", H("＋ Add registry"))}</fieldset><fieldset><legend>Potluck & drinks</legend><label class="check"><input type="checkbox" name="customItemsEnabled" ${e.customItemsEnabled ? "checked" : ""}>Allow guests to enter custom menu items</label><label class="check"><input type="checkbox" name="saveCustomItems" ${e.saveCustomItems ? "checked" : ""}>Save custom items to future menus</label><div class="row">${select(H("Copy menu from"), "copyMenu", [["", C("Choose a past event")], ...state.data.events.filter((p) => p.id !== e.id).map((p) => [p.id, p.title])], "")}${button("copy-menu", H("Copy items"))}</div><fieldset><legend>Table templates</legend>${select(H("Table template"), "tableTemplate", [["", C("New table template")], ...(state.data.tableTemplates || []).map((t) => [t.id, t.name])], "")}${field(H("Table template name"), "tableTemplateName", "", "text", 'maxlength="160"')}<div class="row">${button("table-template-apply", H("Apply Table Template"))}${button("table-template-save", H("Save Table Template"))}${button("table-template-delete", H("Delete Table Template"))}</div><p class="small">Applying a template adds items to this draft. Save the event to keep them. Existing menu items and guest claims stay unchanged.</p></fieldset><div id="menu-rows">${e.menu.map(menuRow).join("")}</div>${button("add-menu", H("＋ Add item"))}</fieldset><fieldset><legend>Guests</legend><div data-invitation-values>${e.invited.map((id) => ui`<input type="hidden" name="invited" value="${id}">`).join("")}</div>${button("invite-guests", H("Invite guests"))}</fieldset>${existing ? ui`<hr>${button("delete-event", H("Delete event"), "", "danger")}` : ""}`;
@@ -3456,8 +3460,7 @@ function applyLayoutDOM(event, role, target = $("#app")) {
         (main.querySelector("[data-event-shell]") || main).append(additional);
     }
     const plans = main.querySelector('[data-event-section="personal"]');
-    if (plans)
-      (main.querySelector("[data-event-shell]") || main).prepend(plans);
+    if (plans && actions) actions.after(plans);
     if (actions && ["guest", "host"].includes(role)) {
       const rsvp = actions.querySelector("[data-action=rsvp]"),
         registries = actions.querySelector(".registry-buttons");

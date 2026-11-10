@@ -1147,7 +1147,9 @@ try {
   await promoted.locator(".event-hero").waitFor();
   assert.equal(await promoted.locator(".admin-home-actions").count(), 0);
   const g = await page(guestCookie);
-  await g.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
+  await g
+    .getByRole("heading", { name: `${guest.first} ${guest.last}`, exact: true })
+    .waitFor();
   await g
     .getByRole("button", { name: "View Event", exact: true })
     .first()

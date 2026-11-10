@@ -1279,7 +1279,9 @@ try {
     .getByRole("heading", { name: "Dinner Two", exact: true })
     .waitFor();
   const g = await page(guestCookie);
-  await g.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
+  await g
+    .getByRole("heading", { name: `${guest.first} ${guest.last}`, exact: true })
+    .waitFor();
   assert.equal(
     await g
       .getByRole("heading", { name: "You’re invited to gather", exact: true })

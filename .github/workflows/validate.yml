@@ -42,6 +42,8 @@ jobs:
         run: node test/toolbar-mobile.js
       - name: Household RSVP and event invitation selection on phones and desktop
         run: node test/household-ui-mobile.js
+      - name: Selected Information pop-ups on phones and desktop
+        run: node test/information-popups-mobile.js
       - name: Cloudflare runtime checks
         if: ${{ !cancelled() }}
         run: npm run test:cloudflare

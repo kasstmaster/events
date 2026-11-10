@@ -342,7 +342,7 @@ export async function familyAPI(ctx) {
       fail(403, "Only the owner appoints household administrators.");
     const login = text(input.login, 100, true).toLowerCase();
     if (!/^[a-z0-9][a-z0-9._@+-]{2,99}$/.test(login))
-      fail(400, "Use a unique sign-in name with at least three characters.");
+      fail(400, "Use a unique username with at least three characters.");
     const password = await hashPassword(input.password),
       key = id();
     store.transaction(() => {
@@ -353,7 +353,7 @@ export async function familyAPI(ctx) {
           login,
         )
       )
-        fail(409, "That sign-in name is already used.");
+        fail(409, "That username is already used.");
       store.run(
         "INSERT INTO family_members(id,household,login,name,password,role) VALUES(?,?,?,?,?,?)",
         key,

@@ -563,6 +563,7 @@ test("optional Information is versioned, host-owned, preserved when omitted and 
     });
   const information = [
     { text: "Bring a jacket. ", bold: true },
+    { text: "Liar’s Dice", popup: "Roll five dice. Keep your dice hidden." },
     {
       text: "Email the host",
       italic: true,
@@ -611,5 +612,38 @@ test("optional Information is versioned, host-owned, preserved when omitted and 
   assert.deepEqual(
     f.store.get("event", event.id, host.household.id).information,
     [],
+  );
+});
+
+test("Information pop-ups are bounded plain text, escaped, and cannot conflict with links", async () => {
+  const { informationInput, renderInformation } =
+    await import("../public/event-information.js");
+  const value = [
+    {
+      text: "Liar's Dice",
+      bold: true,
+      popup: 'Roll five dice.\n<script>alert("x")</script>',
+    },
+  ];
+  assert.deepEqual(informationInput(value), value);
+  const rendered = renderInformation(value);
+  assert.match(rendered, /role="button"/);
+  assert.match(rendered, /aria-haspopup="dialog"/);
+  assert.match(rendered, /&lt;script&gt;/);
+  assert.doesNotMatch(rendered, /<script|onclick=/);
+  for (const popup of [null, {}, " ", "x".repeat(3001), "bad\u0000text"])
+    assert.throws(() => informationInput([{ text: "Game", popup }]));
+  assert.throws(() =>
+    informationInput([
+      { text: "Game", popup: "Rules", href: "https://example.test" },
+    ]),
+  );
+  assert.throws(() =>
+    informationInput(
+      Array.from({ length: 20 }, () => ({
+        text: "Game",
+        popup: "x".repeat(3000),
+      })),
+    ),
   );
 });

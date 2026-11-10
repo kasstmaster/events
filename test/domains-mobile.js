@@ -120,7 +120,10 @@ try {
         { host, origin, background, event } = fixture;
       await page.goto(origin);
       await page
-        .getByRole("heading", { name: host.name, exact: true })
+        .getByRole("heading", {
+          name: "INVITED YOU TO A NEW EVENT",
+          exact: true,
+        })
         .waitFor();
       assert.equal(
         await page.evaluate(() =>
@@ -280,7 +283,9 @@ try {
   await page.locator("[data-action=appearance-save]").click();
   await page.getByText("Appearance saved.", { exact: true }).waitFor();
   await page.goto("https://dubois.ilymmd.com/");
-  await page.getByRole("heading", { name: "Dubois", exact: true }).waitFor();
+  await page
+    .getByRole("heading", { name: "INVITED YOU TO A NEW EVENT", exact: true })
+    .waitFor();
   assert.equal(new URL(page.url()).hostname, "dubois.ilymmd.com");
   await context.close();
   assert.deepEqual(errors, []);

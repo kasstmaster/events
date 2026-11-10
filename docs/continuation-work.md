@@ -2,7 +2,7 @@
 
 Branch: `wip/shared-accounts-cards-anylist`.
 
-The tested household RSVP/input update was merged in [PR #61](https://github.com/kasstmaster/events/pull/61) to `feat/household-subdomains` at `1d5f20799c7a72f41328d288e4466b952c0b7f92`, after all GitHub checks passed. This branch includes that completed merge; compare against `feat/household-subdomains` to review only the remaining work. No deployment was performed. The original complete work-in-progress snapshot remains recoverable at `b0facbe`.
+The tested household RSVP/input update was merged in [PR #61](https://github.com/kasstmaster/events/pull/61) to `feat/household-subdomains` at `1d5f20799c7a72f41328d288e4466b952c0b7f92`, after all GitHub checks passed. This branch includes that completed merge; compare against `feat/household-subdomains` to review only the remaining work. PR #61 was deployed successfully by manual run 42727410288 as Worker cd19484d-8fbf-4dc0-8c21-ec4d47911077. The original complete work-in-progress snapshot remains recoverable at `b0facbe`.
 
 Remaining implementation/review:
 
@@ -14,3 +14,5 @@ Remaining implementation/review:
 - Complete the browser-suite transition for new sign-in and card interactions. Existing failures on this branch must not be described as green release checks.
 
 The user authorized merging only completed, working changes. This continuation branch is not approved for merge or deployment. Do not enable automatic/preview builds or SMS, alter runtime secrets/settings/bindings, deploy the gateway or write to another repository. See `shared-accounts-preview.md` for the earlier implementation notes.
+
+The tested simple follow-up in PR #63 is integrated here: Information word pop-ups before Add link, Your Plans below RSVP, Username labels, transparent readable notifications and independent guest-home presentation. These are no longer unfinished items. The remaining features above still require implementation/integration work; they are not missing owner credential setup. Any later release must preserve these completed fixes.
