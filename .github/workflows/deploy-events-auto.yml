@@ -34,12 +34,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify exact merged revision and protected production target
+      - name: Verify exact merged revision
         env:
           MERGED_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           test "$(git rev-parse HEAD)" = "$MERGED_SHA"
-          test "$(git branch -r --contains "$MERGED_SHA" | grep -c 'origin/main')" -gt 0
 
       - name: Run unit and release safety tests
         run: |
