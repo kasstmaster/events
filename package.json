@@ -11,7 +11,7 @@
     "dev": "node --watch server/index.js",
     "admin": "node server/admin.js",
     "test": "node --test test/platform.test.js test/domains.test.js test/provisioning.test.js test/features.test.js test/shared-guests.test.js test/guest-address.test.js test/family.test.js test/navigation.test.js test/appearance.test.js test/contact-invites.test.js test/household-integrations.test.js test/rsvp-notifications.test.js test/table-templates.test.js test/platform-access.test.js test/household-ui.test.js",
-    "test:mobile": "node test/mobile.cjs && node test/domains-mobile.js && node test/features-mobile.js && node test/family-mobile.js && node test/navigation-mobile.js && node test/toolbar-mobile.js && node test/household-ui-mobile.js",
+    "test:mobile": "node test/mobile.cjs && node test/domains-mobile.js && node test/features-mobile.js && node test/family-mobile.js && node test/navigation-mobile.js && node test/toolbar-mobile.js && node test/household-ui-mobile.js && node test/information-popups-mobile.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "dev:cloudflare": "wrangler dev --local",

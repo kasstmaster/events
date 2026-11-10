@@ -237,7 +237,7 @@ const { existsSync, mkdirSync } = require("node:fs");
       secondDevice = await device(1440, 1000);
     await guest.page.goto(link);
     await guest.page
-      .getByRole("heading", { name: "The Alpha Family", exact: true })
+      .getByRole("heading", { name: "INVITED YOU TO A NEW EVENT", exact: true })
       .waitFor();
     assert.equal(
       await guest.page.evaluate(
@@ -384,7 +384,7 @@ const { existsSync, mkdirSync } = require("node:fs");
     await click(alpha.page, "Back");
     await guest.page.reload();
     await guest.page
-      .getByRole("heading", { name: "The Alpha Family", exact: true })
+      .getByRole("heading", { name: "Casey Example", exact: true })
       .waitFor();
     await click(guest.page, "View Event");
     await guest.page

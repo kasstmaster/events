@@ -144,6 +144,9 @@ export function invitationView(store, session) {
           name: store.household(link.household).name,
           slug: store.household(link.household).slug,
           logo: store.household(link.household).logo || "",
+          ui: {
+            design: effectiveUI(store, store.household(link.household)).design,
+          },
         },
         ui: effectiveUI(store, store.household(link.household), event),
       })),

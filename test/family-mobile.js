@@ -108,7 +108,7 @@ try {
   await click(owner.page, "Create family member");
   await owner.page.getByLabel("Name", { exact: true }).fill("Child");
   await owner.page
-    .getByLabel("Sign-in name · no email required", { exact: true })
+    .getByLabel("Username · no email required", { exact: true })
     .fill("child");
   await owner.page
     .getByLabel("Household role", { exact: true })
@@ -144,7 +144,7 @@ try {
     kid = await device();
   await kid.page.goto(origin + "/h/" + household.slug);
   await click(kid.page, "Family member sign-in");
-  await kid.page.getByLabel("Sign-in name", { exact: true }).fill("child");
+  await kid.page.getByLabel("Username", { exact: true }).fill("child");
   await kid.page.getByLabel("Password", { exact: true }).fill(password);
   await click(kid.page, "Sign in");
   await click(kid.page, "Lists");

@@ -128,7 +128,10 @@ try {
     assert.equal(
       await page
         .locator('#main [data-event-section="personal"]')
-        .evaluate((el) => el.parentElement.firstElementChild === el),
+        .evaluate(
+          (el) =>
+            !!el.previousElementSibling?.querySelector('[data-action="rsvp"]'),
+        ),
       true,
     );
     await page.locator('.toolbar [data-action="home"]').click();
