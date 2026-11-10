@@ -1,4 +1,5 @@
 import { accessFor } from "./guest-access.js";
+import { autoAssociateContact } from "./personal-accounts.js";
 import {
   outboundPlan,
   outboundPhase,
@@ -396,6 +397,7 @@ export function importAnyList(store, env, input, validateGuest) {
           if (materializeAddress) accessFor(store, guest, household);
           updated++;
         }
+        autoAssociateContact(store, guest, household);
         store.put(
           "anylist-link",
           linkId,

@@ -67,3 +67,5 @@ address later moves the same contacts through normal credential validation.
 The operations workflow on main must check out the exact reviewed application
 merge containing both adapters. Its runtime secret names and callback destination
 remain unchanged. No live outbound provider call was used for validation.
+
+Imported contacts use the same conservative registered-account matcher as manual contact creation: an exact name and matching phone/address may associate one registered identity. Ambiguous matches and existing self-managed identities are never overwritten. Association grants no event invitation and never returns private usernames or recovery phones.

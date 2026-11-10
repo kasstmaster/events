@@ -756,3 +756,45 @@ test("outbound no-address contacts keep credentials and reserved source IDs prev
   assert.notEqual(moved.inviteCode, initialCode);
   assert.equal(f.store.list("address", host.household.id).length, 1);
 });
+
+test("AnyList imports use the shared registered-contact association without granting invitations or exporting private account data", async (t) => {
+  const env = configuration(),
+    f = await application(t, env),
+    host = await f.host("Alpha"),
+    other = await f.host("ContactSource");
+  const adult = await f.guest(other, { phone: "+15005550123" });
+  const login = await f.guestLogin(other, adult);
+  const own = (await f.request("/api/personal", { cookie: login.cookie })).body;
+  assert.equal(
+    (
+      await f.request("/api/personal/account", {
+        method: "PUT",
+        cookie: login.cookie,
+        version: own.account.version,
+        data: { username: "anylist.private", recoveryPhone: "+15005550199" },
+      })
+    ).status,
+    200,
+  );
+  const job = await start(f, env, host),
+    incoming = source();
+  incoming[0].people[0].phone = "+15005550123";
+  assert.equal((await deliver(f, env, job, incoming)).status, 200);
+  const imported = f.store
+    .list("guest", host.household.id)
+    .find((g) => !g.parent);
+  const identity = (household) =>
+    f.store.one(
+      "SELECT identity FROM guest_identity_links WHERE household=? AND guest=?",
+      household.id,
+      household.id === host.household.id ? imported.id : adult.id,
+    ).identity;
+  assert.equal(identity(host.household), identity(other.household));
+  assert.equal(f.store.list("event", host.household.id).length, 0);
+  const projection = (await f.request("/api/host", { cookie: host.cookie }))
+    .body;
+  assert.doesNotMatch(
+    JSON.stringify(projection.guests),
+    /anylist.private|15005550199/,
+  );
+});
