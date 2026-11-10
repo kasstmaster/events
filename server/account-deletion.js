@@ -33,6 +33,9 @@ export function deletionSummary(store, userId) {
     household: user.household,
     name: household?.name || "",
     domain: household?.subdomain ? household.subdomain + ".ilymmd.com" : "",
+    aliases: (household?.domainAliases || []).map(
+      (label) => label + ".ilymmd.com",
+    ),
     familyMemberCount: store.one(
       "SELECT count(*) AS count FROM family_members WHERE household=?",
       user.household,
@@ -102,6 +105,17 @@ export function finalizeDeletion(store, job) {
     store.run("DELETE FROM approvals WHERE email=?", job.email);
     store.run("DELETE FROM record_chunks WHERE household=?", job.household);
     store.run("DELETE FROM records WHERE household=?", job.household);
+    for (const account of store
+      .list("person-account", "platform")
+      .filter((a) => a.hostUser === job.user))
+      store.put(
+        "person-account",
+        account.id,
+        "platform",
+        { ...account, hostUser: undefined, hostHousehold: undefined },
+        account.version,
+      );
+
     store.run(
       "DELETE FROM guest_identity_links WHERE household=?",
       job.household,

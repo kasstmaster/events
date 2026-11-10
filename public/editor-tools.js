@@ -107,6 +107,10 @@ export function featureTools(ctx) {
           hostSettings: "Host Settings",
           guestSettings: "Guest Settings",
           familySettings: "Family Settings",
+          personalFamily: "Guest family information",
+          personalAccount: "Guest private sign-in settings",
+          personalSetup: "Guest first-time username setup",
+          personalContacts: "Registered household Address Book",
           familyHome: "Family workspace · owner",
           familyKidHome: "Family workspace · kid",
           familyList: "Family list",
@@ -554,6 +558,12 @@ export function featureTools(ctx) {
         tool("card-editor-back", "Close", "", "back"),
       controls: '<div id="card-toolbar-fields"></div>',
     });
+    const title = document.createElement("h1");
+    title.className = "card-editor-title";
+    title.textContent = String(
+      C(role() === "admin" ? "Edit shared template" : "Edit Your Card"),
+    );
+    host.prepend(title);
     host.querySelector("#card-toolbar-fields").append(controls);
     controls.querySelectorAll("label").forEach((label) => {
       const input = label.querySelector("input,select,textarea");
@@ -648,7 +658,7 @@ export function featureTools(ctx) {
   }
   function cardEditorPage() {
     const card = editingCard;
-    return ui`<form id="card-editor-form" data-form="card" class="card-editor-page"><p class="form-error" role="alert"></p><p>Drag a field in the preview; use numeric positions or arrow keys for precise movement. Text bounds are guides—check long names before printing.</p><div class="card-workspace"><section class="card-preview-area" aria-label="Card workspace"><div id="card-canvas" tabindex="0" aria-label="Card preview"></div></section><aside class="card-controls" aria-label="Card editor tools" ${window.innerWidth < 850 && !state.cardToolsOpen ? "inert" : ""}>${button("card-tools-toggle", H("Close tools"), "", "card-tools-toggle")}<h2>Variables</h2><p>Drag a variable onto the preview, or select it to add it. Select an item in the preview to format it. Items snap to the center and edges.</p><div class="card-variable-list">${cardFields.map((key) => ui`<button type="button" draggable="true" data-card-variable="${key}" data-action="add-card-variable" data-id="${key}">${C(cardFieldLabels[key])}</button>`).join("")}</div>${select(
+    return ui`<form id="card-editor-form" data-form="card" class="card-editor-page"><p class="form-error" role="alert"></p><p>Select a field to edit. Drag or use arrow keys to move it.</p><div class="card-workspace"><section class="card-preview-area" aria-label="Card workspace"><div id="card-canvas" tabindex="0" aria-label="Card preview"></div></section><aside class="card-controls" aria-label="Card editor tools" ${window.innerWidth < 850 && !state.cardToolsOpen ? "inert" : ""}>${button("card-tools-toggle", H("Close tools"), "", "card-tools-toggle")}<h2>Variables</h2><p>Drag a variable onto the preview, or select it to add it. Select an item in the preview to format it. Items snap to the center and edges.</p><div class="card-variable-list">${cardFields.map((key) => ui`<button type="button" draggable="true" data-card-variable="${key}" data-action="add-card-variable" data-id="${key}">${C(cardFieldLabels[key])}</button>`).join("")}</div>${select(
       H("Selected item"),
       "cardSelected",
       card.elements.map((e, index) => [
@@ -883,8 +893,8 @@ export function featureTools(ctx) {
     downloadBlob(new Blob([cardSVG()], { type: "image/svg+xml" }), "svg");
     notify(C("Card downloaded."));
   }
-  async function pngCard() {
-    const svg = cardSVG(),
+  async function pngCard(context) {
+    const svg = context ? renderCard(editingCard, context, qrData) : cardSVG(),
       image = new Image();
     image.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
     await image.decode();
@@ -970,7 +980,7 @@ export function featureTools(ctx) {
     state.deletingHost = { key, ...summary };
     modal(
       C("Permanently delete host"),
-      ui`<p><strong>${escape(summary.email)}</strong></p><p>Affected domain: ${escape(summary.domain || "No household domain")}</p><p>${escape(summary.scope)}</p><ul>${Object.entries(
+      ui`<p><strong>${escape(summary.email)}</strong></p><p>Affected domain: ${escape(summary.domain || "No household domain")}</p>${summary.aliases?.length ? ui`<p>Aliases: ${summary.aliases.map(escape).join(", ")}</p>` : ""}<p>${escape(summary.scope)}</p><ul>${Object.entries(
         summary.counts,
       )
         .map(([k, v]) => ui`<li>${k}: ${v}</li>`)
@@ -985,7 +995,22 @@ export function featureTools(ctx) {
   function evitesPage() {
     if (!evites) return "";
     const missing = evites.missing;
-    return ui`${topbar({ title: C("Text E-vites"), back: "card-editor-back" })}<section class="panel"><p>Send this invitation image and guest link to invited adults. Children are included through their adults. Previously sent or uncertain deliveries are never resent.</p>${!evites.enabled ? ui`<p>Text invitations are disabled. No messages will be sent.</p>` : ""}<div class="row">${button("evites-send", H("Send E-vites"), evites.enabled ? "" : "disabled")}${button("evites-resend", H("Send to newly added phone numbers"), evites.enabled && evites.resendEligible ? "" : "disabled")}</div><h2>Missing phone numbers</h2><ul>${missing.map((r) => ui`<li>${escape(r.household)} · ${escape(r.name)}</li>`).join("") || ui`<li>None</li>`}</ul><div class="row">${button("evites-copy", H("Copy list"))}${button("evites-download", H("Download list"))}</div><h2>Delivery status</h2><ul>${evites.recipients.map((r) => ui`<li>${escape(r.household)} · ${escape(r.name)} · ${escape(r.status)}</li>`).join("")}</ul></section>`;
+    const statusLabel = (status) =>
+      ({
+        "not-sent": C("Not sent"),
+        "missing-phone": C("Missing phone"),
+        queued: C("Queued"),
+        sending: C("Sending"),
+        accepted: C("Accepted by provider · delivery unconfirmed"),
+        sent: C("Sent · delivery unconfirmed"),
+        delivered: C("Delivered"),
+        failed: C("Failed · not resent"),
+        undelivered: C("Undelivered · not resent"),
+        unknown: C("Delivery unknown · not resent"),
+        blocked: C("Blocked"),
+        cancelled: C("Cancelled"),
+      })[status] || C("Delivery unknown");
+    return ui`${topbar({ title: C("Text E-vites"), back: "card-editor-back" })}<section class="panel"><p>Send this invitation image and guest link to invited adults. Children are included through their adults. Previously sent or uncertain deliveries are never resent.</p>${!evites.enabled ? ui`<p>Text invitations are disabled. No messages will be sent.</p>` : ""}<div class="row">${button("evites-send", H("Send E-vites"), evites.enabled ? "" : "disabled")}${button("evites-resend", H("Send to newly added phone numbers"), evites.enabled && evites.resendEligible ? "" : "disabled")}</div><h2>Missing phone numbers</h2><ul>${missing.map((r) => ui`<li>${escape(r.household)} · ${escape(r.name)}</li>`).join("") || ui`<li>None</li>`}</ul><div class="row">${button("evites-copy", H("Copy list"))}${button("evites-download", H("Download list"))}</div><h2>Delivery status</h2><p class="small">Provider acceptance does not confirm delivery. Unknown results are never resent.</p><ul>${evites.recipients.map((r) => ui`<li>${escape(r.household)} · ${escape(r.name)} · ${statusLabel(r.status)}${r.sharedPhone ? C(" · shared phone, one invitation") : ""}</li>`).join("")}</ul></section>`;
   }
   async function refreshEvites() {
     if (state.view !== "evites" || !editingCard?.event) return;
@@ -1040,7 +1065,6 @@ export function featureTools(ctx) {
         ![
           "home",
           "page-back",
-          "settings",
           "logout",
           "cards",
           "admin-templates",
@@ -1077,14 +1101,6 @@ export function featureTools(ctx) {
     async action(action, target) {
       const key = target.dataset.id;
       if (action === "evites-open") {
-        if (
-          editingCard.elements.some((element) =>
-            element.field.startsWith("recipient."),
-          )
-        )
-          throw Error(
-            "Use an invitation without recipient variables for a group text. Save a general invitation first.",
-          );
         evites = await api(`/api/host/events/${editingCard.event}/evites`);
         state.view = "evites";
         render();
@@ -1120,21 +1136,79 @@ export function featureTools(ctx) {
           (event) => event.id === editingCard.event,
         );
         if (!event) throw Error("Event not found.");
-        const blob = await pngCard();
-        const image = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = () => reject(Error("Image export failed."));
-          reader.readAsDataURL(blob);
-        });
-        evites = await api(`/api/host/events/${event.id}/evites`, {
-          method: "POST",
-          version: event.version,
-          data: {
-            image,
-            mode: action === "evites-resend" ? "resend-missing" : "send",
-          },
-        });
+        const personalized = editingCard.elements.some((element) =>
+          element.field.startsWith("recipient."),
+        );
+        const encode = (blob) =>
+          new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(Error("Image export failed."));
+            reader.readAsDataURL(blob);
+          });
+        const requestId = crypto.randomUUID(),
+          mode = action === "evites-resend" ? "resend-missing" : "send";
+        const queue = async (payload) => {
+          evites = await api(`/api/host/events/${event.id}/evites`, {
+            method: "POST",
+            version: event.version,
+            data: { ...payload, mode, requestId },
+          });
+        };
+        try {
+          if (personalized) {
+            let images = {},
+              size = 0;
+            const eligible = evites.recipients.filter(
+              (r) =>
+                r.hasPhone &&
+                (action === "evites-resend"
+                  ? r.canResend
+                  : r.status === "not-sent"),
+            );
+            for (const recipient of eligible) {
+              const guest = state.data.guests.find(
+                  (g) => g.id === recipient.id,
+                ),
+                address = state.data.addresses.find(
+                  (a) => a.id === guest.address,
+                );
+              const context = {
+                ...cardContext,
+                event: cardContext.event || event,
+                recipient: {
+                  name: [guest.first, guest.last, guest.suffix]
+                    .filter(Boolean)
+                    .join(" "),
+                  first: guest.first,
+                  last: guest.last,
+                  address: address?.lines || "",
+                  ...(editingCard.elements.some(
+                    (e) => e.field === "recipient.inviteCode",
+                  )
+                    ? { inviteCode: guest.inviteCode || "" }
+                    : {}),
+                },
+              };
+              const data = await encode(await pngCard(context));
+              if (size + data.length > 7000000 && Object.keys(images).length) {
+                await queue({ images });
+                images = {};
+                size = 0;
+              }
+              images[guest.id] = data;
+              size += data.length;
+            }
+            await queue({ images });
+          } else await queue({ image: await encode(await pngCard()) });
+        } catch (error) {
+          evites = await api(`/api/host/events/${event.id}/evites`);
+          render();
+          throw Error(
+            "Some invitations may already be queued. Check delivery status before trying again. " +
+              error.message,
+          );
+        }
         render();
         notify(C("Invitation delivery status updated."));
         return true;

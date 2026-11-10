@@ -197,19 +197,71 @@ export function accountProjection(store, session) {
     },
     account: {
       version: account?.version || 0,
+      method: account?.hostUser ? "email" : "username",
+      email: account?.hostUser
+        ? store.one("SELECT email FROM users WHERE id=?", account.hostUser)
+            ?.email || ""
+        : "",
       username: account?.username || "",
       recoveryPhone: account?.recoveryPhone || "",
       recoveryVerified: account?.recoveryVerified === true,
-      needsUsername: session.role === "guest" && !account?.username,
+      needsUsername:
+        session.role === "guest" && !account?.username && !account?.hostUser,
+      householdId:
+        session.role === "guest"
+          ? accessFor(
+              store,
+              store.get("guest", session.guest, session.household),
+              session.household,
+            ).code
+          : profile.publicCode,
     },
     contacts: personalContacts(store, identity),
   };
+}
+function hostedHouseholds(store, profile) {
+  return profile.members
+    .map((p) => personalAccount(store, p.identity)?.hostHousehold)
+    .filter(
+      (h) =>
+        h &&
+        !store.one(
+          "SELECT household FROM household_deletions WHERE household=?",
+          h,
+        ),
+    );
+}
+function hostProfile(store, household) {
+  if (
+    store.one(
+      "SELECT household FROM household_deletions WHERE household=?",
+      household,
+    )
+  )
+    return null;
+  const owner = store.one(
+    "SELECT id FROM users WHERE household=? AND role='host'",
+    household,
+  );
+  const link = owner && store.get("host-person", owner.id, household);
+  return link && profileForIdentity(store, link.identity);
+}
+function recipientKeys(store, key) {
+  return [key, hostProfile(store, key)?.id].filter(Boolean);
 }
 function recipientHouseholds(store, profile) {
   const result = new Set();
   for (const member of profile.members)
     for (const relation of guestRelations(store, member.identity))
       result.add(relation.household);
+  for (const edge of store
+    .list("personal-contact", profile.id)
+    .filter((e) => !e.removed)) {
+    const other = store.get("personal-household", edge.profile, PLATFORM);
+    if (other)
+      for (const household of hostedHouseholds(store, other))
+        result.add(household);
+  }
   return result;
 }
 export function recipientBlocked(store, household, guest) {
@@ -222,24 +274,42 @@ export function recipientBlocked(store, household, guest) {
   const profile = managed
     ? store.get("personal-household", managed.profile, PLATFORM)
     : link && profileForIdentity(store, link.identity);
-  return profile?.blocked?.includes(household) || false;
+  return (
+    !!profile &&
+    recipientKeys(store, household).some((key) => profile.blocked.includes(key))
+  );
 }
 export function personalContacts(store, identity) {
   const profile = profileForIdentity(store, identity);
   if (!profile) return [];
   const hosts = [...recipientHouseholds(store, profile)]
-    .filter((h) => !store.get("personal-contact", h, profile.id)?.removed)
+    .filter(
+      (h) =>
+        !recipientKeys(store, h).some(
+          (key) => store.get("personal-contact", key, profile.id)?.removed,
+        ),
+    )
     .map((household) => ({
       id: household,
       kind: "host",
       name: store.household(household)?.name || "Household",
-      blocked: profile.blocked.includes(household),
-      selected: profile.recipients.includes(household),
+      blocked: recipientKeys(store, household).some((key) =>
+        profile.blocked.includes(key),
+      ),
+      selected: recipientKeys(store, household).some((key) =>
+        profile.recipients.includes(key),
+      ),
     }));
   const edges = store.list("personal-contact", profile.id);
   for (const edge of edges) {
     const other = store.get("personal-household", edge.profile, PLATFORM);
-    if (other && !edge.removed)
+    if (
+      other &&
+      !edge.removed &&
+      !hostedHouseholds(store, other).some((h) =>
+        hosts.some((contact) => contact.id === h),
+      )
+    )
       hosts.push({
         id: other.id,
         kind: "personal",
@@ -263,8 +333,10 @@ export function personalContacts(store, identity) {
     if (
       !other ||
       contact.blocked ||
-      !approved(other, profile.id) ||
-      other.blocked.includes(profile.sourceHousehold)
+      !approved(other, profile.id, store) ||
+      hostedHouseholds(store, profile).some((h) =>
+        recipientKeys(store, h).some((key) => other.blocked.includes(key)),
+      )
     )
       return contact;
     const address = other.mailingSame ? other.physical : other.mailing;
@@ -284,10 +356,12 @@ export function personalContacts(store, identity) {
     };
   });
 }
-function approved(profile, household) {
+function approved(profile, household, store) {
+  const keys = recipientKeys(store, household);
   return (
-    !profile.blocked.includes(household) &&
-    (profile.sharing === "everyone" || profile.recipients.includes(household))
+    !keys.some((key) => profile.blocked.includes(key)) &&
+    (profile.sharing === "everyone" ||
+      keys.some((key) => profile.recipients.includes(key)))
   );
 }
 export function propagatePersonalProfile(store, profile) {
@@ -297,13 +371,20 @@ export function propagatePersonalProfile(store, profile) {
       store,
       person.identity,
     )) {
-      if (!approved(profile, relation.household)) continue;
+      if (!approved(profile, relation.household, store)) continue;
       const guest = relation.record;
       const next = {
         ...guest,
         first: person.first,
         ...(!guest.parent
-          ? { last: person.last, suffix: person.suffix, phone: person.phone }
+          ? {
+              last: person.last,
+              suffix: person.suffix,
+              phone: person.phone,
+              ...(person.phone !== guest.phone
+                ? { smsConsent: false, consentRecorded: null }
+                : {}),
+            }
           : {}),
       };
       if (JSON.stringify(next) !== JSON.stringify(guest))
@@ -344,13 +425,27 @@ export function propagatePersonalProfile(store, profile) {
   }
   // New family entries are added only to recipients with an established address relationship.
   for (const household of recipientHouseholds(store, profile)) {
-    if (!approved(profile, household)) continue;
+    if (!approved(profile, household, store)) continue;
     const anchors = store
       .list("managed-contact", household)
       .filter((m) => m.profile === profile.id);
-    const address = anchors
+    let address = anchors
       .map((m) => store.get("guest", m.id, household))
       .find((g) => g?.address)?.address;
+    if (
+      !address &&
+      !profile.members.some((p) =>
+        guestRelationsIncludingChildren(store, p.identity).some(
+          (r) => r.household === household,
+        ),
+      )
+    ) {
+      address = store.put("address", id(), household, {
+        ...addressInput({ ...mailing, label: profile.name }),
+        notes: "",
+        phone: "",
+      }).id;
+    }
     if (!address) continue;
     const local = new Map(
       store
@@ -410,7 +505,14 @@ function guestRelationsIncludingChildren(store, identity) {
         ),
     )
     .map((r) => ({ ...r, record: store.get("guest", r.guest, r.household) }))
-    .filter((r) => r.record);
+    .filter(
+      (r) =>
+        r.record &&
+        !store.one(
+          "SELECT household FROM household_deletions WHERE household=?",
+          r.household,
+        ),
+    );
 }
 export function autoAssociateContact(store, guest, household) {
   if (store.get("managed-contact", guest.id, household)) return;
@@ -418,10 +520,16 @@ export function autoAssociateContact(store, guest, household) {
     guest.address && store.get("address", guest.address, household);
   const matches = [];
   for (const profile of store.list("personal-household", PLATFORM)) {
-    if (profile.blocked.includes(household)) continue;
+    if (
+      recipientKeys(store, household).some((key) =>
+        profile.blocked.includes(key),
+      )
+    )
+      continue;
     const mailing = profile.mailingSame ? profile.physical : profile.mailing;
     for (const p of profile.members) {
       if (
+        p.archived ||
         !!p.parent !== !!guest.parent ||
         compareName(nameOf(p)) !==
           compareName(
@@ -441,6 +549,18 @@ export function autoAssociateContact(store, guest, household) {
         )
       )
         continue;
+      if (p.parent) {
+        const parentIdentity = profile.members.find(
+          (member) => member.id === p.parent,
+        )?.identity;
+        const localParent = store.one(
+          "SELECT identity FROM guest_identity_links WHERE household=? AND guest=?",
+          household,
+          guest.parent,
+        );
+        if (!parentIdentity || localParent?.identity !== parentIdentity)
+          continue;
+      }
       // Registered accounts require their private registered method; host-created codes cannot impersonate them.
       if (!p.parent && !registeredMethod(store, p.identity)) continue;
       matches.push({ profile, p });
@@ -456,7 +576,8 @@ export function autoAssociateContact(store, guest, household) {
   if (
     prior &&
     prior.identity !== p.identity &&
-    personalAccount(store, prior.identity)
+    (personalAccount(store, prior.identity) ||
+      profileForIdentity(store, prior.identity))
   )
     return;
   store.put("managed-contact", guest.id, household, {
@@ -506,6 +627,7 @@ export function authenticateUsername(store, username, code) {
     hash(value),
   );
   if (!row) return null;
+  const account = personalAccount(store, row.id);
   const relation = accessCandidates(store, String(code || "")).find(
     (r) =>
       !r.record.parent &&
@@ -516,6 +638,8 @@ export function authenticateUsername(store, username, code) {
       )?.identity === row.id &&
       !recipientBlocked(store, r.household, r.guest),
   );
+  if (relation && account?.hostUser)
+    fail(401, "Use your registered email and password.");
   return relation
     ? { identity: store.get("guest-identity", row.id, PLATFORM), relation }
     : null;
@@ -534,6 +658,8 @@ function revokeOtherSessions(store, identity, keep) {
 function savePrivateAccount(store, session, input, expected) {
   const { identity } = ensurePersonalProfile(store, session),
     previous = personalAccount(store, identity);
+  if (previous?.hostUser)
+    fail(403, "Use your registered host email and password.");
   if ((previous?.version || 0) !== expected)
     fail(409, "Account changed. Refresh before trying again.");
   const username = text(input.username, 80, true).toLowerCase();
@@ -619,7 +745,11 @@ export function savePersonalProfile(store, session, input, expected) {
     // Omitted entries retain stable identities and existing relationships; removal is an explicit archive.
     for (const old of profile.members)
       if (!ids.has(old.id)) members.push({ ...old, archived: true });
-    const allowed = new Set(personalContacts(store, identity).map((c) => c.id));
+    const allowed = new Set(
+      personalContacts(store, identity).flatMap((c) =>
+        recipientKeys(store, c.id),
+      ),
+    );
     const recipients = (input.recipients || []).map((v) => text(v, 100));
     if (recipients.length > 10000 || recipients.some((v) => !allowed.has(v)))
       fail(400, "Choose your contacts for information sharing.");
@@ -650,7 +780,11 @@ export function startRecovery(store, env, phone, { now = Date.now } = {}) {
   const accounts = store
     .list("person-account", PLATFORM)
     .filter(
-      (a) => a.recoveryPhone === phone && a.recoveryVerified && a.username,
+      (a) =>
+        !a.hostUser &&
+        a.recoveryPhone === phone &&
+        a.recoveryVerified &&
+        a.username,
     );
   if (accounts.length) {
     const previous = store.get("username-recovery", hash(phone), PLATFORM);
@@ -696,7 +830,9 @@ export function processAccountReply(store, params) {
   }
   const names = record.accounts
     .map((key) => personalAccount(store, key))
-    .filter((a) => a?.recoveryVerified && a.recoveryPhone === phone)
+    .filter(
+      (a) => !a?.hostUser && a?.recoveryVerified && a.recoveryPhone === phone,
+    )
     .map((a) => a.username);
   store.put(
     "username-recovery",
@@ -886,7 +1022,8 @@ export async function personalAPI({
       fail(409, "Contacts changed. Refresh first.");
     const blocked = new Set(current.blocked);
     if (input.blocked === true) blocked.add(contact[1]);
-    else blocked.delete(contact[1]);
+    else
+      for (const key of recipientKeys(store, contact[1])) blocked.delete(key);
     store.put(
       "personal-household",
       profile.id,
@@ -895,14 +1032,16 @@ export async function personalAPI({
       current.version,
     );
     if (input.remove === true) {
-      const previous = store.get("personal-contact", contact[1], profile.id);
-      store.put(
-        "personal-contact",
-        contact[1],
-        profile.id,
-        { profile: contact[1], removed: true },
-        previous?.version,
-      );
+      for (const key of recipientKeys(store, contact[1])) {
+        const previous = store.get("personal-contact", key, profile.id);
+        store.put(
+          "personal-contact",
+          key,
+          profile.id,
+          { profile: key, removed: true },
+          previous?.version,
+        );
+      }
     }
     json(res, accountProjection(store, session));
     return true;
@@ -918,7 +1057,14 @@ export async function personalAPI({
       .filter(
         (p) =>
           p.id !== profile.id &&
-          p.publicCode === code &&
+          ((hostedHouseholds(store, p).length && p.publicCode === code) ||
+            p.members.some((member) =>
+              guestRelationsIncludingChildren(store, member.identity).some(
+                (r) =>
+                  !r.record.parent &&
+                  accessFor(store, r.record, r.household).code === code,
+              ),
+            )) &&
           compareName(p.name) === name &&
           !p.blocked.includes(profile.id),
       );
@@ -946,6 +1092,18 @@ export async function personalAPI({
   fail(404, "Page not found.");
 }
 
+export function renamePersonalHousehold(store, household, name) {
+  const profile = hostProfile(store, household);
+  if (!profile || profile.name === name) return;
+  const next = store.put(
+    "personal-household",
+    profile.id,
+    PLATFORM,
+    { ...profile, name },
+    profile.version,
+  );
+  propagatePersonalProfile(store, next);
+}
 export function initializeHostPersonal(store, host, input = {}) {
   if (!input.existingUsername && !input.existingHouseholdId) return;
   const proof = authenticateUsername(
@@ -959,6 +1117,15 @@ export function initializeHostPersonal(store, host, input = {}) {
       "Use the existing username and Household ID to link your account.",
     );
   const account = personalAccount(store, proof.identity.id);
+  const profile = profileForIdentity(store, proof.identity.id);
+  if (
+    profile &&
+    hostedHouseholds(store, profile).some((h) => h !== host.household)
+  )
+    fail(
+      409,
+      "This household already has a host sign-in. Use its existing family accounts.",
+    );
   if (account.hostUser && account.hostUser !== host.user)
     fail(409, "This account already has a host sign-in.");
   store.put("host-person", host.user, host.household, {
@@ -970,5 +1137,10 @@ export function initializeHostPersonal(store, host, input = {}) {
     PLATFORM,
     { ...account, hostUser: host.user, hostHousehold: host.household },
     account.version,
+  );
+  renamePersonalHousehold(
+    store,
+    host.household,
+    store.household(host.household).name,
   );
 }

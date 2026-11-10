@@ -40,12 +40,12 @@ export function personalTools({
   function familyFields(data = current()) {
     if (!data) return "";
     const p = data.profile;
-    return ui`<input type="hidden" name="profileVersion" value="${p.version}"><fieldset><legend>Physical address</legend>${addressFields("physical", p.physical)}</fieldset><fieldset><legend>Mailing address</legend><label class="check"><input type="checkbox" name="mailingSame" ${p.mailingSame ? "checked" : ""}>${C("Same as physical address")}</label><div data-mailing-fields ${p.mailingSame ? "hidden" : ""}>${addressFields("mailing", p.mailing)}</div></fieldset><fieldset><legend>Family information</legend><div data-personal-members>${p.members
+    return ui`<p>${C("Household ID")} · <code>${esc(data.account.householdId || p.publicCode)}</code></p><input type="hidden" name="profileVersion" value="${p.version}"><div data-layout="personalFamily"><fieldset data-layout-item="physical"><legend>Physical address</legend>${addressFields("physical", p.physical)}</fieldset><fieldset data-layout-item="mailing"><legend>Mailing address</legend><label class="check"><input type="checkbox" name="mailingSame" ${p.mailingSame ? "checked" : ""}>${C("Same as physical address")}</label><div data-mailing-fields ${p.mailingSame ? "hidden" : ""}>${addressFields("mailing", p.mailing)}</div></fieldset><fieldset data-layout-item="members"><legend>Family information</legend><div data-personal-members>${p.members
       .filter((m) => !m.archived)
       .map((m) => memberRow(m, p.members))
       .join(
         "",
-      )}</div><div class="row">${button("personal-add-adult", H("Add adult"))}${button("personal-add-child", H("Add child"))}</div></fieldset><fieldset><legend>Share updated information</legend>${select(
+      )}</div><div class="row">${button("personal-add-adult", H("Add adult"))}${button("personal-add-child", H("Add child"))}</div></fieldset><fieldset data-layout-item="sharing"><legend>Share updated information</legend>${select(
       H("Who receives updates"),
       "profileSharing",
       [
@@ -53,7 +53,7 @@ export function personalTools({
         ["selected", C("Selected contacts")],
       ],
       p.sharing,
-    )}<div data-share-recipients>${data.contacts.map((c) => ui`<label class="check"><input type="checkbox" name="profileRecipient" value="${c.id}" ${p.recipients.includes(c.id) ? "checked" : ""} ${c.blocked ? "disabled" : ""}>${esc(c.name)}${c.blocked ? C(" · blocked") : ""}</label>`).join("") || ui`<p>${C("Contacts appear here when someone adds your household.")}</p>`}</div></fieldset>`;
+    )}<div data-share-recipients>${data.contacts.map((c) => ui`<label class="check"><input type="checkbox" name="profileRecipient" value="${c.id}" ${c.selected ? "checked" : ""} ${c.blocked ? "disabled" : ""}>${esc(c.name)}${c.blocked ? C(" · blocked") : ""}</label>`).join("") || ui`<p>${C("Contacts appear here when someone adds your household.")}</p>`}</div></fieldset></div>`;
   }
   function collectFamily(form) {
     const fd = new FormData(form),
@@ -85,14 +85,16 @@ export function personalTools({
   function accountPage() {
     const data = current(),
       a = data.account;
-    return ui`${topbar({ title: C("Private sign-in"), back: "home", extra: tool("personal-save", "Save", "", "save") })}<section class="panel"><p>Your username is private. It is never shown to family, friends or hosts.</p><form data-form="personal-account" data-version="${a.version}">${field(H("Username"), "username", a.username, "text", 'required minlength="3" maxlength="80" autocomplete="username"')}${field(H("Recovery phone number"), "recoveryPhone", a.recoveryPhone, "tel", 'required maxlength="30" autocomplete="tel"')}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form>${a.recoveryPhone ? ui`<p>${a.recoveryVerified ? C("Recovery phone verified.") : C("Verify your recovery phone to enable username reminders.")}</p>${a.recoveryVerified ? "" : ui`${button("personal-verify-start", H("Send verification code"))}<form data-form="personal-verify">${field(H("Verification code"), "code", "", "text", 'required inputmode="numeric" maxlength="6"')}<p class="form-error" role="alert"></p><button>${C("Verify")}</button></form>`}` : ""}</section>`;
+    if (a.method === "email")
+      return ui`${topbar({ title: C("Private sign-in"), back: "page-back" })}<section class="panel"><p>Use your registered email and password.</p>${field(H("Registered email"), "registeredEmail", a.email, "email", "readonly")}</section>`;
+    return ui`${topbar({ title: C(a.needsUsername ? "Create private sign-in" : "Private sign-in"), back: a.needsUsername ? "" : "page-back", extra: tool("personal-save", "Save", "", "save") })}<section class="panel" data-layout="personalAccount"><p data-layout-item="description">Your username is private. It is never shown to family, friends or hosts.</p><form data-form="personal-account" data-layout-item="credentials" data-version="${a.version}">${field(H("Username"), "username", a.username, "text", 'required minlength="3" maxlength="80" autocomplete="username"')}${field(H("Recovery phone number"), "recoveryPhone", a.recoveryPhone, "tel", 'required maxlength="30" autocomplete="tel"')}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form><div data-layout-item="verification">${a.recoveryPhone ? ui`<p>${a.recoveryVerified ? C("Recovery phone verified.") : C("Verify your recovery phone to enable username reminders.")}</p>${a.recoveryVerified ? "" : ui`${button("personal-verify-start", H("Send verification code"))}<form data-form="personal-verify">${field(H("Verification code"), "code", "", "text", 'required inputmode="numeric" maxlength="6"')}<p class="form-error" role="alert"></p><button>${C("Verify")}</button></form>`}` : ""}</div></section>`;
   }
   function familyPage() {
-    return ui`${topbar({ title: C("Family information"), back: "home", extra: tool("personal-save", "Save", "", "save") })}<section class="panel"><form data-form="personal-family">${familyFields()}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form></section>`;
+    return ui`${topbar({ title: C("Family information"), back: "page-back", extra: tool("personal-save", "Save", "", "save") })}<section class="panel"><form data-form="personal-family">${familyFields()}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form></section>`;
   }
   function contactsPage() {
     const data = current();
-    return ui`${topbar({ title: C("Address Book"), back: "home" })}<section class="panel"><form data-form="personal-add-contact">${field(H("Household name"), "name", "", "text", 'required maxlength="100"')}${field(H("Household ID"), "householdId", "", "text", 'required inputmode="numeric" pattern="[0-9]{4}" maxlength="4"')}<p class="form-error" role="alert"></p><button>${C("Add contact")}</button></form><ul class="browse-rows">${data.contacts.map((c) => ui`<li class="browse-row"><div class="grow"><strong>${esc(c.name)}</strong>${c.address ? ui`<p class="contact-mailing-address">${esc(c.address)}</p>` : ""}${c.members ? ui`<ul>${c.members.map((p) => ui`<li>${esc([p.first, p.last, p.suffix].filter(Boolean).join(" "))}${p.child ? C(" · child") : p.phone ? " · " + esc(p.phone) : ""}</li>`).join("")}</ul>` : ""}</div><div class="row">${button("personal-block", H(c.blocked ? "Unblock" : "Block"), `data-id="${c.id}" data-blocked="${c.blocked}"`)}${button("personal-remove-contact", H("Remove"), `data-id="${c.id}"`)}</div></li>`).join("")}</ul></section>`;
+    return ui`${topbar({ title: C("Address Book"), back: "page-back" })}<section class="panel" data-layout="personalContacts"><form data-form="personal-add-contact" data-layout-item="add">${field(H("Household name"), "name", "", "text", 'required maxlength="100"')}${field(H("Household ID"), "householdId", "", "text", 'required inputmode="numeric" pattern="[0-9]{4}" maxlength="4"')}<p class="form-error" role="alert"></p><button>${C("Add contact")}</button></form><ul class="browse-rows" data-layout-item="contacts">${data.contacts.map((c) => ui`<li class="browse-row"><div class="grow"><strong>${esc(c.name)}</strong>${c.address ? ui`<p class="contact-mailing-address">${esc(c.address)}</p>` : ""}${c.members ? ui`<ul>${c.members.map((p) => ui`<li>${esc([p.first, p.last, p.suffix].filter(Boolean).join(" "))}${p.child ? C(" · child") : p.phone ? " · " + esc(p.phone) : ""}</li>`).join("")}</ul>` : ""}</div><div class="row">${button("personal-block", H(c.blocked ? "Unblock" : "Block"), `data-id="${c.id}" data-blocked="${c.blocked}"`)}${button("personal-remove-contact", H("Remove"), `data-id="${c.id}"`)}</div></li>`).join("")}</ul></section>`;
   }
   function recoveryPage() {
     return ui`<section class="auth"><h1>Recover username</h1><form data-form="username-recovery">${field(H("Recovery phone number"), "phone", "", "tel", 'required maxlength="30"')}<p>We’ll text your recovery number. Reply YES to receive your username or NO to cancel.</p><p class="form-error" role="alert"></p><button>${C("Request reminder")}</button></form>${button("host-login", H("Back"))}</section>`;
@@ -101,6 +103,21 @@ export function personalTools({
     return ui`<section class="panel guest-account-actions">${button("personal-family", H("Family information"))}${button("personal-contacts", H("Address Book"))}${button("personal-account", H("Private sign-in"))}</section>`;
   }
   return {
+    leave(action, target) {
+      const form = document.querySelector(
+        'form[data-form^="personal-"][data-dirty="true"],form[data-form="username-recovery"][data-dirty="true"]',
+      );
+      if (
+        !form ||
+        target.closest("form") === form ||
+        action === "personal-save"
+      )
+        return true;
+      if (!confirm(String(C("Discard unsaved household information?"))))
+        return false;
+      delete form.dataset.dirty;
+      return true;
+    },
     familyFields,
     collectFamily,
     homeActions,
@@ -184,7 +201,7 @@ export function personalTools({
           },
         });
         state.data.personal = data;
-        render();
+        await load();
         return true;
       }
       if (action === "personal-verify-start") {
@@ -232,7 +249,10 @@ export function personalTools({
           method: "POST",
           data: Object.fromEntries(new FormData(form)),
         });
+      const completing =
+        kind === "personal-account" && current()?.account.needsUsername;
       if (data) state.data.personal = data;
+      if (completing && !data.account.needsUsername) state.view = "home";
       delete form.dataset.dirty;
       await load();
       notify(C("Household information saved."));

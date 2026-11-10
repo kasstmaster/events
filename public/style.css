@@ -3177,3 +3177,14 @@ body #notice {
 #appearance-toolbar .card-controls > h2 {
   display: none;
 }
+
+.card-editor-active .appearance-active .card-editor-title {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+  font-size: clamp(18px, 3vw, 24px);
+}
+.card-editor-active .appearance-active .appearance-categories {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}

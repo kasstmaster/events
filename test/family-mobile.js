@@ -1,3 +1,4 @@
+import { completeGuestSetup } from "./helpers/guest-account.js";
 import { clickNavigation } from "./helpers/navigation.js";
 // Synthetic loopback-only families and guest codes. No real accounts, messages or documents.
 import assert from "node:assert/strict";
@@ -94,9 +95,11 @@ try {
   const owner = await device(1440);
   await owner.page.goto(origin);
   await owner.page
-    .getByLabel("Email address", { exact: true })
+    .getByLabel("Name, email or username", { exact: true })
     .fill("owner@example.test");
-  await owner.page.getByLabel("Password", { exact: true }).fill(password);
+  await owner.page
+    .getByLabel("Password or Household ID", { exact: true })
+    .fill(password);
   await click(owner.page, "Sign in");
   await click(owner.page, "Family Workspace");
   await owner.page
@@ -372,23 +375,18 @@ try {
   const guest = await device();
   await guest.page.goto(origin + "/h/" + household.slug);
   assert.equal(
-    await guest.page
-      .getByLabel("Suffix, if applicable", { exact: true })
-      .isVisible(),
+    await guest.page.getByLabel("Suffix", { exact: true }).isVisible(),
     false,
   );
-  await guest.page.getByLabel("First name", { exact: true }).fill("Casey");
-  await guest.page.getByLabel("Last name", { exact: true }).fill("Example");
   await guest.page
-    .getByLabel("Invite Code", { exact: true })
+    .getByLabel("Name, email or username", { exact: true })
+    .fill("Casey Example");
+  await guest.page
+    .getByLabel("Password or Household ID", { exact: true })
     .fill(adult.inviteCode);
-  await guest.page
-    .getByLabel("Suffix, if applicable", { exact: true })
-    .waitFor();
-  await guest.page
-    .getByLabel("Suffix, if applicable", { exact: true })
-    .fill("Jr.");
-  await click(guest.page, "See my invitations");
+  // This code identifies one adult, so no suffix input is requested.
+  await click(guest.page, "Sign in");
+  await completeGuestSetup(guest.page, "family.casey");
   const card = guest.page.locator("article.card").filter({
     has: guest.page.getByRole("heading", {
       name: "Shared supper",

@@ -241,8 +241,21 @@ export class Store {
       household,
     ).map((row) => this.unpack(row));
   }
+  contactSyncWriteGuard(kind, household) {
+    if (
+      ["guest", "address"].includes(kind) &&
+      this.list("anylist-job", household).some(
+        (job) => job.state === "writing" && job.expires > Date.now(),
+      )
+    )
+      fail(
+        409,
+        "A contact sync is finishing. Your draft is retained; try saving again shortly.",
+      );
+  }
   put(kind, recordId, household, body, version) {
     return this.transaction(() => {
+      this.contactSyncWriteGuard(kind, household);
       const serialized = JSON.stringify(body),
         chunked = serialized.length > 250000;
       const stored = chunked
@@ -315,6 +328,7 @@ export class Store {
   }
   remove(kind, recordId, household, version) {
     return this.transaction(() => {
+      this.contactSyncWriteGuard(kind, household);
       if (
         !this.run(
           "DELETE FROM records WHERE kind=? AND id=? AND household=? AND version=?",
@@ -466,6 +480,13 @@ export class Store {
     return this.transaction(() => {
       const existing = this.household(household);
       if (!existing) fail(404, "Household not found.");
+      if (
+        this.one(
+          "SELECT household FROM household_deletions WHERE household=?",
+          household,
+        )
+      )
+        fail(409, "This household is disabled and cannot be renamed.");
       if (existing.version !== version)
         fail(409, "Household changed. Refresh first.");
       const name = text(input.name, 100, true);

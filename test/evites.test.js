@@ -135,3 +135,103 @@ test("unknown e-vite sends are never retried and foreign hosts cannot access del
     404,
   );
 });
+
+test("recipient images remain separate across upload batches; receipts are monotonic and interrupted attempts never resend", async (t) => {
+  const f = await application(t),
+    host = await f.host("PersonalEvites"),
+    a = await f.guest(host, { phone: "+15005550111" }),
+    b = await f.guest(host, { first: "Jordan", phone: "+15005550112" }),
+    missing = await f.guest(host, { first: "Missing" }),
+    event = await f.event(host, [a, b, missing]);
+  const second =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+    requestId = "01234567-89ab-4cde-8fab-0123456789ab",
+    origin = "https://example.test";
+  prepareEvites(
+    f.store,
+    enabled,
+    host.household.id,
+    event,
+    { version: event.version, images: { [a.id]: image }, requestId },
+    origin,
+  );
+  assert.equal(
+    eviteStatus(f.store, host.household.id, event, enabled).recipients.find(
+      (r) => r.id === b.id,
+    ).status,
+    "not-sent",
+  );
+  prepareEvites(
+    f.store,
+    enabled,
+    host.household.id,
+    event,
+    { version: event.version, images: { [b.id]: second }, requestId },
+    origin,
+  );
+  const rows = f.store.list("evite-delivery", host.household.id),
+    first = rows.find((r) => r.guest === a.id),
+    last = rows.find((r) => r.guest === b.id);
+  assert.notEqual(first.mediaUrl, last.mediaUrl);
+  assert.equal(
+    f.store.get("evite-media", first.media, host.household.id).data,
+    image,
+  );
+  assert.equal(
+    f.store.get("evite-media", last.media, host.household.id).data,
+    second,
+  );
+  let calls = 0;
+  await runEvites(f.store, enabled, {
+    fetcher: async () =>
+      Response.json({ sid: "SMsynthetic" + ++calls }, { status: 201 }),
+  });
+  assert.equal(calls, 2);
+  const { processEviteStatus } = await import("../server/evites.js");
+  const delivered = f.store
+    .list("evite-delivery", host.household.id)
+    .find((r) => r.guest === a.id);
+  processEviteStatus(
+    f.store,
+    new URLSearchParams({
+      MessageSid: delivered.providerId,
+      MessageStatus: "delivered",
+    }),
+  );
+  processEviteStatus(
+    f.store,
+    new URLSearchParams({
+      MessageSid: delivered.providerId,
+      MessageStatus: "sent",
+    }),
+  );
+  assert.equal(
+    f.store.get("evite-delivery", delivered.id, host.household.id).status,
+    "delivered",
+  );
+  const stuck = f.store
+    .list("evite-delivery", host.household.id)
+    .find((r) => r.guest === b.id);
+  f.store.put(
+    "evite-delivery",
+    stuck.id,
+    host.household.id,
+    { ...stuck, status: "sending", updated: Date.now() - 180000 },
+    stuck.version,
+  );
+  await runEvites(f.store, enabled, {
+    fetcher: async () => {
+      throw Error("Must never resend");
+    },
+  });
+  assert.equal(
+    f.store.get("evite-delivery", stuck.id, host.household.id).status,
+    "unknown",
+  );
+  assert.equal(
+    eviteStatus(f.store, host.household.id, event, enabled).missing.length,
+    1,
+  );
+  assert.deepEqual(f.store.get("event", event.id, host.household.id), event);
+  assert.equal(f.store.list("response", host.household.id).length, 0);
+});

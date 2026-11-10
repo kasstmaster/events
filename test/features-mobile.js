@@ -146,6 +146,10 @@ try {
   };
   admin.page.on("request", observe);
   const views = [
+    "personalFamily",
+    "personalAccount",
+    "personalSetup",
+    "personalContacts",
     "guestHome",
     "guestEvent",
     "guestEventUnanswered",
@@ -184,6 +188,23 @@ try {
       .getByLabel("Example page", { exact: true })
       .selectOption(view);
     await example.locator("main").waitFor();
+    if (view === "personalFamily") {
+      await example
+        .getByLabel("Who receives updates", { exact: true })
+        .waitFor();
+      assert.equal(
+        await example
+          .locator('[data-layout="personalFamily"] > [data-layout-item]')
+          .count(),
+        4,
+      );
+    }
+    if (view === "personalSetup")
+      await example.getByLabel("Username", { exact: true }).waitFor();
+    if (view === "personalContacts")
+      await example
+        .getByRole("button", { name: "Block", exact: true })
+        .waitFor();
     if (view.startsWith("guestEvent")) {
       await example.getByText("Where", { exact: true }).waitFor();
       assert.equal(

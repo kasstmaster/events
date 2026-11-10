@@ -51,6 +51,7 @@ for (const file of [
   "public/app.js",
   "public/editor-tools.js",
   "public/family-ui.js",
+  "public/personal-ui.js",
   "public/address-picker.js",
   "public/browse-ui.js",
   "public/appearance-editor.js",
@@ -66,6 +67,9 @@ for (const file of [
   "server/feature-api.js",
   "server/reminders.js",
   "server/account-deletion.js",
+  "server/personal-accounts.js",
+  "server/evites.js",
+  "server/household-integrations.js",
 ]) {
   const source = await readFile(file, "utf8");
   walk(parsers.babel.parse(source, {}), null, (node, parent) => {

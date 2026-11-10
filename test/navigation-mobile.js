@@ -1,3 +1,4 @@
+import { enrollGuest } from "./helpers/guest-account.js";
 // Synthetic loopback data only. Native sharing/clipboard are mocked at the browser boundary.
 import assert from "node:assert/strict";
 import { once } from "node:events";
@@ -201,6 +202,7 @@ const guestCookie = (
     inviteCode: guest.inviteCode,
   })
 ).cookie;
+await enrollGuest(origin, guestCookie, "navigation.casey");
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium",
   args: ["--no-sandbox"],
@@ -445,22 +447,23 @@ try {
       .getByRole("button", { name: "Invitation Cards", exact: true })
       .click();
     await click(p, "Create card / template");
-    await p
-      .getByRole("heading", { name: "Edit your card", exact: true })
-      .waitFor();
+    await p.locator("#card-editor-form").waitFor();
     assert.equal(await p.locator('[name="cardEvent"]').inputValue(), event.id);
-    await click(p, "Close editor");
+    await click(p, "Close");
+    await click(p, "Home");
     await card
       .getByRole("button", { name: "Invitation Cards", exact: true })
       .click();
     await p
       .getByRole("button", { name: "Edit invitation", exact: true })
       .click();
-    await p
-      .getByRole("heading", { name: "Edit your card", exact: true })
-      .waitFor();
+    await p.locator("#card-preview-canvas > svg").waitFor();
+    await click(p, "Edit");
+    await p.locator("#card-editor-form").waitFor();
     assert.equal(await p.locator('[name="cardEvent"]').inputValue(), event.id);
-    await click(p, "Close editor");
+    await click(p, "Close");
+    await click(p, "Close");
+    await click(p, "Home");
   }
   assert.equal(
     await p.getByRole("heading", { name: "Your events", exact: true }).count(),
@@ -714,6 +717,7 @@ try {
       manualStatusReads++;
       return route.continue();
     }
+    assert.equal(route.request().postDataJSON().mode, "both");
     store.put("anylist-job", syncId, host.household, {
       state: "running",
       started: Date.now(),
@@ -725,6 +729,10 @@ try {
     });
   });
   await click(p, "Sync AnyList");
+  await p
+    .getByRole("button", { name: "Pull from AnyList", exact: true })
+    .waitFor();
+  await click(p, "Sync both");
   await p.getByRole("button", { name: "Syncing…", exact: true }).waitFor();
   assert.equal(
     await p.getByRole("button", { name: "Syncing…", exact: true }).isDisabled(),
@@ -1386,10 +1394,9 @@ try {
     .getByRole("button", { name: "Invitation Cards", exact: true })
     .click();
   await p.getByRole("button", { name: "Edit invitation", exact: true }).click();
-  await p
-    .getByRole("heading", { name: "Edit your card", exact: true })
-    .waitFor();
-  await click(p, "Close editor");
+  await p.locator("#card-preview-canvas > svg").waitFor();
+  await click(p, "Close");
+  await click(p, "Home");
   await p.getByRole("heading", { name: "Dinner Two", exact: true }).waitFor();
   await click(p, "Home");
   await p
@@ -1658,10 +1665,9 @@ try {
     (g) => g.id === guest.id,
   );
   const layoutGuestCookie = (
-    await api(null, `/api/public/households/${household.slug}/login`, {
-      first: currentLayoutGuest.first,
-      last: currentLayoutGuest.last,
-      inviteCode: currentLayoutGuest.inviteCode,
+    await api(null, "/api/sign-in", {
+      account: "navigation.casey",
+      secret: currentLayoutGuest.inviteCode,
     })
   ).cookie;
   const layoutGuest = await page(layoutGuestCookie);
@@ -2000,9 +2006,11 @@ try {
   };
   await offered();
   await click(p, "Settings");
-  const detailsName = p.getByLabel("Family household name", { exact: true });
-  const savedName = await detailsName.inputValue();
-  await detailsName.fill("Unsaved household draft");
+  const nameField = p.getByLabel("Family household name", { exact: true });
+  const savedName = await nameField.inputValue();
+  assert.equal(await nameField.getAttribute("readonly"), "");
+  const detailsName = p.getByLabel("Household IANA timezone", { exact: true });
+  await detailsName.fill("America/New_York");
   const unchangedDetailsVersion = await p
     .locator(".inline-household-details")
     .getAttribute("data-version");
@@ -2019,7 +2027,7 @@ try {
     remoteHousehold.version,
   );
   await p.waitForTimeout(3500);
-  assert.equal(await detailsName.inputValue(), "Unsaved household draft");
+  assert.equal(await detailsName.inputValue(), "America/New_York");
   assert.equal(
     await p.locator(".inline-household-details").getAttribute("data-version"),
     unchangedDetailsVersion,
@@ -2032,7 +2040,7 @@ try {
   );
   await p.locator(".toolbar [data-action=home]").click();
   await dismissedDetails;
-  assert.equal(await detailsName.inputValue(), "Unsaved household draft");
+  assert.equal(await detailsName.inputValue(), "America/New_York");
   const discardedDetails = new Promise((resolve) =>
     p.once("dialog", async (d) => {
       await d.accept();
@@ -2079,19 +2087,26 @@ try {
   await p
     .getByRole("button", { name: "Create card / template", exact: true })
     .click();
-  await p
-    .getByRole("heading", { name: "Edit your card", exact: true })
-    .waitFor();
+  await p.locator("#card-editor-form").waitFor();
   await offered();
   if (await p.getByRole("button", { name: "Tools", exact: true }).count())
     await click(p, "Tools");
+  await p
+    .getByRole("toolbar", { name: "Card categories", exact: true })
+    .getByRole("button", { name: "Card", exact: true })
+    .click();
+  await p
+    .getByRole("toolbar", { name: "Card actions", exact: true })
+    .getByRole("button", { name: "Name", exact: true })
+    .click();
   await p.getByLabel("Card name", { exact: true }).fill("Unsaved card draft");
   await option(p, "Dark Mode");
   assert.equal(
     await p.getByLabel("Card name", { exact: true }).inputValue(),
     "Unsaved card draft",
   );
-  await click(p, "Close editor");
+  p.once("dialog", (d) => d.accept());
+  await click(p, "Close");
   const themedEvents = (await api(owner, "/api/host")).body.events;
   assert.deepEqual(
     themedEvents.find((e) => e.id === e1.id).ui.design,

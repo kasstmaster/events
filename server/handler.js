@@ -8,6 +8,7 @@ import {
   registeredMethod,
   autoAssociateContact,
   initializeHostPersonal,
+  renamePersonalHousehold,
   startRecovery,
   savePersonalProfile,
 } from "./personal-accounts.js";
@@ -171,16 +172,19 @@ function guestInput(input, store, household, existing) {
     );
   if (address && !store.get("address", address, household))
     fail(400, "Choose an address in your household.");
+  const nextPhone = contactPhone(input.phone ?? existing?.phone ?? ""),
+    phoneChanged = existing && nextPhone !== existing.phone;
   return {
     position: Number.isFinite(Number(input.position))
       ? Number(input.position)
       : (existing?.position ?? Date.now()),
     first: text(input.first, 80, true),
     notes: text(input.notes ?? existing?.notes ?? "", 20000),
-    phone: contactPhone(input.phone ?? existing?.phone ?? ""),
+    phone: nextPhone,
     smsConsent:
-      input.smsConsent === true ||
-      (input.smsConsent === undefined && existing?.smsConsent === true),
+      !phoneChanged &&
+      (input.smsConsent === true ||
+        (input.smsConsent === undefined && existing?.smsConsent === true)),
     consentRecorded:
       input.smsConsent === true
         ? new Date().toISOString()
@@ -715,14 +719,18 @@ export function createHandler({
                 (r) => identityFor(store, r.record, r.household).id,
               ),
             );
-            const qualified =
-              ids.size > 1
-                ? candidates.filter(
-                    (r) =>
-                      compareName(r.record.suffix) ===
-                      compareName(input.suffix || ""),
-                  )
-                : candidates;
+            const needsSuffix = ids.size > 1;
+            if (needsSuffix && !input.suffix && input.suffixProvided !== true) {
+              json(res, { suffixRequired: true });
+              return;
+            }
+            const qualified = needsSuffix
+              ? candidates.filter(
+                  (r) =>
+                    compareName(r.record.suffix) ===
+                    compareName(input.suffix || ""),
+                )
+              : candidates;
             const unique = new Set(
               qualified.map(
                 (r) => identityFor(store, r.record, r.household).id,
@@ -1074,7 +1082,15 @@ export function createHandler({
           json(
             res,
             presentHousehold(
-              store.renameHousehold(rename[1], input, version(req)),
+              store.transaction(() => {
+                const record = store.renameHousehold(
+                  rename[1],
+                  input,
+                  version(req),
+                );
+                renamePersonalHousehold(store, rename[1], record.name);
+                return record;
+              }),
             ),
           );
           return;
@@ -1210,7 +1226,15 @@ export function createHandler({
           json(
             res,
             method === "POST"
-              ? await startAnyListSync(store, env, household)
+              ? await startAnyListSync(
+                  store,
+                  env,
+                  household,
+                  fetch,
+                  req.headers["content-type"]
+                    ? (await body(req)).mode || "pull"
+                    : "pull",
+                )
               : syncStatus(store, household),
             method === "POST" ? 202 : 200,
           );

@@ -25,6 +25,7 @@ export function eviteStatus(store, household, event, env = {}) {
       status: record?.status || (!g.phone ? "missing-phone" : "not-sent"),
       hasPhone: !!g.phone,
       canResend: record?.status === "missing-phone" && !!g.phone,
+      sharedPhone: record?.sharedPhone === true,
     };
   });
   return {
@@ -40,13 +41,48 @@ export function prepareEvites(store, env, household, event, input, origin) {
   const mode = input.mode || "send";
   if (!["send", "resend-missing"].includes(mode))
     fail(400, "Choose a supported invitation action.");
-  const data = image(input.image);
-  if (!data) fail(400, "Preview and select an invitation image first.");
-  store.limit("evites:" + household + ":" + event.id, 6, 3600000);
+  const personalized = input.images !== undefined;
+  if (
+    personalized &&
+    (!input.images ||
+      typeof input.images !== "object" ||
+      Array.isArray(input.images) ||
+      Object.keys(input.images).length > 1000)
+  )
+    fail(400, "Invalid recipient invitation images.");
+  const data = personalized ? "" : image(input.image);
+  if (!personalized && !data)
+    fail(400, "Preview and select an invitation image first.");
+  const requestId = input.requestId;
+  if (
+    requestId !== undefined &&
+    (typeof requestId !== "string" || !/^[a-f0-9-]{36}$/.test(requestId))
+  )
+    fail(400, "Invalid invitation request.");
+  const requestKey = requestId ? hash(event.id + ":" + requestId) : "",
+    priorRequest =
+      requestKey && store.get("evite-request", requestKey, household);
+  if (
+    priorRequest &&
+    (priorRequest.event !== event.id ||
+      priorRequest.mode !== mode ||
+      priorRequest.eventVersion !== input.version ||
+      priorRequest.expires < Date.now())
+  )
+    fail(409, "Start a new invitation request.");
+  if (!priorRequest)
+    store.limit("evites:" + household + ":" + event.id, 6, 3600000);
   return store.transaction(() => {
     const current = store.get("event", event.id, household);
     if (current.version !== input.version)
       fail(409, "The invitation changed. Refresh the preview first.");
+    if (requestKey && !priorRequest)
+      store.put("evite-request", requestKey, household, {
+        event: event.id,
+        mode,
+        eventVersion: input.version,
+        expires: Date.now() + 3600000,
+      });
     const people = invitedAdults(store, household, current),
       eligible = [];
     for (const guest of people) {
@@ -94,16 +130,38 @@ export function prepareEvites(store, env, household, event, input, origin) {
             },
             undefined,
           );
-      } else eligible.push({ guest, previous });
+      } else if (!personalized || Object.hasOwn(input.images, guest.id))
+        eligible.push({ guest, previous });
     }
     if (!eligible.length) return eviteStatus(store, household, current, env);
-    const token = randomBytes(32).toString("base64url"),
-      media = store.put("evite-media", hash(token), household, {
-        data,
-        expires: Date.now() + 30 * 86400000,
-      });
-    const mediaUrl = new URL("/api/public/evite-media/" + token, origin).href;
-    for (const { guest, previous } of eligible)
+    const images = new Map(
+      eligible.map(({ guest }) => {
+        const value = personalized ? image(input.images[guest.id]) : data;
+        if (!value)
+          fail(400, "An eligible recipient is missing their invitation image.");
+        return [guest.id, value];
+      }),
+    );
+    if (
+      personalized &&
+      Object.keys(input.images).some((key) => !people.some((p) => p.id === key))
+    )
+      fail(400, "An invitation image belongs to an uninvited recipient.");
+    let sharedMedia;
+    for (const { guest, previous } of eligible) {
+      let media = sharedMedia;
+      if (!media) {
+        const token = randomBytes(32).toString("base64url");
+        const stored = store.put("evite-media", hash(token), household, {
+          data: images.get(guest.id),
+          expires: Date.now() + 30 * 86400000,
+        });
+        media = {
+          id: stored.id,
+          url: new URL("/api/public/evite-media/" + token, origin).href,
+        };
+        if (!personalized) sharedMedia = media;
+      }
       store.put(
         "evite-delivery",
         keyFor(event.id, guest.id),
@@ -114,17 +172,38 @@ export function prepareEvites(store, env, household, event, input, origin) {
           phone: guest.phone,
           status: "queued",
           media: media.id,
-          mediaUrl,
+          mediaUrl: media.url,
           message: `${store.household(household).name} invited you to ${event.title}. ${new URL("/h/" + store.household(household).slug, origin).href}`,
           updated: Date.now(),
         },
         previous?.version,
       );
+    }
     return eviteStatus(store, household, current, env);
   });
 }
 export async function runEvites(store, env, { fetcher = fetch } = {}) {
   if (!smsEnabled(env)) return;
+  for (const kind of ["evite-delivery", "evite-phone"])
+    for (const ref of store.all(
+      "SELECT id,household FROM records WHERE kind=? AND json_extract(body,'$.status')='sending'",
+      kind,
+    )) {
+      const record = store.get(kind, ref.id, ref.household);
+      if (record.updated < Date.now() - 120000)
+        store.put(
+          kind,
+          record.id,
+          ref.household,
+          {
+            ...record,
+            status: "unknown",
+            error: "delivery_unconfirmed",
+            updated: Date.now(),
+          },
+          record.version,
+        );
+    }
   const rows = store.all(
     "SELECT id,household FROM records WHERE kind='evite-delivery' AND json_extract(body,'$.status')='queued'",
   );
@@ -168,6 +247,7 @@ export async function runEvites(store, env, { fetcher = fetch } = {}) {
             ...row,
             status: prior.status,
             providerId: prior.providerId || null,
+            sharedPhone: true,
             updated: Date.now(),
           },
           row.version,
@@ -218,7 +298,12 @@ export async function runEvites(store, env, { fetcher = fetch } = {}) {
           "evite-delivery",
           row.id,
           pending.household,
-          { ...row, ...result, updated: Date.now() },
+          {
+            ...row,
+            ...result,
+            sharedPhone: row.guest !== claim.row.guest,
+            updated: Date.now(),
+          },
           row.version,
         );
     });

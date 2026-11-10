@@ -528,3 +528,231 @@ test("category mailing formats split city/state without losing street, suite or 
   ])
     assert.deepEqual(addressParts({ lines }), { street, city, state, zip });
 });
+
+test("two-way AnyList plan combines remote additions with Gather conflicts, leases writes, verifies and acknowledges baselines", async (t) => {
+  const env = configuration(),
+    f = await application(t, env),
+    host = await f.host("Alpha"),
+    other = await f.host("Beta");
+  const remote = [
+    {
+      id: "group:category",
+      label: "Example home",
+      lines: "PO Box 12",
+      people: [
+        { id: "adult", first: "Casey", last: "Example", phone: "+15005550123" },
+      ],
+    },
+  ];
+  let job = await start(f, env, host);
+  assert.equal((await deliver(f, env, job, remote)).status, 200);
+  const address = f.store.list("address", host.household.id)[0];
+  f.store.put(
+    "address",
+    address.id,
+    host.household.id,
+    { ...address, lines: "PO Box 25", notes: "PRIVATE HOST NOTE" },
+    address.version,
+  );
+  const newer = structuredClone(remote);
+  newer[0].lines = "PO Box 20";
+  newer[0].people.push({ id: "new-adult", first: "Jordan", last: "Example" });
+  job = await startAnyListSync(
+    f.store,
+    env,
+    host.household.id,
+    async () => new Response(null, { status: 204 }),
+    "both",
+  );
+  const plan = await deliver(f, env, job, newer, {
+    prepare: true,
+    groupId: "group",
+  });
+  assert.equal(plan.status, 200);
+  assert.equal(plan.body.state, "prepared");
+  assert.equal(plan.body.addresses[0].lines, "PO Box 25");
+  assert.equal(plan.body.addresses[0].people.length, 2);
+  assert.doesNotMatch(
+    JSON.stringify(plan.body),
+    /PRIVATE|inviteCode|identity|recovery|username/,
+  );
+  const claimed = await deliver(f, env, job, undefined, { phase: "claim" });
+  assert.equal(claimed.body.state, "writing");
+  const guest = f.store.list("guest", host.household.id)[0];
+  assert.throws(
+    () =>
+      f.store.put(
+        "guest",
+        guest.id,
+        host.household.id,
+        { ...guest, first: "Concurrent edit" },
+        guest.version,
+      ),
+    /contact sync is finishing/,
+  );
+  const otherGuest = await f.guest(other);
+  assert.ok(otherGuest.id);
+  const verified = plan.body.addresses.map((a) => ({
+    ...a,
+    people: a.people.flatMap((p) => [
+      {
+        id: p.id,
+        first: p.first,
+        last: p.last,
+        suffix: p.suffix,
+        phone: p.phone,
+      },
+      ...p.children.map((c) => ({
+        id: c.id,
+        first: c.first,
+        last: "Example",
+        suffix: c.suffix,
+        parentId: p.id,
+      })),
+    ]),
+  }));
+  const bad = structuredClone(verified);
+  bad[0].lines = "Wrong";
+  assert.equal((await deliver(f, env, job, bad, { phase: "ack" })).status, 409);
+  assert.equal(
+    (await deliver(f, env, job, verified, { phase: "ack" })).body.state,
+    "complete",
+  );
+  assert.equal(
+    f.store.get("address", address.id, host.household.id).notes,
+    "PRIVATE HOST NOTE",
+  );
+  const updatedGuest = f.store.get("guest", guest.id, host.household.id);
+  f.store.put(
+    "guest",
+    guest.id,
+    host.household.id,
+    { ...updatedGuest, first: "Editable again" },
+    updatedGuest.version,
+  );
+  assert.equal(
+    (await deliver(f, env, job, verified, { phase: "claim" })).status,
+    409,
+  );
+  const next = await start(f, env, host);
+  verified[0].label = "Remote only title";
+  assert.equal((await deliver(f, env, next, verified)).status, 200);
+  assert.equal(
+    f.store.get("address", address.id, host.household.id).label,
+    "Remote only title",
+  );
+  assert.equal(
+    f.store.get("address", address.id, host.household.id).lines,
+    "PO Box 25",
+  );
+});
+
+test("AnyList outbound refuses a changed Gather revision and only its active job may release a lease", async (t) => {
+  const env = configuration(),
+    f = await application(t, env),
+    host = await f.host("Alpha");
+  const remote = [
+    {
+      id: "group:category",
+      label: "Example home",
+      lines: "PO Box 12",
+      people: [{ id: "adult", first: "Casey", last: "Example" }],
+    },
+  ];
+  const job = await startAnyListSync(
+    f.store,
+    env,
+    host.household.id,
+    async () => new Response(null, { status: 204 }),
+    "push",
+  );
+  assert.equal(
+    (await deliver(f, env, job, remote, { prepare: true, groupId: "group" }))
+      .body.state,
+    "prepared",
+  );
+  const guest = f.store.list("guest", host.household.id)[0];
+  f.store.put(
+    "guest",
+    guest.id,
+    host.household.id,
+    { ...guest, first: "Edited during preparation" },
+    guest.version,
+  );
+  const claim = await deliver(f, env, job, undefined, { phase: "claim" });
+  assert.equal(claim.body.state, "conflict");
+  assert.equal(claim.body.addresses, undefined);
+  const next = await startAnyListSync(
+    f.store,
+    env,
+    host.household.id,
+    async () => new Response(null, { status: 204 }),
+    "both",
+  );
+  await deliver(f, env, next, remote, { prepare: true, groupId: "group" });
+  await deliver(f, env, next, undefined, { phase: "claim" });
+  assert.equal(
+    (await deliver(f, env, job, undefined, { phase: "fail" })).status,
+    409,
+  );
+  assert.equal(
+    (await deliver(f, env, next, undefined, { phase: "fail" })).body.state,
+    "failed",
+  );
+  assert.equal(syncStatus(f.store, host.household.id).state, "failed");
+});
+
+test("outbound no-address contacts keep credentials and reserved source IDs prevent duplicates after uncertain writes", async (t) => {
+  const env = configuration(),
+    f = await application(t, env),
+    host = await f.host("Alpha"),
+    adult = await f.guest(host, { first: "Casey", last: "Example" });
+  const initialCode = adult.inviteCode,
+    job = await startAnyListSync(
+      f.store,
+      env,
+      host.household.id,
+      async () => new Response(null, { status: 204 }),
+      "both",
+    );
+  const plan = (
+    await deliver(f, env, job, [], { prepare: true, groupId: "group" })
+  ).body;
+  assert.equal(plan.addresses.length, 1);
+  assert.equal(plan.addresses[0].people[0].id.length > 0, true);
+  assert.equal(
+    (await deliver(f, env, job, undefined, { phase: "claim" })).body.state,
+    "writing",
+  );
+  const observed = plan.addresses.map((a) => ({
+    ...a,
+    people: a.people.map((p) => ({
+      id: p.id,
+      first: p.first,
+      last: p.last,
+      suffix: p.suffix,
+      phone: p.phone,
+    })),
+  }));
+  // A transport interruption after the provider applied the batch leaves the
+  // reservations in place. The next pull must recover those same records.
+  await deliver(f, env, job, undefined, { phase: "fail" });
+  const next = await start(f, env, host);
+  assert.equal((await deliver(f, env, next, observed)).body.state, "complete");
+  assert.equal(f.store.list("guest", host.household.id).length, 1);
+  assert.equal(f.store.list("address", host.household.id).length, 0);
+  const current = (await f.request("/api/host", { cookie: host.cookie })).body
+    .guests[0];
+  assert.equal(current.inviteCode, initialCode);
+  assert.equal(current.id, adult.id);
+  // Adding a real address in AnyList is an explicit move of the mapped contact,
+  // preserving identity and assigning the new address-group credential.
+  observed[0].lines = "PO Box 99";
+  const move = await start(f, env, host);
+  assert.equal((await deliver(f, env, move, observed)).body.state, "complete");
+  const moved = (await f.request("/api/host", { cookie: host.cookie })).body
+    .guests[0];
+  assert.equal(moved.id, adult.id);
+  assert.notEqual(moved.inviteCode, initialCode);
+  assert.equal(f.store.list("address", host.household.id).length, 1);
+});

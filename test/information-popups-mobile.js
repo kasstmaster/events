@@ -1,3 +1,4 @@
+import { enrollGuest } from "./helpers/guest-account.js";
 // Synthetic loopback fixtures only. Instructions are plain text; guest viewing performs no writes.
 import assert from "node:assert/strict";
 import { once } from "node:events";
@@ -111,6 +112,7 @@ try {
       { first: guest.first, last: guest.last, inviteCode: guest.inviteCode },
     )
   ).cookie;
+  await enrollGuest(origin, signed, "popup.casey");
   const instructions =
     'Roll five dice.\nKeep them hidden. <img src=x onerror="alert(1)">';
   for (const width of [390, 1280]) {

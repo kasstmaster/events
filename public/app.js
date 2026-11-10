@@ -464,6 +464,12 @@ function toolbar(event) {
       ...(event ? [{ action: "print", label: "Print", icon: "print" }] : []),
     ]);
   const role = state.session.role;
+  if (
+    role === "guest" &&
+    state.data?.personal?.account.needsUsername &&
+    !state.preview
+  )
+    return bottom([{ action: "logout", label: "Sign Out", icon: "settings" }]);
   if (role === "host")
     return bottom([
       { action: "home", label: "Home", icon: "home" },
@@ -789,12 +795,27 @@ function render(target = $("#app"), example = false) {
   const activeEvent = state.data?.events?.find(
     (e) => (e.invitationKey || e.id) === state.event,
   );
-  const active =
+  let active =
     activeEvent?.ui ||
     state.data?.ui ||
     resolveUI(state.platformUI, state.publicHousehold?.ui, {
       design: state.publicHousehold?.design,
     });
+  if (state.session?.role === "guest" && !activeEvent && !state.preview) {
+    active = resolveUI(state.platformUI, {
+      design: appearancePreset("dark", state.platformUI?.design),
+    });
+    state.activeUI = active;
+  }
+  if (
+    state.session?.role === "guest" &&
+    state.data?.personal?.account.needsUsername &&
+    !state.preview &&
+    !example
+  ) {
+    state.view = "personal-account";
+    state.event = null;
+  }
   configureCopy(active);
   applyDesign(active.design, designTarget);
   const role = state.session?.role;
@@ -841,7 +862,7 @@ function render(target = $("#app"), example = false) {
       );
     if (role === "guest" && !event) {
       state.activeUI = resolveUI(state.platformUI, {
-        design: appearancePreset("dark"),
+        design: appearancePreset("dark", state.platformUI?.design),
       });
     }
     applyDesign(state.activeUI.design, designTarget);
@@ -1051,6 +1072,7 @@ function render(target = $("#app"), example = false) {
           card,
         );
     }
+  applyPersonalLayouts(target, active);
   const layoutEvent = settingsAppearanceEvent();
   if (layoutEvent)
     for (const preview of target.querySelectorAll(
@@ -1719,6 +1741,7 @@ async function submit(form) {
   if (await family.submit(form, kind)) return;
   if (await personal.submit(form, kind)) return;
   if (kind === "unified-login") {
+    value.suffixProvided = !form.querySelector("#unified-suffix").hidden;
     const result = await api("/api/sign-in", { method: "POST", data: value });
     if (result.suffixRequired) {
       form.querySelector("#unified-suffix").hidden = false;
@@ -2075,6 +2098,20 @@ document.addEventListener("click", async (event) => {
       state.eventInviteDraft = null;
       resetContactInvites();
     }
+    if (
+      state.session.role === "guest" &&
+      state.data?.personal?.account.needsUsername &&
+      !state.preview &&
+      !["personal-save", "logout"].includes(action)
+    ) {
+      notify(
+        C(
+          "Create your private username and add a recovery phone number first.",
+        ),
+      );
+      return;
+    }
+    if (!personal.leave(action, target)) return;
     if (!tools.leaveCard(action)) return;
     if (!leaveEventLayout(target)) return;
     if (await appearance.action(action, target)) return;
@@ -2238,7 +2275,28 @@ document.addEventListener("click", async (event) => {
       else await tools.action(kind, target);
       return;
     }
-    if (["contacts-anylist-sync", "contacts-anylist-status"].includes(action)) {
+    if (action === "contacts-anylist-sync") {
+      if (
+        state.session.role !== "host" ||
+        !state.data.integrations?.anylist ||
+        state.editingGuest ||
+        contactInviteMode
+      )
+        return;
+      modal(
+        C("AnyList sync"),
+        ui`<p>Pull updates from Address Book, or combine changes in both places. Gather keeps priority when both changed the same field. Existing contacts are never deleted by sync.</p><div class="stack">${button("contacts-anylist-pull", H("Pull from AnyList"))}${button("contacts-anylist-push", H("Update AnyList"))}${button("contacts-anylist-both", H("Sync both"))}</div>`,
+      );
+      return;
+    }
+    if (
+      [
+        "contacts-anylist-pull",
+        "contacts-anylist-push",
+        "contacts-anylist-both",
+        "contacts-anylist-status",
+      ].includes(action)
+    ) {
       if (
         state.preview ||
         state.session.role !== "host" ||
@@ -2249,11 +2307,15 @@ document.addEventListener("click", async (event) => {
         notify(C("Finish editing or selecting contacts before syncing."));
         return;
       }
+      if (action !== "contacts-anylist-status") closeModal();
       target.disabled = true;
       const syncHousehold = state.data.household.id;
       try {
         const result = await api("/api/host/integrations/anylist", {
-          method: action === "contacts-anylist-sync" ? "POST" : "GET",
+          method: action === "contacts-anylist-status" ? "GET" : "POST",
+          ...(action === "contacts-anylist-status"
+            ? {}
+            : { data: { mode: action.split("-").at(-1) } }),
         });
         if (
           state.session?.role !== "host" ||
@@ -3368,6 +3430,18 @@ setInterval(() => {
 }, 3000);
 window.addEventListener("online", () => load({ background: true }));
 
+function applyPersonalLayouts(target, config) {
+  for (const group of target.querySelectorAll('[data-layout^="personal"]')) {
+    const items = [...group.children]
+      .filter((el) => el.dataset.layoutItem)
+      .map((element) => ({ id: element.dataset.layoutItem, element }));
+    for (const item of order(
+      items,
+      config.layouts?.[group.dataset.layout] || [],
+    ))
+      group.append(item.element);
+  }
+}
 function applyLayoutDOM(event, role, target = $("#app")) {
   const config = event?.ui || state.data?.ui || state.platformUI;
   if (!config) return;

@@ -374,3 +374,288 @@ test("recovery phone verification is one-use and username reminders require YES;
   );
   assert.equal((await recover()).status, 429);
 });
+
+test("administrator aliases are all validated before cleanup and deleting a host preserves its linked private guest account", async (t) => {
+  const f = await application(t),
+    host = await f.host("AliasSource"),
+    other = await f.host("ProtectedHost");
+  await f.request("/api/host", { cookie: host.cookie });
+  const ownerLink = f.store.get("host-person", host.user, host.household.id),
+    account = f.store.get("person-account", ownerLink.identity, "platform");
+  const { createHash } = await import("node:crypto");
+  f.store.put(
+    "person-account",
+    account.id,
+    "platform",
+    {
+      ...account,
+      username: "alias.owner",
+      usernameHash: createHash("sha256").update("alias.owner").digest("hex"),
+      recoveryPhone: "+15005550123",
+    },
+    account.version,
+  );
+  const invited = await f.guest(other, { first: "Alias", last: "Owner" });
+  f.store.run(
+    "UPDATE guest_identity_links SET identity=?,linked=1 WHERE household=? AND guest=?",
+    ownerLink.identity,
+    other.household.id,
+    invited.id,
+  );
+  const renamed = f.store.renameHousehold(
+    host.household.id,
+    { name: "Renamed owner", subdomain: "alias-new" },
+    host.household.version,
+  );
+  const labels = [renamed.subdomain, ...renamed.domainAliases],
+    resources = new Map();
+  for (const [i, label] of labels.entries()) {
+    const receipt = f.store.routingJob(label);
+    f.store.routingReceipt(label, { dns_id: "dns" + i, route_id: "route" + i });
+    resources.set("dns" + i, {
+      name: label + ".ilymmd.com",
+      type: "AAAA",
+      content: "100::",
+      proxied: true,
+      comment: "events-household:" + receipt.id,
+    });
+    resources.set("route" + i, {
+      pattern: label + ".ilymmd.com/*",
+      script: "events-household-gateway",
+    });
+  }
+  const { deletionSummary, requestDeletion } =
+      await import("../server/account-deletion.js"),
+    { runAccountCleanup } = await import("../cloudflare/account-cleanup.js");
+  const summary = deletionSummary(f.store, host.user);
+  requestDeletion(f.store, host.user, {
+    confirmEmail: summary.email,
+    confirmDomain: summary.domain,
+    householdVersion: renamed.version,
+    confirmRevision: summary.revision,
+  });
+  assert.throws(
+    () =>
+      f.store.renameHousehold(
+        host.household.id,
+        { name: "Too late" },
+        renamed.version,
+      ),
+    /disabled/,
+  );
+  resources.get("route1").script = "unrelated-worker";
+  const deleted = [];
+  const fetcher = async (url, request) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith("/workers/domains"))
+      return Response.json({
+        success: true,
+        result: [],
+        result_info: { total_pages: 1 },
+      });
+    const id = path.split("/").at(-1);
+    if (request.method === "DELETE") {
+      deleted.push(id);
+      resources.delete(id);
+      return Response.json({ success: true, result: {} });
+    }
+    return resources.has(id)
+      ? Response.json({ success: true, result: resources.get(id) })
+      : new Response(null, { status: 404 });
+  };
+  await runAccountCleanup(
+    f.store,
+    { HOUSEHOLD_DNS_TOKEN: "synthetic-only" },
+    { fetcher },
+  );
+  assert.deepEqual(deleted, []);
+  assert.equal(
+    f.store.one(
+      "SELECT error FROM household_deletions WHERE household=?",
+      host.household.id,
+    ).error,
+    "cleanup_ownership_conflict",
+  );
+  resources.get("route1").script = "events-household-gateway";
+  f.store.run(
+    "UPDATE household_deletions SET next_attempt=0 WHERE household=?",
+    host.household.id,
+  );
+  await runAccountCleanup(
+    f.store,
+    { HOUSEHOLD_DNS_TOKEN: "synthetic-only" },
+    { fetcher },
+  );
+  assert.deepEqual(
+    new Set(deleted),
+    new Set(["dns0", "route0", "dns1", "route1"]),
+  );
+  assert.equal(f.store.household(host.household.id), null);
+  assert.ok(f.store.household(other.household.id));
+  const remaining = f.store.get("person-account", account.id, "platform");
+  assert.equal(remaining.username, "alias.owner");
+  assert.equal(remaining.hostUser, undefined);
+  assert.equal(
+    f.store.one(
+      "SELECT identity FROM guest_identity_links WHERE household=? AND guest=?",
+      other.household.id,
+      invited.id,
+    ).identity,
+    ownerLink.identity,
+  );
+  assert.equal(
+    (
+      await f.request("/api/sign-in", {
+        method: "POST",
+        data: { account: "alias.owner", secret: invited.inviteCode },
+      })
+    ).status,
+    200,
+  );
+  for (const label of labels)
+    assert.equal(f.store.domainAvailable(label), false);
+});
+
+test("reciprocal host-profile contacts share only approved data and profile-alias blocking suppresses invitations and updates", async (t) => {
+  const f = await application(t),
+    alpha = await f.host("ContactAlpha"),
+    beta = await f.host("ContactBeta"),
+    adult = await f.guest(alpha, {
+      addressDraft: {
+        label: "Example family",
+        lines: "PO Box 1",
+        notes: "PRIVATE",
+      },
+      phone: "+15005550111",
+    }),
+    login = await f.guestLogin(alpha, adult);
+  let own = (await f.request("/api/personal", { cookie: login.cookie })).body;
+  await f.request("/api/personal/account", {
+    cookie: login.cookie,
+    method: "PUT",
+    version: own.account.version,
+    data: { username: "reciprocal.owner", recoveryPhone: "+15005550199" },
+  });
+  const hostProfile = (
+    await f.request("/api/personal", { cookie: beta.cookie })
+  ).body;
+  assert.equal(
+    (
+      await f.request("/api/personal/contacts", {
+        cookie: login.cookie,
+        method: "POST",
+        data: {
+          name: hostProfile.profile.name,
+          householdId: hostProfile.profile.publicCode,
+        },
+      })
+    ).status,
+    200,
+  );
+  own = (await f.request("/api/personal", { cookie: login.cookie })).body;
+  assert.equal(own.contacts.filter((c) => c.name === "ContactBeta").length, 1);
+  const saved = await f.request("/api/personal/family", {
+    cookie: login.cookie,
+    method: "PUT",
+    version: own.profile.version,
+    data: {
+      ...own.profile,
+      sharing: "selected",
+      recipients: [hostProfile.profile.id],
+      mailing: { street: "PO Box 22" },
+      mailingSame: false,
+    },
+  });
+  assert.equal(saved.status, 200);
+  const related = f.store
+    .list("guest", beta.household.id)
+    .find((g) => g.first === adult.first);
+  assert.ok(related);
+  assert.equal(related.phone, "+15005550111");
+  assert.match(
+    f.store.get("address", related.address, beta.household.id).lines,
+    /PO Box 22/,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(
+      (await f.request("/api/host", { cookie: beta.cookie })).body.guests,
+    ),
+    /reciprocal.owner|15005550199|PRIVATE/,
+  );
+  const event = await f.event(beta, [related]);
+  assert.ok(
+    (await f.request("/api/guest", { cookie: login.cookie })).body.events.some(
+      (e) => e.id === event.id,
+    ),
+  );
+  const before = (await f.request("/api/personal", { cookie: login.cookie }))
+    .body;
+  // Simulate a retained profile-key preference written by an earlier client.
+  f.store.put(
+    "personal-household",
+    before.profile.id,
+    "platform",
+    {
+      ...f.store.get("personal-household", before.profile.id, "platform"),
+      blocked: [hostProfile.profile.id],
+    },
+    before.profile.version,
+  );
+  const blocked = (await f.request("/api/personal", { cookie: login.cookie }))
+    .body;
+  assert.equal(
+    blocked.contacts.find((c) => c.name === "ContactBeta").blocked,
+    true,
+  );
+  assert.equal(
+    (await f.request("/api/guest", { cookie: login.cookie })).body.events.some(
+      (e) => e.id === event.id,
+    ),
+    false,
+  );
+  assert.equal(
+    (
+      await f.request("/api/personal/contacts/" + beta.household.id, {
+        cookie: login.cookie,
+        method: "PUT",
+        version: blocked.profile.version,
+        data: { blocked: false },
+      })
+    ).status,
+    200,
+  );
+  assert.ok(
+    (await f.request("/api/guest", { cookie: login.cookie })).body.events.some(
+      (e) => e.id === event.id,
+    ),
+  );
+});
+
+test("unified sign-in reveals code-qualified ambiguity and permits explicitly empty suffix", async (t) => {
+  const f = await application(t),
+    host = await f.host("SuffixFamily");
+  const adult = await f.guest(host, {
+    first: "Alex",
+    last: "Example",
+    addressDraft: { label: "Family", lines: "PO Box 12" },
+  });
+  await f.guest(host, {
+    first: "Alex",
+    last: "Example",
+    suffix: "Jr.",
+    address: adult.address,
+  });
+  const data = { account: "Alex Example", secret: adult.inviteCode };
+  const initial = await f.request("/api/sign-in", { method: "POST", data });
+  assert.equal(initial.body.suffixRequired, true);
+  assert.equal(initial.cookie, undefined);
+  const chosen = await f.request("/api/sign-in", {
+    method: "POST",
+    data: { ...data, suffix: "", suffixProvided: true },
+  });
+  assert.equal(chosen.status, 200);
+  const own = (await f.request("/api/personal", { cookie: chosen.cookie }))
+    .body;
+  assert.equal(own.profile.members.find((m) => m.id === own.self).suffix, "");
+  assert.equal(own.person.name, "Alex Example");
+});

@@ -1,3 +1,9 @@
+import { accessFor } from "./guest-access.js";
+import {
+  outboundPlan,
+  outboundPhase,
+  contactRevision,
+} from "./anylist-outbound.js";
 import { mergeAnyListFields } from "./anylist-merge.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { fail, id, text, normalizeName } from "./model.js";
@@ -64,15 +70,26 @@ export function syncStatus(store, household) {
   return {
     id: job.id,
     state:
-      job.state === "running" && Date.now() > job.expires
+      ["running", "prepared", "writing"].includes(job.state) &&
+      Date.now() > job.expires
         ? "expired"
-        : job.state,
+        : ["prepared", "writing"].includes(job.state)
+          ? "running"
+          : job.state,
     added: job.added || 0,
     updated: job.updated || 0,
     skipped: job.skipped || 0,
+    pushed: job.pushed || 0,
   };
 }
-export async function startAnyListSync(store, env, household, fetcher = fetch) {
+export async function startAnyListSync(
+  store,
+  env,
+  household,
+  fetcher = fetch,
+  mode = "pull",
+) {
+  if (!["pull", "push", "both"].includes(mode)) fail(400, "Invalid sync mode.");
   if (integrationHousehold(store, env) !== household)
     fail(403, "This integration is unavailable.");
   if (!integrationCapabilities(store, env, household).anylistConfigured)
@@ -102,6 +119,7 @@ export async function startAnyListSync(store, env, household, fetcher = fetch) {
       fail(409, "A contact sync is already running.");
     return store.put("anylist-job", id(), household, {
       state: "running",
+      direction: mode,
       started: Math.max(
         Date.now(),
         ...store.list("anylist-job", household).map((job) => job.started + 1),
@@ -157,6 +175,7 @@ const personKey = (g) =>
 export function importAnyList(store, env, input, validateGuest) {
   const household = integrationHousehold(store, env);
   if (!household) fail(403, "This integration is unavailable.");
+  if (input.phase) return outboundPhase(store, household, input);
   return store.transaction(() => {
     const job = store.get(
       "anylist-job",
@@ -229,12 +248,15 @@ export function importAnyList(store, env, input, validateGuest) {
           continue;
         }
       }
-      if (mapping && !address) {
+      const noAddress = mapping?.noAddress && !incoming.lines;
+      const materializeAddress = mapping?.noAddress && !!incoming.lines;
+      if (noAddress) address = { id: "", ...incoming };
+      if (mapping && !address && !materializeAddress) {
         skipped += source.people.length;
         continue;
       }
       const reconciledAddress = mergeAnyListFields(
-        address,
+        materializeAddress ? mapping.baseline?.local || incoming : address,
         incoming,
         mapping?.baseline,
         ["label", "lines"],
@@ -244,6 +266,7 @@ export function importAnyList(store, env, input, validateGuest) {
         address = store.put("address", id(), household, addressFields);
       else if (
         mapping &&
+        !noAddress &&
         ["label", "lines", "street", "city", "state", "zip"].some(
           (key) => address[key] !== addressFields[key],
         )
@@ -266,7 +289,13 @@ export function importAnyList(store, env, input, validateGuest) {
         "anylist-link",
         mapId,
         household,
-        { target: address.id, baseline: reconciledAddress.baseline },
+        {
+          type: "address",
+          source: sourceId,
+          target: address.id,
+          ...(noAddress ? { noAddress: true, guest: mapping.guest } : {}),
+          baseline: reconciledAddress.baseline,
+        },
         mapping?.version,
       );
       const people = new Map(),
@@ -275,7 +304,7 @@ export function importAnyList(store, env, input, validateGuest) {
       for (const person of [...source.people].sort(
         (a, b) => Number(!!a.parentId) - Number(!!b.parentId),
       )) {
-        const external = text(person.id, 200, true);
+        const external = text(person.id, 500, true);
         if (seen.has(external)) fail(400, "Duplicate imported contact.");
         seen.add(external);
         const parent = person.parentId ? people.get(person.parentId) : "";
@@ -288,7 +317,14 @@ export function importAnyList(store, env, input, validateGuest) {
         let guest = link && store.get("guest", link.target, household);
         const fields = {
           first: text(person.first, 80, true),
-          last: text(person.last || "", 80, !person.parentId),
+          last: person.parentId
+            ? guest?.last || ""
+            : text(person.last || "", 80, true),
+          phone: person.parentId
+            ? ""
+            : person.phoneUnsupported
+              ? guest?.phone || ""
+              : text(person.phone || "", 30),
           suffix: text(person.suffix || "", 30),
           address: address.id,
           parent,
@@ -320,7 +356,8 @@ export function importAnyList(store, env, input, validateGuest) {
         if (
           link &&
           (!guest ||
-            guest.address !== address.id ||
+            (guest.address !== address.id &&
+              !(materializeAddress && !guest.address)) ||
             (guest.parent || "") !== parent)
         ) {
           skipped++;
@@ -330,6 +367,7 @@ export function importAnyList(store, env, input, validateGuest) {
           "first",
           "last",
           "suffix",
+          "phone",
         ]);
         Object.assign(fields, reconciled.merged);
         if (!guest) {
@@ -342,7 +380,12 @@ export function importAnyList(store, env, input, validateGuest) {
           identityFor(store, guest, household);
           guestContact(store, guest, household);
           added++;
-        } else if (link && personKey(guest) !== personKey(fields)) {
+        } else if (
+          link &&
+          (personKey(guest) !== personKey(fields) ||
+            (guest.phone || "") !== fields.phone ||
+            guest.address !== address.id)
+        ) {
           guest = store.put(
             "guest",
             guest.id,
@@ -350,17 +393,45 @@ export function importAnyList(store, env, input, validateGuest) {
             validateGuest({ ...guest, ...fields }, store, household, guest),
             guest.version,
           );
+          if (materializeAddress) accessFor(store, guest, household);
           updated++;
         }
         store.put(
           "anylist-link",
           linkId,
           household,
-          { target: guest.id, baseline: reconciled.baseline },
+          {
+            type: "person",
+            source: external,
+            target: guest.id,
+            baseline: reconciled.baseline,
+          },
           link?.version,
         );
         people.set(external, guest.id);
       }
+    }
+    if (input.prepare === true && ["both", "push"].includes(job.direction)) {
+      const groupId = text(input.groupId, 100, true);
+      if (!/^[a-zA-Z0-9-]+$/.test(groupId))
+        fail(400, "Invalid AnyList category group.");
+      const outbound = outboundPlan(store, household, input.addresses, groupId);
+      store.put(
+        "anylist-job",
+        job.id,
+        household,
+        {
+          ...job,
+          state: "prepared",
+          added,
+          updated,
+          skipped,
+          revision: contactRevision(store, household),
+          outbound,
+        },
+        job.version,
+      );
+      return { state: "prepared", addresses: outbound.addresses };
     }
     store.put(
       "anylist-job",

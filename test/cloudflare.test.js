@@ -1,4 +1,5 @@
 import test from "node:test";
+import { completeGuestSetup } from "./helpers/guest-account.js";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -453,6 +454,7 @@ test(
           : route.abort(),
       );
       await page.goto(origin + "/h/" + host.household.slug);
+      await completeGuestSetup(page, "runtime.casey");
       await page
         .getByRole("button", { name: "View Event", exact: true })
         .click();
