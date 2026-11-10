@@ -2,7 +2,7 @@
 
 Branch: `wip/shared-accounts-cards-anylist`.
 
-The tested household RSVP/input update is extracted to `fix/household-rsvp-inputs` at `180ea1cca7fe096b057cd576c3728ae3d403dba5`. This branch includes that completed base; compare against it to review only the remaining work. The original complete work-in-progress snapshot remains recoverable at `b0facbe`.
+The tested household RSVP/input update was merged in [PR #61](https://github.com/kasstmaster/events/pull/61) to `feat/household-subdomains` at `1d5f20799c7a72f41328d288e4466b952c0b7f92`, after all GitHub checks passed. This branch includes that completed merge; compare against `feat/household-subdomains` to review only the remaining work. No deployment was performed. The original complete work-in-progress snapshot remains recoverable at `b0facbe`.
 
 Remaining implementation/review:
 
