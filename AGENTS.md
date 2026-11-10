@@ -14,3 +14,26 @@ These instructions apply to every change in this repository.
 10. **Review and deployment safety.** Work in the existing checkout; do not create a worktree unless explicitly requested. Check the final diff for secrets, private data and unrelated changes. Open a pull request for review. Never merge, deploy, migrate live data or alter production configuration without explicit authorization. Keep CI validation-only unless deployment is separately approved. Cloudflare deployments must target the events-only Worker/database in the owner-selected account, with no existing gatherings routes or bindings. Browser administrator setup must require an owner-configured secret, exact-origin checks, persistent attempt limits and an atomic single-use completion marker. Never allow public first-user ownership claims or use setup to reset an existing administrator. Keep setup credentials out of URLs, logs, browser storage and API responses.
 
 Architecture reference: `server/model.js` owns storage and transactional rules; `server/handler.js` owns the shared authorized API; `server/app.js` and `server/node-store.js` adapt local Node HTTP/SQLite; `cloudflare/worker.js` adapts Cloudflare Fetch and durable SQLite; `public/app.js` owns shared views and editors; `public/style.css` owns responsive styling. Read [README.md](README.md), [docs/security.md](docs/security.md) and [docs/cloudflare.md](docs/cloudflare.md) before changing those boundaries. Keep this file aligned with the implemented system without weakening its privacy or shared-code requirements.
+
+## Permanent Gather production deployment policy (owner-approved)
+
+This policy governs future deployment-related work in `kasstmaster/events`. It supersedes older statements in this file that categorically prohibit automatic production deployment or require manual deployment for every approved release. It does **not** authorize an agent to merge a PR or deploy on the owner's behalf; only the owner merging an approved PR into `main` may initiate the configured automatic release. Preserve all other security and branch-specific requirements.
+
+- **Repository:** `kasstmaster/events`
+- **Production Cloudflare Worker:** `events`
+- **Production branch:** `main`
+
+1. Configure and maintain GitHub Actions so that a successfully merged pull request targeting `main` triggers production deployment of the **exact merged commit** to the existing `events` Worker. Never deploy a stale, hardcoded application commit from the automatic workflow. Validate that `main` actually contains the intended reviewed application code; historical release-only branches and pins are not evidence of this.
+2. Do not deploy on feature-branch pushes, PR opening/updates, PR previews, or preview builds. A direct push to `main` must not bypass the owner-controlled PR merge gate.
+3. Preserve production preflight safety checks, recovery checkpoints and their artifact uploads, post-deployment verification, Cloudflare authentication, Worker bindings, Durable Objects and SQLite database, secrets, routes, configuration and existing data. Fail closed if the existing production state is not verified.
+4. Use the existing `CLOUDFLARE_API_TOKEN` GitHub Actions secret. Do not create, replace, expose or rotate tokens. Do not print credentials or private runtime settings.
+5. Keep the separate manual deployment workflow as a backup, without weakening its existing release pin, guards, checkpoint and verification behavior.
+6. Serialize production releases so that manual and automatic workflows cannot overlap.
+7. Block deployment on failed formatting, tests, build validation, security checks or other required CI checks. Verify required CI/status checks are actually enforced before merging; a production workflow's own checks must also be independent fail-closed gates.
+8. Deployment-automation work must not change Gather application features, design, accounts, stored household/event data or tenant content.
+9. Run the relevant workflow, application, formatting, Cloudflare runtime and deployment-safety tests. Report what was actually tested and anything that could not be verified.
+10. Make deployment-related changes on a dedicated feature branch, commit and push. **Do not create or merge the pull request and do not manually trigger deployment.** The owner will create/review/merge the PR.
+11. At handoff, provide the branch name, full commit SHA, PR creation link, test results, outstanding issues and any required manual GitHub or Cloudflare configuration.
+12. After this setup has been merged **and verified working**, the normal feature workflow is: agent completes/tests/commits/pushes the branch; owner creates and merges the PR; GitHub Actions automatically deploys that approved merged commit. Do not reconfigure the automatic deployment system for every feature.
+
+If this policy conflicts with other sections saying to open a PR or forbid all automatic deployments, follow this more recent owner-approved handoff and merge-trigger policy. All prohibitions on unauthorized live changes, data migration, cross-repository modifications and secret disclosure remain in force.
