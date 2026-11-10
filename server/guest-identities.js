@@ -1,3 +1,4 @@
+import { registeredMethod, recipientBlocked } from "./personal-accounts.js";
 import { addressEvent } from "./address-rsvp.js";
 import { accessFor, accessCandidates } from "./guest-access.js";
 import { fail, id, text, normalizeName } from "./model.js";
@@ -105,20 +106,44 @@ export function authenticateGuest(store, input) {
       compareName(link.record.first) === first &&
       compareName(link.record.last) === last,
   );
+  const suffixRequired =
+    new Set(
+      candidates.map(
+        (link) =>
+          store.one(
+            "SELECT identity FROM guest_identity_links WHERE household=? AND guest=?",
+            link.household,
+            link.guest,
+          )?.identity || link.guest,
+      ),
+    ).size > 1;
   const qualified = candidates.filter(
-    (link) => compareName(link.record.suffix) === suffix,
+    (link) => !suffixRequired || compareName(link.record.suffix) === suffix,
   );
   const identities = new Set(
     qualified.map((link) => identityFor(store, link.record, link.household).id),
   );
-  const relation = identities.size === 1 ? qualified[0] : null;
+  let relation = identities.size === 1 ? qualified[0] : null;
+  if (relation) {
+    const method = registeredMethod(
+      store,
+      identityFor(store, relation.record, relation.household).id,
+    );
+    if (method)
+      fail(
+        401,
+        method === "email"
+          ? "Use your registered email and password."
+          : "Use your registered username and Household ID.",
+      );
+  }
   return {
     identity: relation
       ? identityFor(store, relation.record, relation.household)
       : null,
     candidates,
     relation,
-    suffixRequired: candidates.some((link) => !!link.record.suffix),
+    suffixRequired,
   };
 }
 
@@ -128,7 +153,12 @@ export function invitationView(store, session) {
     session.token,
   );
   if (!proof) fail(401, "Please sign in using your invite code.");
-  const relations = guestRelations(store, proof.identity);
+  return invitationsForIdentity(store, proof.identity);
+}
+export function invitationsForIdentity(store, identity) {
+  const relations = guestRelations(store, identity).filter(
+    (r) => !recipientBlocked(store, r.household, r.guest),
+  );
   const events = relations.flatMap((link) =>
     store
       .list("event", link.household)
@@ -151,7 +181,7 @@ export function invitationView(store, session) {
         ui: effectiveUI(store, store.household(link.household), event),
       })),
   );
-  return { relations, events, identity: proof.identity };
+  return { relations, events, identity };
 }
 function rememberLink(store, household, guest) {
   const link = store.one(

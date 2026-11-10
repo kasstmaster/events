@@ -66,6 +66,9 @@ export const roleDefaults = {
   notesBackground: "#fffdf9",
 };
 export const layouts = {
+  personalFamily: ["physical", "mailing", "members", "sharing"],
+  personalAccount: ["description", "credentials", "verification"],
+  personalContacts: ["add", "contacts"],
   introText: ["eyebrow", "title", "description"],
   eventInformation: [
     "artwork",
@@ -249,6 +252,14 @@ export function validLayout(name, value) {
   );
 }
 export const layoutLabels = {
+  physical: "Physical address",
+  mailing: "Mailing address",
+  members: "Family information",
+  sharing: "Information sharing",
+  credentials: "Sign-in details",
+  verification: "Phone verification",
+  add: "Add household",
+  contacts: "Linked households",
   eyebrow: "Text above title",
   title: "Title",
   description: "Description",

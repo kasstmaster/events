@@ -15,16 +15,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
         working-directory: integrations/anylist
-      - name: Read AnyList and import into the configured Events household
+      - name: Reconcile the selected Address Book with the configured Events household
         working-directory: integrations/anylist
         env:
           SYNC_ID: ${{ inputs.sync_id }}

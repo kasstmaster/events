@@ -72,6 +72,10 @@ export function exampleState(view, ui) {
   if (view === "eventInvitation") event.informationLayout = "invitation";
   if (view === "eventSingleContainer") event.containerLayout = "single";
   const guestView = [
+    "personalFamily",
+    "personalAccount",
+    "personalSetup",
+    "personalContacts",
     "guestHome",
     "guestSettings",
     "guestEvent",
@@ -89,6 +93,64 @@ export function exampleState(view, ui) {
             customItems: [],
           };
   }
+  const personal = {
+    self: "example-adult",
+    person: { first: "Alex", last: "Example", name: "Alex Example" },
+    account: {
+      version: 1,
+      method: "username",
+      username: view === "personalSetup" ? "" : "example.user",
+      recoveryPhone: view === "personalSetup" ? "" : "+15005550123",
+      recoveryVerified: false,
+      needsUsername: view === "personalSetup",
+      householdId: "0123",
+    },
+    profile: {
+      id: "example-profile",
+      version: 1,
+      name: "Example household",
+      publicCode: "0123",
+      physical: {
+        street: "123 Example Lane",
+        city: "Example Town",
+        state: "CA",
+        zip: "90000",
+        lines: "123 Example Lane, Example Town CA 90000",
+      },
+      mailing: {
+        street: "PO Box 12",
+        city: "Example Town",
+        state: "CA",
+        zip: "90000",
+        lines: "PO Box 12, Example Town CA 90000",
+      },
+      mailingSame: false,
+      sharing: "selected",
+      recipients: ["example-inviter"],
+      blocked: [],
+      members: members.map((p) => ({
+        ...p,
+        phone: p.parent ? "" : "+15005550123",
+      })),
+    },
+    contacts: [
+      {
+        id: "example-inviter",
+        name: "Inviting household",
+        blocked: false,
+        selected: true,
+        address: "123 Example Lane",
+        members: [
+          {
+            first: "Casey",
+            last: "Example",
+            phone: "+15005550124",
+            child: false,
+          },
+        ],
+      },
+    ],
+  };
   const familyView =
     (view.startsWith("family") && view !== "familyLogin") ||
     ["hostSettings", "eventSettings"].includes(view);
@@ -224,23 +286,29 @@ export function exampleState(view, ui) {
       ? household
       : null,
     view:
-      view === "adminApprovals"
-        ? "admin-approvals"
-        : view === "adminHosts"
-          ? "admin-hosts"
-          : ["adminSettings", "guestSettings"].includes(view)
-            ? "settings"
-            : view === "contacts"
-              ? "contacts"
-              : view === "registration"
-                ? "register"
-                : view === "hostLogin"
-                  ? "login"
-                  : view === "familyLogin"
-                    ? "family-login"
-                    : familyView
-                      ? "family"
-                      : "home",
+      view === "personalFamily"
+        ? "personal-family"
+        : ["personalAccount", "personalSetup"].includes(view)
+          ? "personal-account"
+          : view === "personalContacts"
+            ? "personal-contacts"
+            : view === "adminApprovals"
+              ? "admin-approvals"
+              : view === "adminHosts"
+                ? "admin-hosts"
+                : ["adminSettings", "guestSettings"].includes(view)
+                  ? "settings"
+                  : view === "contacts"
+                    ? "contacts"
+                    : view === "registration"
+                      ? "register"
+                      : view === "hostLogin"
+                        ? "login"
+                        : view === "familyLogin"
+                          ? "family-login"
+                          : familyView
+                            ? "family"
+                            : "home",
     event: [
       "event",
       "guestEvent",
@@ -256,6 +324,7 @@ export function exampleState(view, ui) {
     data: familyView
       ? {
           ...family,
+          personal,
           ...(["hostSettings", "eventSettings"].includes(view)
             ? { events: [event], guests: members, addresses: [] }
             : {}),
@@ -263,6 +332,7 @@ export function exampleState(view, ui) {
       : {
           household,
           ui,
+          personal,
           defaults: roleDefaults,
           events: [event],
           guest: members[0],

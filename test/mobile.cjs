@@ -91,8 +91,12 @@ const { existsSync, mkdirSync } = require("node:fs");
   }
   async function login(page, email) {
     await page.goto(origin);
-    await page.getByLabel("Email address").fill(email);
-    await page.getByLabel("Password", { exact: true }).fill(password);
+    await page
+      .getByLabel("Name, email or username", { exact: true })
+      .fill(email);
+    await page
+      .getByLabel("Password or Household ID", { exact: true })
+      .fill(password);
     await click(page, "Sign in");
   }
   const dialog = (page) => page.locator("#editor[open], form[data-form=guest]");
@@ -245,10 +249,11 @@ const { existsSync, mkdirSync } = require("node:fs");
       ),
       "rgb(230, 237, 247)",
     );
-    await guest.page.getByLabel("First name", { exact: true }).fill("Casey");
-    await guest.page.getByLabel("Last name", { exact: true }).fill("Example");
     await guest.page
-      .getByLabel("Invite Code", { exact: true })
+      .getByLabel("Name, email or username", { exact: true })
+      .fill("Casey Example");
+    await guest.page
+      .getByLabel("Password or Household ID", { exact: true })
       .fill(
         store.get(
           "guest-access-code",
@@ -258,7 +263,10 @@ const { existsSync, mkdirSync } = require("node:fs");
           "platform",
         ).code,
       );
-    await click(guest.page, "See my invitations");
+    await click(guest.page, "Sign in");
+    await (
+      await import("./helpers/guest-account.js")
+    ).completeGuestSetup(guest.page, "mobile.casey");
     await guest.page
       .getByRole("heading", { name: "Summer around the table", exact: true })
       .waitFor();
@@ -311,13 +319,10 @@ const { existsSync, mkdirSync } = require("node:fs");
     await guest.page.getByText("Lemonade × 2", { exact: true }).waitFor();
     await secondDevice.page.goto(link);
     await secondDevice.page
-      .getByLabel("First name", { exact: true })
-      .fill("Casey");
+      .getByLabel("Name, email or username", { exact: true })
+      .fill("mobile.casey");
     await secondDevice.page
-      .getByLabel("Last name", { exact: true })
-      .fill("Example");
-    await secondDevice.page
-      .getByLabel("Invite Code", { exact: true })
+      .getByLabel("Password or Household ID", { exact: true })
       .fill(
         store.get(
           "guest-access-code",
@@ -327,7 +332,8 @@ const { existsSync, mkdirSync } = require("node:fs");
           "platform",
         ).code,
       );
-    await click(secondDevice.page, "See my invitations");
+    await click(secondDevice.page, "Sign in");
+
     await click(secondDevice.page, "View Event");
     await secondDevice.page
       .getByText("Lemonade × 2", { exact: true })

@@ -1,3 +1,4 @@
+import { editorToolbar } from "./browse-ui.js";
 import { C, H, ui } from "./ui-runtime.js";
 import {
   appearanceCategories,
@@ -212,7 +213,28 @@ export function appearanceEditor({
             : ["Font", "Color", "Style", "Size"];
     const container = mount();
     const options = ui`<details class="appearance-options"><summary>${C("Formatting options")}</summary>${editing.sources.length ? button("action", "Copy Formatting", "copy") : ""}${button("reset", "Reset to Defaults")}${!category ? button("save", "Save") + button("cancel", "Cancel") : ""}</details>`;
-    container.innerHTML = ui`<div class="appearance-categories" role="toolbar" aria-label="Appearance categories">${appearanceCategories.map((c) => ui`<button type="button" data-action="appearance-category" data-id="${c}" aria-pressed="${category === c}">${C(c)}</button>`).join("")}</div>${editing.contentActions?.length ? ui`<div class="appearance-content-actions" role="toolbar" aria-label="Event content">${editing.contentActions.map((item) => ui`<button type="button" data-action="${item.action}">${C(item.label)}</button>`).join("")}</div>` : ""}${category ? ui`<div class="appearance-actions" role="toolbar" aria-label="Appearance actions">${actions.map((a) => button("action", a, a)).join("")}${button("save", "Save")}${button("cancel", "Cancel")}${options}</div>` : ""}${action ? ui`<div class="appearance-controls" role="group" aria-label="Appearance controls">${controls()}</div>` : ""}<span class="appearance-error" role="alert"></span>`;
+    container.innerHTML =
+      editorToolbar({
+        categoryLabel: "Appearance categories",
+        actionLabel: "Appearance actions",
+        controlLabel: "Appearance controls",
+        categories: appearanceCategories
+          .map(
+            (c) =>
+              ui`<button type="button" data-action="appearance-category" data-id="${c}" aria-pressed="${category === c}">${C(c)}</button>`,
+          )
+          .join(""),
+        contentActions: editing.contentActions?.length
+          ? ui`<div class="appearance-content-actions" role="toolbar" aria-label="Event content">${editing.contentActions.map((item) => ui`<button type="button" data-action="${item.action}">${C(item.label)}</button>`).join("")}</div>`
+          : "",
+        actions: category
+          ? actions.map((a) => button("action", a, a)).join("") +
+            button("save", "Save") +
+            button("cancel", "Cancel") +
+            options
+          : "",
+        controls: action ? controls() : "",
+      }) + '<span class="appearance-error" role="alert"></span>';
     measure();
   }
   function preview() {

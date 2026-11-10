@@ -100,6 +100,7 @@ export async function domainRuntime({
                   "default-examples.js",
                   "address-picker.js",
                   "address-system.js",
+                  "personal-ui.js",
                   "browse-ui.js",
                   "appearance-editor.js",
                   "event-information.js",

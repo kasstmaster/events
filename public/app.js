@@ -1,3 +1,4 @@
+import { personalTools } from "/personal-ui.js";
 import { householdGroups } from "/address-system.js";
 import {
   renderInformation,
@@ -259,7 +260,7 @@ const isEditing = () =>
   appearance.active() ||
   contactInviteMode ||
   !!document.querySelector(
-    "form[data-form=guest],:is(.inline-household-details,.inline-event-details)[data-dirty=true]",
+    "form[data-form=guest],form[data-form^=personal-][data-dirty=true],form[data-form=username-recovery][data-dirty=true],:is(.inline-household-details,.inline-event-details)[data-dirty=true]",
   ) ||
   $("#editor").open ||
   !!document.querySelector(".browse-menu[open]") ||
@@ -441,6 +442,7 @@ const householdShareUrl = () =>
   state.data.household.shareUrl ||
   location.origin + "/h/" + state.data.household.slug;
 function authPage(designTarget) {
+  if (state.view === "username-recovery") return personal.page();
   if (
     state.setup?.required ||
     (location.pathname === "/setup" && state.view !== "login")
@@ -448,16 +450,12 @@ function authPage(designTarget) {
     return setupPage();
   const household = state.publicHousehold;
   if (household) applyDesign(household.design, designTarget);
-  if (
-    household &&
-    !["login", "register", "family-login"].includes(state.view)
-  ) {
-    return ui`<section class="auth"><div class="panel"><p class="eyebrow">${escape(household.name)}</p><h1>INVITED YOU TO A NEW EVENT</h1><p>Welcome. Enter your name to see your invitations.</p><form data-form="guest-login" class="stack">${field(H("First name"), "first", "", "text", 'required autocomplete="given-name" maxlength="80"')}${field(H("Last name"), "last", "", "text", 'required autocomplete="family-name" maxlength="80"')}${field(H("Invite Code"), "inviteCode", "", "password", 'required autocomplete="off" inputmode="numeric" placeholder="4-digit code" maxlength="100"')}<div id="guest-suffix" hidden>${field(H("Suffix, if applicable"), "suffix", "", "text", 'autocomplete="honorific-suffix" maxlength="30" placeholder="Jr., Sr., III…"')}</div><p class="form-error" role="alert"></p><button>See my invitations</button></form><p class="small muted">Use the name your host has on file. If you share an identical name, ask your host for help.</p></div><p class="small centered">${button("host-login", H("Host Login"), "", "quiet")}${button("family-login", H("Family member sign-in"))}${button("guest-code-claim", H("Link another invitation"))}</p></section>`;
-  }
   if (state.view === "family-login" && household)
     return ui`<section class="auth"><div class="panel"><h1>${escape(household.name)}</h1><h2>Family member sign-in</h2><form data-form="family-login">${field(H("Username"), "login", "", "text", 'required autocomplete="username"')}${field(H("Password"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Sign in</button></form></div></section>`;
+  if (state.view !== "register" && state.view !== "family-login")
+    return ui`<section class="auth"><p class="eyebrow">${household ? escape(household.name) : C("Welcome to Gather")}</p>${household ? ui`<h1>INVITED YOU TO A NEW EVENT</h1>` : ui`<h1>Sign in</h1>`}<form data-form="unified-login">${field(H("Name, email or username"), "account", "", "text", 'required autocomplete="username" maxlength="200"')}${field(H("Password or Household ID"), "secret", "", "password", 'required autocomplete="current-password" maxlength="200"')}<div id="unified-suffix" hidden>${field(H("Suffix"), "suffix", "", "text", 'maxlength="30"')}</div><p class="form-error" role="alert"></p><button>${C("Sign in")}</button></form><div class="row">${button("username-recovery", H("Forgot username?"))}${button("register", H("Create your account"))}${household ? button("family-login", H("Family member sign-in")) : ""}</div></section>`;
   const register = state.view === "register";
-  return ui`<section class="auth"><p class="eyebrow">A place for your people</p><h1>${register ? C("Make yourself at home.") : C("Good things begin together.")}</h1><div class="panel"><h2>${register ? C("Create your host account") : C("Host Login")}</h2><p class="muted">${register ? C("Registration is available only for administrator-approved email addresses. No emails will be sent.") : C("Plan a little. Gather a lot.")}</p><form data-form="${register ? "register" : "login"}">${field(H("Email address"), "email", "", "email", 'required autocomplete="username" maxlength="254"')}${field(H("Password"), "password", "", "password", `required minlength="12" maxlength="256" autocomplete="${register ? "new-password" : "current-password"}"`)}${register ? field(H("Family household name"), "name", "", "text", 'required maxlength="100" placeholder="Household name"') + subdomainField() + familyLogoChoice() : ""}<p class="form-error" role="alert"></p><button>${register ? C("Create account") : C("Sign in")}</button></form></div><p class="small">${register ? C("Already registered?") : C("Approved to host?")} ${button(register ? "host-login" : "register", register ? C("Sign in") : C("Create your account"), "", "quiet")}</p>${household ? button("page-back", H("Back"), "", "quiet") : ""}</section>`;
+  return ui`<section class="auth"><p class="eyebrow">A place for your people</p><h1>${register ? C("Make yourself at home.") : C("Good things begin together.")}</h1><div class="panel"><h2>${register ? C("Create your host account") : C("Host Login")}</h2><p class="muted">${register ? C("Registration is available only for administrator-approved email addresses. No emails will be sent.") : C("Plan a little. Gather a lot.")}</p><form data-form="${register ? "register" : "login"}">${field(H("Email address"), "email", "", "email", 'required autocomplete="username" maxlength="254"')}${field(H("Password"), "password", "", "password", `required minlength="12" maxlength="256" autocomplete="${register ? "new-password" : "current-password"}"`)}${register ? field(H("Family household name"), "name", "", "text", 'required maxlength="100" placeholder="Household name"') + subdomainField() + ui`<fieldset><legend>Already have a guest account? · optional</legend>${field(H("Existing private username"), "existingUsername", "", "text", 'autocomplete="off"')}${field(H("Existing Household ID"), "existingHouseholdId", "", "password", 'inputmode="numeric" maxlength="4" autocomplete="off"')}</fieldset>` + familyLogoChoice() : ""}<p class="form-error" role="alert"></p><button>${register ? C("Create account") : C("Sign in")}</button></form></div><p class="small">${register ? C("Already registered?") : C("Approved to host?")} ${button(register ? "host-login" : "register", register ? C("Sign in") : C("Create your account"), "", "quiet")}</p>${household ? button("page-back", H("Back"), "", "quiet") : ""}</section>`;
 }
 function toolbar(event) {
   if (state.preview)
@@ -466,6 +464,12 @@ function toolbar(event) {
       ...(event ? [{ action: "print", label: "Print", icon: "print" }] : []),
     ]);
   const role = state.session.role;
+  if (
+    role === "guest" &&
+    state.data?.personal?.account.needsUsername &&
+    !state.preview
+  )
+    return bottom([{ action: "logout", label: "Sign Out", icon: "settings" }]);
   if (role === "host")
     return bottom([
       { action: "home", label: "Home", icon: "home" },
@@ -493,6 +497,8 @@ function topActions(event) {
       title: C("Settings"),
       extra: tool("save-settings", "Save", "", "save"),
     });
+  if (["card-editor", "card-preview"].includes(state.view))
+    return tools.cardTopbar();
   const role = state.session?.role;
   if (role === "admin" || (role === "host" && state.adminMode))
     return topbar({
@@ -517,7 +523,7 @@ function settingsPage() {
   return ui`<section class="panel"><h1>Settings</h1>${state.session.role === "admin" ? `<form data-form="admin-password">${field(H("Current password"), "currentPassword", "", "password", "required")}${field(H("New password"), "password", "", "password", 'required minlength="12"')}<p class="form-error" role="alert"></p><button>${C("Change Password")}</button></form>` : ""}${button("logout", H("Sign Out"))}</section>`;
 }
 function eventSummary(event) {
-  const host = state.session.role === "host";
+  const host = state.session.role === "host" && !event.invitingHousehold;
   if (!host && !event.menu.some((i) => i.kind === "potluck")) return "";
   const items = host
     ? [
@@ -564,7 +570,7 @@ function eventCard(event) {
     : state.data.household.logo;
   const heading = ui`<div class="event-choice-heading">${logo ? ui`<img class="family-logo" src="${escape(logo)}" alt="Household icon">` : ""}</div>`;
   const content = ui`${event.invitingHousehold ? ui`<p class="eyebrow">${escape(event.invitingHousehold.name)}</p>` : ""}<p class="muted small">${escape(dateLabel(event.date))}</p><h2>${escape(event.title)}</h2><p class="muted">${escape(event.description.slice(0, 120))}</p><div class="row"><span class="pill">${event.totals.attending} attending</span>${event.response?.version ? M('<span class="pill">RSVP saved</span>') : ""}</div>${button("open-event", H("View Event"), `data-id="${event.invitationKey || event.id}"`)}`;
-  if (state.session.role !== "host")
+  if (state.session.role !== "host" || event.invitingHousehold)
     return ui`<article class="card event-choice">${heading}<div class="event-overview">${content}</div></article>`;
   return ui`<article class="card host-event-choice">${heading}<div class="event-overview">${content}</div><div class="event-home-actions" role="group" aria-label="${H("Event actions")}">${[
     ["dashboard", "RSVPs"],
@@ -659,6 +665,9 @@ function rememberPage() {
     state.settingsReturn = null;
     state.eventLayoutDraft = null;
     state.eventInviteDraft = null;
+    state.cardRecords = [];
+    state.cardTemplates = [];
+    state.cardsPageMarkup = "";
     state.settingsEvent = null;
     state.settingsOpen = false;
     pageIdentity = identity;
@@ -786,18 +795,38 @@ function render(target = $("#app"), example = false) {
   const activeEvent = state.data?.events?.find(
     (e) => (e.invitationKey || e.id) === state.event,
   );
-  const active =
+  let active =
     activeEvent?.ui ||
     state.data?.ui ||
     resolveUI(state.platformUI, state.publicHousehold?.ui, {
       design: state.publicHousehold?.design,
     });
+  if (state.session?.role === "guest" && !activeEvent && !state.preview) {
+    active = resolveUI(state.platformUI, {
+      design: appearancePreset("dark", state.platformUI?.design),
+    });
+    state.activeUI = active;
+  }
+  if (
+    state.session?.role === "guest" &&
+    state.data?.personal?.account.needsUsername &&
+    !state.preview &&
+    !example
+  ) {
+    state.view = "personal-account";
+    state.event = null;
+  }
   configureCopy(active);
   applyDesign(active.design, designTarget);
   const role = state.session?.role;
   let content = "",
     event = null;
-  if (state.view === "card-editor" && ["host", "admin"].includes(role))
+  if (state.view.startsWith("personal-") || state.view === "username-recovery")
+    content = personal.page();
+  else if (state.view === "evites") content = tools.evitesPage();
+  else if (state.view === "cards-page") content = tools.cardsPage();
+  else if (state.view === "card-preview") content = tools.cardPreviewPage();
+  else if (state.view === "card-editor" && ["host", "admin"].includes(role))
     content = tools.cardEditorPage();
   else if (role && state.view === "management") content = "";
   else if (role && state.view === "settings") content = settingsPage();
@@ -813,7 +842,7 @@ function render(target = $("#app"), example = false) {
       state.view === "admin-approvals"
         ? ui`<section class="panel"><h2>Approved emails</h2><form data-form="approval">${field(H("Email address"), "email", "", "email", "required")}<p class="form-error" role="alert"></p><button>Approve host</button></form><ul class="guest-list">${state.data.approvals.map((a) => ui`<li class="row between"><span>${escape(a.email)}</span>${button("revoke", H("Remove"), `data-email="${escape(a.email)}"`, "quiet")}</li>`).join("") || M('<li class="muted">No pending approvals.</li>')}</ul></section>`
         : state.view === "admin-hosts"
-          ? ui`<section class="panel"><h2>Registered hosts</h2><ul>${state.data.hosts.map((h) => ui`<li>${escape(h.email)} ${h.logoRequested ? ui`<span class="small">Family icon requested</span>` : ""} ${button("recover-owner", H("Recover owner sign-in"), `data-id="${h.id}"`)}${h.platformAdmin ? ui`<span>Administrator tools enabled</span>` : button("grant-platform-access", H("Make administrator"), `data-id="${h.id}"`)}${button("delete-host", H("Delete account"), `data-id="${h.id}"`, "danger")}</li>`).join("") || M("<li>No hosts yet.</li>")}</ul><p class="small muted">Host guest records and RSVPs are not included here.</p></section>` +
+          ? ui`<section class="panel"><h2>Registered hosts</h2><ul>${state.data.hosts.map((h) => ui`<li>${escape(h.email)} ${button("admin-household-identity", H("Household name / domain"), `data-id="${h.id}"`)} ${h.logoRequested ? ui`<span class="small">Family icon requested</span>` : ""} ${button("recover-owner", H("Recover owner sign-in"), `data-id="${h.id}"`)}${h.platformAdmin ? ui`<span>Administrator tools enabled</span>` : button("grant-platform-access", H("Make administrator"), `data-id="${h.id}"`)}${button("delete-host", H("Delete account"), `data-id="${h.id}"`, "danger")}</li>`).join("") || M("<li>No hosts yet.</li>")}</ul><p class="small muted">Host guest records and RSVPs are not included here.</p></section>` +
             tools.cleanupPanel() +
             (role === "host"
               ? ui`<section class="panel"><h2>Old administrator accounts</h2>${(state.data.legacyAdministrators || []).map((a) => ui`<p>${escape(a.email)} ${button("retire-legacy-admin", H("Remove old administrator"), `data-email="${escape(a.email)}"`, "danger")}</p>`).join("") || M("<p>No old administrator accounts remain.</p>")}</section>`
@@ -831,10 +860,11 @@ function render(target = $("#app"), example = false) {
         { design: state.data.household.design },
         { design: event?.design },
       );
-    if (role === "guest" && !event)
+    if (role === "guest" && !event) {
       state.activeUI = resolveUI(state.platformUI, {
-        design: appearancePreset("dark"),
+        design: appearancePreset("dark", state.platformUI?.design),
       });
+    }
     applyDesign(state.activeUI.design, designTarget);
     if (event) content = eventPage(event);
     else {
@@ -859,9 +889,17 @@ function render(target = $("#app"), example = false) {
               ],
             })
           : "") +
-        ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : C("Welcome")}</p><h1>${escape(role === "guest" ? fullName(state.data.guest) : state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? button("guest-link-requests", H("Review shared guest links")) : ""}${state.data.events.length ? ui`<section class="home-invitations"><h2 class="invitations-title">${role === "host" ? C("Your events") : C("You’re invited to gather")}</h2><section class="grid home-events ${state.data.events.length > 1 ? "multiple-events" : "single-event"}" aria-label="Events">${(role === "guest" ? orderedInvitations(state.data.events) : state.data.events).map(eventCard).join("")}</section></section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
+        ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : C("Welcome")}</p><h1>${escape(role === "guest" ? state.data.personal?.person.name || fullName(state.data.guest) : state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? personal.homeActions() + button("guest-link-requests", H("Review shared guest links")) : ""}${state.data.events.length ? ui`<section class="home-invitations"><h2 class="invitations-title">${role === "host" ? C("Your events") : C("You’re invited to gather")}</h2><section class="grid home-events ${state.data.events.length > 1 ? "multiple-events" : "single-event"}" aria-label="Events">${(role === "guest" ? orderedInvitations(state.data.events) : state.data.events).map(eventCard).join("")}</section></section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
     }
   }
+  if (
+    role === "host" &&
+    !event &&
+    state.view === "home" &&
+    !state.adminMode &&
+    state.data.receivedEvents?.length
+  )
+    content += ui`<section class="home-invitations received-invitations"><h2 class="invitations-title">${C("You’re invited to gather")}</h2><section class="grid home-events multiple-events">${orderedInvitations(state.data.receivedEvents).map(eventCard).join("")}</section></section>`;
   target.innerHTML = ui`<header class="top-shell no-print ${event ? "event-toolbar" : ""}"><div class="top-primary"><a class="brand" href="/" data-action="home">gather<span>＊</span></a>${event ? eventSummary(event) : ""}<div id="top-navigation">${topActions(event)}</div></div><div id="appearance-toolbar"></div></header><main id="main">${content}${role && state.view !== "card-editor" ? '<p id="sync-status" class="connection" role="status" aria-live="polite"></p>' : ""}</main>${role || state.preview ? toolbar(event) : ""}`;
   if (keepGuest)
     target
@@ -909,6 +947,10 @@ function render(target = $("#app"), example = false) {
         action.classList.add("labeled-tool");
         placeTop(control);
       }
+      for (const action of target.querySelectorAll(
+        '#top-navigation [data-action^="card-"],#top-navigation [data-action="download-card"],#top-navigation [data-action="download-png"],#top-navigation [data-action="print-card"],#top-navigation [data-action="share-card"],#top-navigation [data-action="email-card"]',
+      ))
+        action.classList.add("labeled-tool");
       const sortItems = [
         ...target.querySelectorAll(
           '#top-navigation [data-action^="family-sort-"]',
@@ -1015,16 +1057,22 @@ function render(target = $("#app"), example = false) {
       .querySelector('#top-navigation [data-action="save-settings"]')
       ?.classList.add("labeled-tool");
   }
-  if (role === "guest" && !event) {
+  if (!event && role)
     for (const card of target.querySelectorAll("article.card")) {
       const key = card.querySelector('[data-action="open-event"]')?.dataset.id;
-      const invitation = state.data.events.find(
-        (event) => (event.invitationKey || event.id) === key,
-      );
-      if (invitation?.invitingHousehold?.ui)
-        applyDesign(invitation.invitingHousehold.ui.design, card);
+      const invitation = [
+        ...(state.data.events || []),
+        ...(state.data.receivedEvents || []),
+      ].find((e) => (e.invitationKey || e.id) === key);
+      if (invitation)
+        applyDesign(
+          invitation.invitingHousehold?.ui?.design ||
+            state.data.ui?.design ||
+            state.data.household.design,
+          card,
+        );
     }
-  }
+  applyPersonalLayouts(target, active);
   const layoutEvent = settingsAppearanceEvent();
   if (layoutEvent)
     for (const preview of target.querySelectorAll(
@@ -1042,6 +1090,10 @@ function render(target = $("#app"), example = false) {
       "card-editor-active",
       state.view === "card-editor",
     );
+  if (state.view === "card-preview") {
+    tools.mountCardPreview();
+    return;
+  }
   if (state.view === "card-editor") {
     tools.mountCardEditor();
     return;
@@ -1052,6 +1104,8 @@ function render(target = $("#app"), example = false) {
       "family",
       "contacts",
       "management",
+      "cards-page",
+      "card-preview",
       "settings",
       "admin-hosts",
       "admin-approvals",
@@ -1101,13 +1155,15 @@ const closeModal = () => {
 const selectedEvent = () =>
   (state.settingsOpen && settingsAppearanceEvent()) ||
   state.actionEvent ||
-  state.data.events?.find((e) => (e.invitationKey || e.id) === state.event);
+  [...(state.data.events || []), ...(state.data.receivedEvents || [])].find(
+    (e) => (e.invitationKey || e.id) === state.event,
+  );
 function familyLogoChoice() {
   return ui`<fieldset><legend>Family logo / icon</legend><label class="check"><input type="radio" name="logoChoice" value="request" checked>Ask Kassandra to create an icon for me</label><label class="check"><input type="radio" name="logoChoice" value="upload">Upload my own icon</label><div data-logo-upload hidden>${field(H("Upload family logo / icon"), "registrationLogo", "", "file", 'accept="image/png,image/jpeg,image/webp"')}</div></fieldset>`;
 }
 function householdDetailsFields() {
   const household = state.data.household;
-  return ui`${field(H("Family household name"), "householdName", household.name, "text", 'required maxlength="100"')}<p class="small muted">Display-name edits preserve the household address and existing links.</p>${household.logo ? ui`<img class="family-logo-preview" src="${escape(household.logo)}" alt="Current family logo">` : ""}${field(H("Family logo / icon"), "familyLogo", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<p>You can ask Kassandra to create a family logo for you. This appears when guests choose an event; event artwork is separate.</p><label class="check"><input type="checkbox" name="removeLogo">Remove family logo</label>${field(H("Household IANA timezone"), "householdTimezone", household.timezone || "UTC")}`;
+  return ui`${field(H("Family household name"), "householdName", household.name, "text", 'readonly maxlength="100"')}<p class="small muted">Only the administrator can change the household name.</p>${household.logo ? ui`<img class="family-logo-preview" src="${escape(household.logo)}" alt="Current family logo">` : ""}${field(H("Family logo / icon"), "familyLogo", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<p>You can ask Kassandra to create a family logo for you. This appears when guests choose an event; event artwork is separate.</p><label class="check"><input type="checkbox" name="removeLogo">Remove family logo</label>${field(H("Household IANA timezone"), "householdTimezone", household.timezone || "UTC")}${personal.familyFields()}`;
 }
 function householdDetails() {
   modal(C("Details"), householdDetailsFields(), "household");
@@ -1303,7 +1359,7 @@ function contactsPage() {
   const label = (key) =>
     grouped.find((group) => group.key === key)?.label ||
     String(C("No shared address"));
-  return ui`<div class="browse-shell">${topbar({ title: C("Address Book"), back: "home", search: "contacts-search", plus: contactInviteMode ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: [] })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search Address Book") : ""}<div class="browse-content">${contactsInviteTools()}<ul class="browse-rows">${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
+  return ui`<div class="browse-shell">${topbar({ title: C("Address Book"), back: "home", search: "contacts-search", plus: contactInviteMode ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: [] })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search Address Book") : ""}<div class="browse-content">${contactsInviteTools()}${!contactInviteMode && state.session.role === "host" ? button("personal-contacts", H("Linked households")) : ""}<ul class="browse-rows">${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
     entries
       .map(
         ([key, rows]) =>
@@ -1683,6 +1739,25 @@ async function submit(form) {
     return;
   }
   if (await family.submit(form, kind)) return;
+  if (await personal.submit(form, kind)) return;
+  if (kind === "unified-login") {
+    value.suffixProvided = !form.querySelector("#unified-suffix").hidden;
+    const result = await api("/api/sign-in", { method: "POST", data: value });
+    if (result.suffixRequired) {
+      form.querySelector("#unified-suffix").hidden = false;
+      return;
+    }
+    state.view = "home";
+    await load();
+    if (
+      state.session.role === "guest" &&
+      state.data.personal?.account.needsUsername
+    ) {
+      state.view = "personal-account";
+      render();
+    }
+    return;
+  }
   if (await tools.submit(form, kind)) return;
   if (kind === "setup") {
     await api("/api/setup", { method: "POST", data: value });
@@ -1717,6 +1792,20 @@ async function submit(form) {
     await api("/api/admin/approvals", { method: "POST", data: value });
     await load();
     notify(C("Email approved. No email was sent."));
+    return;
+  }
+  if (kind === "admin-household-identity") {
+    const host = state.renamingHost;
+    await api(`/api/admin/households/${host.household}/identity`, {
+      method: "PUT",
+      version: host.householdVersion,
+      data: value,
+    });
+    await saved(
+      C(
+        "Household identity saved. New domains remain pending until verified; existing links remain valid.",
+      ),
+    );
     return;
   }
   if (kind === "grant-platform-access") {
@@ -1760,6 +1849,8 @@ async function submit(form) {
             "",
         timezone: value.householdTimezone,
         design: state.data.household.design,
+        personal: personal.collectFamily(form),
+        personalVersion: Number(form.elements.profileVersion?.value),
       },
     });
     await saved("Details saved.");
@@ -1849,7 +1940,7 @@ async function submit(form) {
     await api(
       state.manualRSVP
         ? `/api/host/events/${e.id}/rsvp/${state.manualRSVPGuest}`
-        : `/api/guest/events/${e.id}/rsvp`,
+        : `/api/${state.session.role === "host" ? "personal" : "guest"}/events/${e.id}/rsvp`,
       {
         method: "PUT",
         data: {
@@ -2007,6 +2098,21 @@ document.addEventListener("click", async (event) => {
       state.eventInviteDraft = null;
       resetContactInvites();
     }
+    if (
+      state.session.role === "guest" &&
+      state.data?.personal?.account.needsUsername &&
+      !state.preview &&
+      !["personal-save", "logout"].includes(action)
+    ) {
+      notify(
+        C(
+          "Create your private username and add a recovery phone number first.",
+        ),
+      );
+      return;
+    }
+    if (!personal.leave(action, target)) return;
+    if (!tools.leaveCard(action)) return;
     if (!leaveEventLayout(target)) return;
     if (await appearance.action(action, target)) return;
     if (
@@ -2169,7 +2275,28 @@ document.addEventListener("click", async (event) => {
       else await tools.action(kind, target);
       return;
     }
-    if (["contacts-anylist-sync", "contacts-anylist-status"].includes(action)) {
+    if (action === "contacts-anylist-sync") {
+      if (
+        state.session.role !== "host" ||
+        !state.data.integrations?.anylist ||
+        state.editingGuest ||
+        contactInviteMode
+      )
+        return;
+      modal(
+        C("AnyList sync"),
+        ui`<p>Pull updates from Address Book, or combine changes in both places. Gather keeps priority when both changed the same field. Existing contacts are never deleted by sync.</p><div class="stack">${button("contacts-anylist-pull", H("Pull from AnyList"))}${button("contacts-anylist-push", H("Update AnyList"))}${button("contacts-anylist-both", H("Sync both"))}</div>`,
+      );
+      return;
+    }
+    if (
+      [
+        "contacts-anylist-pull",
+        "contacts-anylist-push",
+        "contacts-anylist-both",
+        "contacts-anylist-status",
+      ].includes(action)
+    ) {
       if (
         state.preview ||
         state.session.role !== "host" ||
@@ -2180,11 +2307,15 @@ document.addEventListener("click", async (event) => {
         notify(C("Finish editing or selecting contacts before syncing."));
         return;
       }
+      if (action !== "contacts-anylist-status") closeModal();
       target.disabled = true;
       const syncHousehold = state.data.household.id;
       try {
         const result = await api("/api/host/integrations/anylist", {
-          method: action === "contacts-anylist-sync" ? "POST" : "GET",
+          method: action === "contacts-anylist-status" ? "GET" : "POST",
+          ...(action === "contacts-anylist-status"
+            ? {}
+            : { data: { mode: action.split("-").at(-1) } }),
         });
         if (
           state.session?.role !== "host" ||
@@ -2364,6 +2495,16 @@ document.addEventListener("click", async (event) => {
       );
       return;
     }
+    if (action === "admin-household-identity") {
+      const host = state.data.hosts.find((host) => host.id === key);
+      state.renamingHost = host;
+      modal(
+        C("Household name / domain"),
+        ui`${field(H("Household name"), "name", host.householdName || "", "text", 'required maxlength="100"')}${field(H("Household domain label"), "subdomain", host.subdomain || "", "text", 'maxlength="63"')}<p>Existing links stay valid. A changed domain activates only after the normal ownership and routing checks.</p>${field(H("Your current password"), "password", "", "password", 'required autocomplete="current-password"')}`,
+        "admin-household-identity",
+      );
+      return;
+    }
     if (action === "recover-owner") {
       state.recoveryHost = key;
       const host = state.data.hosts.find((h) => h.id === key);
@@ -2397,6 +2538,7 @@ document.addEventListener("click", async (event) => {
       await saved("Guest link reviewed.");
       return;
     }
+    if (await personal.action(action, target)) return;
     if (await tools.action(action, target)) return;
     if (action === "close") {
       closeModal();
@@ -3249,6 +3391,17 @@ const family = familyTools({
   load,
 });
 family.bind();
+const personal = personalTools({
+  state,
+  api,
+  field,
+  select,
+  button,
+  notify,
+  render,
+  load,
+});
+personal.bind();
 const tools = featureTools({
   state,
   api,
@@ -3270,11 +3423,25 @@ const tools = featureTools({
 tools.bind();
 await load();
 setInterval(() => {
-  if (state.session?.role && document.visibilityState === "visible")
+  if (state.session?.role && document.visibilityState === "visible") {
     load({ background: true });
+    tools.refreshEvites().catch(() => {});
+  }
 }, 3000);
 window.addEventListener("online", () => load({ background: true }));
 
+function applyPersonalLayouts(target, config) {
+  for (const group of target.querySelectorAll('[data-layout^="personal"]')) {
+    const items = [...group.children]
+      .filter((el) => el.dataset.layoutItem)
+      .map((element) => ({ id: element.dataset.layoutItem, element }));
+    for (const item of order(
+      items,
+      config.layouts?.[group.dataset.layout] || [],
+    ))
+      group.append(item.element);
+  }
+}
 function applyLayoutDOM(event, role, target = $("#app")) {
   const config = event?.ui || state.data?.ui || state.platformUI;
   if (!config) return;

@@ -87,6 +87,13 @@ export async function clickNavigation(page, label) {
       .click();
     return;
   }
+  if (label === "Save" && (await page.locator("#card-editor-form").count())) {
+    await page
+      .locator('[data-action="card-save"]')
+      .filter({ visible: true })
+      .click();
+    return;
+  }
   if (
     (await page.locator(".appearance-categories").count()) &&
     ["Save", "Cancel"].includes(label)

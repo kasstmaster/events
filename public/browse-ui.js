@@ -131,3 +131,16 @@ export function bindBrowseMenus() {
         menu.open = false;
   });
 }
+
+// Shared three-level editor chrome used by appearance and document editors.
+export function editorToolbar({
+  categories,
+  actions = "",
+  controls = "",
+  categoryLabel = "Editor categories",
+  actionLabel = "Editor actions",
+  controlLabel = "Editor controls",
+  contentActions = "",
+}) {
+  return ui`<div class="appearance-categories" role="toolbar" aria-label="${H(categoryLabel)}">${categories}</div>${contentActions}${actions ? ui`<div class="appearance-actions" role="toolbar" aria-label="${H(actionLabel)}">${actions}</div>` : ""}${controls ? ui`<div class="appearance-controls" role="group" aria-label="${H(controlLabel)}">${controls}</div>` : ""}`;
+}

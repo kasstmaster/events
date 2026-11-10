@@ -2041,7 +2041,7 @@ body #app .brand {
   overflow-wrap: normal;
 }
 .appearance-actions button {
-  flex: 1 0 64px;
+  flex: 1 0 max-content;
   white-space: nowrap;
   overflow-wrap: normal;
 }
@@ -3073,6 +3073,58 @@ body :is(input, textarea)::placeholder {
   list-style: none;
 }
 
+#appearance-toolbar .card-controls {
+  position: static;
+  display: block;
+  width: 100%;
+  max-height: 32dvh;
+  overflow: auto;
+  padding: 10px;
+  border: 0;
+  background: var(--toolbar-panel);
+}
+#appearance-toolbar .card-controls [hidden] {
+  display: none !important;
+}
+#appearance-toolbar .card-controls fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+#appearance-toolbar .card-controls label:not([hidden]) {
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 140px;
+  margin: 4px 8px;
+}
+.card-editor-page .card-workspace {
+  display: block;
+}
+.card-preview-page {
+  max-width: 760px;
+  margin: auto;
+}
+#card-preview-canvas svg {
+  width: 100%;
+  height: auto;
+}
+
+body #notice,
+body .connection,
+body .form-error {
+  background: transparent;
+  box-shadow: none;
+}
+body #notice {
+  color: var(--ink, #172c25);
+  backdrop-filter: none;
+  text-shadow: 0 0 2px var(--bg, #fff);
+}
+.personal-member-row {
+  display: grid;
+  gap: var(--action-gap);
+}
+
 /* Retain intentional indentation in saved event content. */
 [data-event-edit="title"],
 [data-event-edit="time"],
@@ -3120,4 +3172,19 @@ body .information-error {
 }
 body #notice {
   backdrop-filter: none;
+}
+
+#appearance-toolbar .card-controls > h2 {
+  display: none;
+}
+
+.card-editor-active .appearance-active .card-editor-title {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+  font-size: clamp(18px, 3vw, 24px);
+}
+.card-editor-active .appearance-active .appearance-categories {
+  grid-column: 1 / -1;
+  grid-row: 2;
 }

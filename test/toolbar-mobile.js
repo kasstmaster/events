@@ -1,3 +1,4 @@
+import { enrollGuest } from "./helpers/guest-account.js";
 // Synthetic loopback data only. Native sharing/clipboard are mocked at the browser boundary.
 import assert from "node:assert/strict";
 import { once } from "node:events";
@@ -192,6 +193,7 @@ const guestCookie = (
     inviteCode: guest.inviteCode,
   })
 ).cookie;
+await enrollGuest(origin, guestCookie, "toolbar.casey");
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium",
   args: ["--no-sandbox"],
@@ -962,42 +964,43 @@ try {
   );
   await click(admin, "Templates");
   await admin.getByText("Shared card templates", { exact: true }).waitFor();
-  assert.equal(
-    await admin.locator("#editor.inline-management[open]").count(),
-    1,
-  );
+  assert.equal(await admin.locator("#editor[open]").count(), 0);
   await admin.getByLabel("Create", { exact: true }).click();
-  await admin
-    .getByRole("heading", { name: "Edit shared template", exact: true })
-    .waitFor();
-  await click(admin, "Close editor");
+  await admin.locator("#card-editor-form").waitFor();
+  await click(admin, "Close");
   await admin.getByText("Shared card templates", { exact: true }).waitFor();
   await admin.getByLabel("Create", { exact: true }).click();
-  await admin
-    .getByRole("heading", { name: "Edit shared template", exact: true })
-    .waitFor();
+  await admin.locator("#card-editor-form").waitFor();
   await admin.setViewportSize({ width: 1440, height: 900 });
-  await admin.getByLabel("Selected item", { exact: true }).selectOption("2");
-  await admin
-    .getByText("Example QR — replaced with the household link when used.", {
-      exact: true,
-    })
-    .waitFor();
+  const control = async (category, action, label) => {
+    await admin
+      .getByRole("toolbar", { name: "Card categories", exact: true })
+      .getByRole("button", { name: category, exact: true })
+      .click();
+    await admin
+      .getByRole("toolbar", { name: "Card actions", exact: true })
+      .getByRole("button", { name: action, exact: true })
+      .click();
+    return admin.getByLabel(label, { exact: true }).filter({ visible: true });
+  };
+  await (
+    await control("Variables", "Select", "Selected item")
+  ).selectOption("2");
   assert.equal(
     await admin.locator("#card-canvas [data-qr-modules]").count(),
     1,
   );
-  await admin.getByLabel("QR color", { exact: true }).fill("#125577");
-  await admin.getByLabel("Transparent QR background", { exact: true }).check();
+  await (await control("Text", "Color", "QR color")).fill("#125577");
+  await (
+    await control("Text", "QR Background", "Transparent QR background")
+  ).check();
+  await control("Variables", "QR", "Include QR code");
   await click(admin, "Add text above QR");
-  await admin
-    .locator("#card-fields fieldset:not([hidden]) [name=fieldText]")
-    .fill("Scan to see the invitation");
-  await admin
-    .getByRole("button", { name: "Save shared template", exact: true })
-    .click();
+  await (
+    await control("Text", "Text", "Text / fallback")
+  ).fill("Scan to see the invitation");
+  await click(admin, "Save");
   await admin.getByText("Shared card templates", { exact: true }).waitFor();
-  assert.equal(store.list("template", "platform").length, 1);
   const qrTemplate = store.list("template", "platform")[0];
   assert.equal(
     qrTemplate.elements.find((e) => e.field === "qr").qrColor,

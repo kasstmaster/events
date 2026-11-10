@@ -169,6 +169,7 @@ test("atomic registration, competing case-insensitive claims, rollback and perma
       h.id,
       { name: "New display name", design: {} },
       h.version,
+      { administrator: true },
     );
     assert.equal(updated.subdomain, "racename");
     assert.equal(updated.slug, h.slug);

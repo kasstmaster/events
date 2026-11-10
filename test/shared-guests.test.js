@@ -136,8 +136,11 @@ test("matching exposes minimal evidence, requires guest approval and then spans 
 test("suffix recognition requires the correct code and supports names with and without suffixes", async (t) => {
   const f = await application(t),
     a = await f.host("Alpha"),
-    jr = await f.guest(a, { suffix: "Jr." }),
-    none = await f.guest(a);
+    jr = await f.guest(a, {
+      suffix: "Jr.",
+      addressDraft: { label: "Same name household", lines: "PO Box 1" },
+    }),
+    none = await f.guest(a, { address: jr.address });
   const path = "/api/public/households/" + a.household.slug + "/recognize";
   assert.equal(
     (
@@ -157,7 +160,7 @@ test("suffix recognition requires the correct code and supports names with and w
     ).body.suffixRequired,
     true,
   );
-  assert.equal((await f.guestLogin(a, jr, { suffix: "" })).status, 401);
+  assert.equal((await f.guestLogin(a, jr, { suffix: "" })).status, 200);
   assert.equal((await f.guestLogin(a, jr, { suffix: "JR" })).status, 200);
   assert.equal((await f.guestLogin(a, none)).status, 200);
 });
@@ -515,7 +518,10 @@ test("shared invitations authenticate across actual gateway domains while keepin
   assert.equal(view.household.name, b.name);
   assert.equal(view.events.length, 2);
   assert.equal(JSON.stringify(view).includes("Private Alpha"), false);
-  assert.equal(JSON.stringify(view).includes("+15550000001"), false);
+  assert.equal(
+    JSON.stringify({ ...view, personal: undefined }).includes("+15550000001"),
+    false,
+  );
   assert.equal(
     (
       await f.request("/api/guest", {

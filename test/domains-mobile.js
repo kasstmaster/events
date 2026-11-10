@@ -1,5 +1,7 @@
+import { completeGuestSetup } from "./helpers/guest-account.js";
 // Browser requests are fulfilled by the isolated gateway + real Worker/DO runtime.
 // No live DNS lookup, external request, production account or RSVP is created.
+import { existsSync } from "node:fs";
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 import { mkdir } from "node:fs/promises";
@@ -75,7 +77,11 @@ try {
     });
   }
   browser = await chromium.launch({
-    executablePath: process.env.CHROMIUM_PATH || chromium.executablePath(),
+    executablePath:
+      process.env.CHROMIUM_PATH ||
+      (existsSync("/usr/bin/chromium")
+        ? "/usr/bin/chromium"
+        : chromium.executablePath()),
     args: ["--no-sandbox"],
   });
   const errors = [];
@@ -132,26 +138,27 @@ try {
         background,
       );
       await page
-        .getByRole("button", { name: "Host Login", exact: true })
-        .click();
-      await page
-        .getByRole("heading", { name: "Host Login", exact: true })
+        .getByLabel("Name, email or username", { exact: true })
         .waitFor();
       assert.equal(
-        await page.evaluate(() =>
-          document.documentElement.style.getPropertyValue("--bg"),
-        ),
-        background,
+        await page
+          .getByRole("button", { name: "Sign in", exact: true })
+          .count(),
+        1,
       );
-      await page.getByRole("button", { name: "Back", exact: true }).click();
-      await page.getByLabel("First name", { exact: true }).fill("Casey");
-      await page.getByLabel("Last name", { exact: true }).fill("Synthetic");
       await page
-        .getByLabel("Invite Code", { exact: true })
+        .getByLabel("Name, email or username", { exact: true })
+        .fill(
+          width === 390
+            ? "Casey Synthetic"
+            : host.name.toLowerCase() + ".casey",
+        );
+      await page
+        .getByLabel("Password or Household ID", { exact: true })
         .fill(fixture.inviteCode);
-      await page
-        .getByRole("button", { name: "See my invitations", exact: true })
-        .click();
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      if (width === 390)
+        await completeGuestSetup(page, host.name.toLowerCase() + ".casey");
       await page
         .getByRole("button", { name: "View Event", exact: true })
         .click();
@@ -204,7 +211,7 @@ try {
       });
       await page.goto(origin === alphaOrigin ? betaOrigin : alphaOrigin);
       await page
-        .getByRole("button", { name: "See my invitations", exact: true })
+        .getByRole("button", { name: "Sign in", exact: true })
         .waitFor();
       await context.close();
     }
