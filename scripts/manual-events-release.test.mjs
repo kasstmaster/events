@@ -75,7 +75,7 @@ test("unauthorized API response stops without exposing body", async () => {
 test("checkpoint then verify uses GET only and excludes private settings", async () => {
   const directory = await mkdtemp(join(tmpdir(), "events-release-"));
   const file = join(directory, "checkpoint.json");
-  let version = "cd19484d-8fbf-4dc0-8c21-ec4d47911077",
+  let version = "3046c37d-2fd5-4965-83e4-319ff0215ba4",
     changed = false,
     badMigration = false;
   const fetcher = async (url, options = {}) => {
@@ -208,4 +208,18 @@ test("runtime differences identify names only and never expose setting values", 
     ),
   );
   assert.deepEqual(settingsChanges(before, before), []);
+});
+
+test("AnyList driver uses the exact approved application release and existing secrets", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/sync-meyer-anylist.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflow, new RegExp(`ref: ${RELEASE}`));
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /^\s+(push|pull_request|schedule):/m);
+  assert.match(workflow, /secrets\.ANYLIST_EMAIL/);
+  assert.match(workflow, /secrets\.ANYLIST_PASSWORD/);
+  assert.match(workflow, /secrets\.ANYLIST_IMPORT_SECRET/);
+  assert.match(workflow, /node sync\.js/);
 });
