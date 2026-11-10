@@ -1,0 +1,98 @@
+name: Deploy Gather after PR merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+# The existing manual release workflow uses this same lock.
+concurrency:
+  group: events-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out exact merged main commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify exact merged revision and protected production target
+        env:
+          MERGED_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$MERGED_SHA"
+          test "$(git branch -r --contains "$MERGED_SHA" | grep -c 'origin/main')" -gt 0
+
+      - name: Run unit and release safety tests
+        run: |
+          npm test
+          node --test scripts/manual-events-release.test.mjs
+
+      - name: Install Chromium for integration tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Test Cloudflare runtime and mobile behavior
+        run: |
+          npm run test:cloudflare
+          npm run test:mobile
+
+      - name: Validate build without publishing
+        env:
+          WRANGLER_SEND_METRICS: "false"
+        run: npx wrangler deploy --name events --config wrangler.jsonc --keep-vars --dry-run
+
+      - name: Check Cloudflare and record SQLite recovery checkpoint
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GITHUB_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          mkdir -p recovery
+          node scripts/automatic-events-release.mjs preflight
+
+      - name: Save recovery checkpoint before deployment
+        uses: actions/upload-artifact@v6
+        with:
+          name: events-auto-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: recovery/events-auto-checkpoint.json
+          if-no-files-found: error
+          retention-days: 29
+
+      - name: Deploy exact merged Gather revision
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 37d068144865a0b725ee272bc7b2eb71
+          WRANGLER_SEND_METRICS: "false"
+        run: npx wrangler deploy --name events --config wrangler.jsonc --keep-vars
+
+      - name: Verify live deployment and preserved SQLite namespace
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GITHUB_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: node scripts/automatic-events-release.mjs verify
+
+      - name: Upload post-deployment verification
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: events-auto-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: recovery/*-after.json
+          if-no-files-found: ignore
+          retention-days: 29
