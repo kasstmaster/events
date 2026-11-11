@@ -79,6 +79,9 @@ jobs:
       - name: Recipient e-vites and missing-phone recovery with mocked transport
         if: matrix.group == 'accounts'
         run: node test/evites-mobile.js
+      - name: Restricted account management on phones and desktop
+        if: matrix.group == 'accounts'
+        run: node test/account-management-mobile.js
       - name: Browser failure screenshots
         if: ${{ failure() }}
         uses: actions/upload-artifact@v6

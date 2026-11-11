@@ -79,6 +79,7 @@ jobs:
           node test/cards-mobile.js
           node test/personal-mobile.js
           node test/evites-mobile.js
+          node test/account-management-mobile.js
       - uses: actions/upload-artifact@v6
         if: failure()
         with:
