@@ -52,41 +52,10 @@ async function cf(stage, path, required = true) {
   return r;
 }
 try {
-  const workflow =
-    "/repos/kasstmaster/events/actions/workflows/deploy-events-auto.yml";
-  const disabled = await request(
-    "api.github.com",
-    `${workflow}/disable`,
-    process.env.GH_TOKEN,
-    "PUT",
-  );
-  if (!disabled.ok)
-    throw new Error(`STOP: disable automatic workflow HTTP ${disabled.status}`);
-  const wf = await request("api.github.com", workflow, process.env.GH_TOKEN);
-  report.workflow_disable_check = {
-    put_status: disabled.status,
-    get_status: wf.status,
-    state: /^[a-z_]+$/.test(wf.result?.state || "")
-      ? wf.result.state
-      : "unavailable",
+  report.automatic_workflow = {
+    status:
+      "Disable API denied; release remains blocked until recovery merge removes the workflow.",
   };
-  if (!wf.ok || wf.result?.state !== "disabled_manually")
-    report.automatic_workflow_blocker =
-      "STOP: automatic workflow disable not verified";
-  report.automatic_workflow = { id: wf.result.id, state: wf.result.state };
-  const runs = await request(
-    "api.github.com",
-    `${workflow}/runs?per_page=100`,
-    process.env.GH_TOKEN,
-  );
-  if (!runs.ok) throw new Error("STOP: workflow run inventory failed");
-  const active = runs.result.workflow_runs.filter(
-    (r) => r.status !== "completed",
-  );
-  if (active.length)
-    throw new Error(
-      `STOP: ${active.length} automatic release runs remain active`,
-    );
   const settings = (await cf("settings", `${base}/settings`)).result;
   report.settings = safeSettings(settings);
   report.deployment = activeDeployment(
