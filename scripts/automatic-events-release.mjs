@@ -260,6 +260,39 @@ export function runtimeSchemaSummary(raw) {
 // Provider-defined annotations describe a *version*, not its runtime settings.
 // Message/CI metadata must change with a release; retain the optional user tag.
 // Unknown annotations still require review rather than being silently dropped.
+export function annotationSchemaSummary(annotations) {
+  if (
+    !annotations ||
+    typeof annotations !== "object" ||
+    Array.isArray(annotations)
+  )
+    return annotations === null
+      ? "null"
+      : Array.isArray(annotations)
+        ? "array"
+        : typeof annotations;
+  const known = new Set([
+    "workers/alias",
+    "workers/commit_sha",
+    "workers/message",
+    "workers/pull_request_number",
+    "workers/pull_request_title",
+    "workers/pull_request_url",
+    "workers/repository_url",
+    "workers/tag",
+    "workers/triggered_by",
+  ]);
+  return (
+    Object.entries(annotations)
+      .slice(0, 32)
+      .map(
+        ([key, value]) =>
+          `${known.has(key) ? key : "[unrecognized-annotation]"}:${value === null ? "null" : Array.isArray(value) ? "array" : typeof value}`,
+      )
+      .sort()
+      .join(", ") || "empty-object"
+  );
+}
 export function versionAnnotations(raw) {
   const annotations = raw.annotations;
   if (annotations === undefined) return {};
@@ -272,6 +305,10 @@ export function versionAnnotations(raw) {
     "workers/pull_request_url": 512,
     "workers/repository_url": 512,
     "workers/tag": 100,
+    // Cloudflare-generated provenance, consumed by pinned Wrangler's
+    // getVersionSource/formatTrigger. Its default branch handles arbitrary
+    // provider strings; it is display metadata, never release authorization.
+    "workers/triggered_by": 1024,
   };
   must(
     annotations !== null &&
@@ -284,7 +321,7 @@ export function versionAnnotations(raw) {
           Buffer.byteLength(value, "utf8") <= limits[key],
       ),
     "settings-schema",
-    "Unsupported version annotations; values withheld. Review version metadata before publishing.",
+    `Unsupported version annotations; values withheld. Review version metadata before publishing. Schema (names/types only): ${annotationSchemaSummary(annotations)}`,
   );
   return annotations;
 }
