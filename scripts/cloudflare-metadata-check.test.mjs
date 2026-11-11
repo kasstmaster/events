@@ -134,7 +134,7 @@ test("schema diagnostics expose only bounded schema field names/types, never val
   );
 });
 
-test("read-only check confirms actual restored-worker provenance is accepted before owner merges", async () => {
+test("read-only check accepts provider-defined provenance without exposing its value", async () => {
   const f = fixture();
   const original = f.options.fetcher;
   f.options.fetcher = async (url, init) =>
@@ -143,7 +143,7 @@ test("read-only check confirms actual restored-worker provenance is accepted bef
           success: true,
           result: {
             annotations: {
-              "workers/triggered_by": "rollback",
+              "workers/triggered_by": privateValue,
               "workers/message": privateValue,
             },
           },

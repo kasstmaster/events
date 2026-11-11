@@ -306,8 +306,9 @@ export function versionAnnotations(raw) {
     "workers/repository_url": 512,
     "workers/tag": 100,
     // Cloudflare-generated provenance, consumed by pinned Wrangler's
-    // getVersionSource/formatTrigger (upload, secret, rollback, promotion).
-    "workers/triggered_by": 9,
+    // getVersionSource/formatTrigger. Its default branch handles arbitrary
+    // provider strings; it is display metadata, never release authorization.
+    "workers/triggered_by": 1024,
   };
   must(
     annotations !== null &&
@@ -317,9 +318,7 @@ export function versionAnnotations(raw) {
         ([key, value]) =>
           Object.hasOwn(limits, key) &&
           typeof value === "string" &&
-          Buffer.byteLength(value, "utf8") <= limits[key] &&
-          (key !== "workers/triggered_by" ||
-            ["upload", "secret", "rollback", "promotion"].includes(value)),
+          Buffer.byteLength(value, "utf8") <= limits[key],
       ),
     "settings-schema",
     `Unsupported version annotations; values withheld. Review version metadata before publishing. Schema (names/types only): ${annotationSchemaSummary(annotations)}`,

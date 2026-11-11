@@ -736,7 +736,17 @@ test("malformed or unknown annotation metadata stops with no secret-bearing diag
 
 test("Cloudflare provenance for restored and new versions is recognized without weakening runtime protection", () => {
   const raw = settings();
-  for (const trigger of ["upload", "secret", "rollback", "promotion"]) {
+  for (const trigger of [
+    "upload",
+    "secret",
+    "rollback",
+    "promotion",
+    "api",
+    "dashboard_rollback",
+    "deployment-rollback",
+    "private-provenance",
+    "x".repeat(1024),
+  ]) {
     const observed = {
       ...raw,
       annotations: { ...raw.annotations, "workers/triggered_by": trigger },
@@ -749,7 +759,8 @@ test("Cloudflare provenance for restored and new versions is recognized without 
     assert.ok(!("annotations" in runtimeOverlay(observed)));
   }
   for (const trigger of [
-    "private-provenance",
+    "x".repeat(1025),
+    "é".repeat(513),
     null,
     123,
     { secret: "private-provenance" },
