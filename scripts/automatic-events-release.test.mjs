@@ -15,6 +15,7 @@ import {
   runtimeOverlay,
   runtimeSettingsFingerprint,
   versionAnnotations,
+  annotationSchemaSummary,
   publishExact,
   ReleaseError,
   ACCOUNT,
@@ -223,7 +224,10 @@ async function appearanceManifestFixture(root, paths) {
 const settings = () => ({
   compatibility_date: "2026-10-30",
   compatibility_flags: ["nodejs_compat", "global_fetch_strictly_public"],
-  annotations: { "workers/message": "previous-release" },
+  annotations: {
+    "workers/message": "previous-release",
+    "workers/triggered_by": "rollback",
+  },
   observability: { enabled: true },
   bindings: [
     { name: "ASSETS", type: "assets" },
@@ -336,6 +340,8 @@ async function fixture(fn) {
       if (u.pathname.endsWith("/settings")) {
         result = settings();
         result.annotations["workers/tag"] = state.versionTag;
+        result.annotations["workers/triggered_by"] =
+          state.version === INITIAL_VERSION ? "rollback" : "upload";
         result.annotations["workers/message"] =
           state.version === INITIAL_VERSION ? "previous-release" : RELEASE;
         if (state.drift) result.observability.enabled = false;
@@ -726,4 +732,50 @@ test("malformed or unknown annotation metadata stops with no secret-bearing diag
       /Unsupported version annotations/,
     );
   }
+});
+
+test("Cloudflare provenance for restored and new versions is recognized without weakening runtime protection", () => {
+  const raw = settings();
+  for (const trigger of ["upload", "secret", "rollback", "promotion"]) {
+    const observed = {
+      ...raw,
+      annotations: { ...raw.annotations, "workers/triggered_by": trigger },
+    };
+    assert.doesNotThrow(() => runtimeOverlay(observed));
+    assert.equal(
+      runtimeSettingsFingerprint(observed),
+      runtimeSettingsFingerprint(raw),
+    );
+    assert.ok(!("annotations" in runtimeOverlay(observed)));
+  }
+  for (const trigger of [
+    "private-provenance",
+    null,
+    123,
+    { secret: "private-provenance" },
+  ]) {
+    assert.throws(
+      () =>
+        versionAnnotations({
+          annotations: { "workers/triggered_by": trigger },
+        }),
+      (e) =>
+        e.stage === "settings-schema" &&
+        !e.message.includes("private-provenance") &&
+        e.message.includes("workers/triggered_by:"),
+    );
+  }
+});
+test("annotation shape diagnostics never expose values or arbitrary annotation names", () => {
+  const summary = annotationSchemaSummary({
+    "workers/triggered_by": "private-provenance",
+    "workers/message": "private-message",
+    "private-annotation-name": "private-value",
+  });
+  assert.ok(summary.includes("workers/triggered_by:string"));
+  assert.ok(summary.includes("[unrecognized-annotation]:string"));
+  assert.ok(!summary.includes("private-"));
+  assert.equal(annotationSchemaSummary(null), "null");
+  assert.equal(annotationSchemaSummary([]), "array");
+  assert.equal(annotationSchemaSummary({}), "empty-object");
 });

@@ -113,3 +113,22 @@ Durable Object identity and the separate manual recovery workflow are unchanged.
 
 The fix must be reviewed and merged through its own PR. Rerunning a failed run
 for an older merged SHA executes the older script and cannot apply this fix.
+
+### Cloudflare-generated provenance annotations
+
+The SDK's annotation interface is incomplete for the provider's version history:
+pinned Wrangler 4.156.0 itself reads `workers/triggered_by` in `getVersionSource`
+and recognizes `upload`, `secret`, `rollback` and `promotion` in `formatTrigger`.
+The release validator now accepts those four string values as version provenance,
+not runtime configuration. Other values, unknown keys, objects and over-limit
+strings still stop without exposing their contents. The restore-to-upload
+regression fixture exercises checkpoint, one publish and post-publish validation;
+all settings/bindings/tag protections remain active.
+
+The read-only authentication/metadata workflow also reports
+`annotations-schema (names/types only)` and `annotations-validation: pass/fail`.
+Run it on the pushed fix branch before owner merge to confirm the actual live
+annotation shape is accepted. No production workflow needs to be rerun for this
+investigation. Raw values, arbitrary annotation names and credential-bearing
+provider diagnostics remain withheld. This read-only result establishes schema
+compatibility only; all existing release gates still run after owner merge.

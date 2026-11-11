@@ -106,6 +106,10 @@ test("schema diagnostics expose only bounded schema field names/types, never val
         success: true,
         result: {
           asset_config: { jwt: privateValue },
+          annotations: {
+            "workers/triggered_by": privateValue,
+            [privateValue]: privateValue,
+          },
           assets: { jwt: privateValue, config: { nestedSecret: privateValue } },
           bindings: [{ name: privateValue, text: privateValue }],
           [privateValue]: privateValue,
@@ -113,7 +117,7 @@ test("schema diagnostics expose only bounded schema field names/types, never val
       });
     return original(url, init);
   };
-  assert.equal(await checkMetadata(f.options), true);
+  assert.equal(await checkMetadata(f.options), false);
   assert.ok(f.logs.some((line) => line.includes("assets:object")));
   assert.ok(f.logs.some((line) => line.includes("asset_config:object")));
   assert.ok(
@@ -121,4 +125,31 @@ test("schema diagnostics expose only bounded schema field names/types, never val
   );
   assert.ok(!f.logs.join("\n").includes(privateValue));
   assert.ok(!f.logs.join("\n").includes("nestedSecret"));
+  assert.ok(
+    f.logs.some(
+      (line) =>
+        line.includes("annotations-schema (names/types only):") &&
+        line.includes("workers/triggered_by:string"),
+    ),
+  );
+});
+
+test("read-only check confirms actual restored-worker provenance is accepted before owner merges", async () => {
+  const f = fixture();
+  const original = f.options.fetcher;
+  f.options.fetcher = async (url, init) =>
+    new URL(url).pathname.endsWith("/settings")
+      ? Response.json({
+          success: true,
+          result: {
+            annotations: {
+              "workers/triggered_by": "rollback",
+              "workers/message": privateValue,
+            },
+          },
+        })
+      : original(url, init);
+  assert.equal(await checkMetadata(f.options), true);
+  assert.ok(f.logs.includes("annotations-validation: pass"));
+  assert.ok(!f.logs.join("\n").includes(privateValue));
 });
