@@ -58,11 +58,28 @@ export function convertAddressBook(userData, listId) {
         key = item.identifier;
       if (!parsed || key == null || seen.has(String(key))) continue;
       seen.add(String(key));
-      people.push({ id: String(key), ...parsed });
+      const notes = String(item.details ?? item.notes ?? "");
+      const phoneLines = notes
+        .split(/\r?\n/)
+        .filter((line) => /^\s*(?:phone|tel)\s*:/i.test(line))
+        .map((line) =>
+          line.replace(/^\s*(?:phone|tel)\s*:\s*/i, "").replace(/[() .-]/g, ""),
+        );
+      const phone =
+        phoneLines.find((value) => /^\+[1-9][0-9]{7,14}$/.test(value)) || "";
+      people.push({
+        id: String(key),
+        ...parsed,
+        phone,
+        ...(!phone && phoneLines.some(Boolean)
+          ? { phoneUnsupported: true }
+          : {}),
+      });
       for (const child of String(item.details ?? item.notes ?? "")
         .split(/\r?\n/)
         .map(clean)
         .filter(Boolean)) {
+        if (!/^[\p{L}\p{M} .'-]+$/u.test(child)) continue;
         const name = personName(child, parsed.last),
           childId = String(key) + ":child:" + child.toLowerCase();
         if (name && !seen.has(childId)) {

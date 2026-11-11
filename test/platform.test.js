@@ -121,7 +121,12 @@ async function fixture(
       `/api/public/households/${host.household.slug}/login`,
       {
         method: "POST",
-        data: { first: guest.first, last: guest.last, suffix: guest.suffix },
+        data: {
+          first: guest.first,
+          last: guest.last,
+          suffix: guest.suffix,
+          inviteCode: guest.inviteCode,
+        },
       },
     );
     assert.equal(result.status, 200);
@@ -332,7 +337,7 @@ test("adult login, suffixes, duplicate names and guest privacy fail safely", asy
   assert.equal(duplicate.status, 401);
   assert.equal(
     duplicate.body.error,
-    "Unable to sign in with these details. Check with your host.",
+    "Unable to sign in with these details. Check your invite code with your host.",
   );
 });
 test("children, shared addresses, exact invitations and adult/child totals", async (t) => {
@@ -392,12 +397,8 @@ test("children, shared addresses, exact invitations and adult/child totals", asy
     },
   });
   assert.equal(result.status, 200);
-  assert.deepEqual(result.body.totals, {
-    invited: 3,
-    attending: 2,
-    declined: 0,
-    noResponse: 1,
-  });
+  assert.deepEqual(result.body.totals, { attending: 2 });
+  assert.equal(result.body.totals.invited, undefined);
   const dash = (
     await f.request(`/api/host/events/${event.id}/dashboard`, {
       cookie: h.cookie,
@@ -476,7 +477,7 @@ test("quantity reservations are atomic, stale RSVP writes conflict, declines rel
     400,
   );
 });
-test("deadline permits attendance changes and quantity reductions, and preserves existing over-capacity claims", async (t) => {
+test("deadline closes every guest RSVP edit and preserves existing over-capacity claims", async (t) => {
   const f = await fixture(t),
     h = await f.host("Alpha"),
     adult = await f.addGuest(h),
@@ -500,74 +501,34 @@ test("deadline permits attendance changes and quantity reductions, and preserves
     ).status,
     200,
   );
-  event = (
-    await f.request("/api/host/events/" + event.id, {
-      method: "PUT",
-      cookie: h.cookie,
-      version: event.version,
-      data: {
-        ...event,
-        deadline: "2020-01-01",
-        menu: [{ ...event.menu[0], quantity: 1 }],
-      },
-    })
-  ).body;
-  assert.equal(
-    (
-      await f.request(path, {
-        method: "PUT",
-        cookie,
-        data: {
-          version: 1,
-          attendance: { [adult.id]: "yes", [child.id]: "yes" },
-          claims: { salad: 3 },
-        },
-      })
-    ).status,
-    200,
-  );
-  assert.equal(
-    (
-      await f.request(path, {
-        method: "PUT",
-        cookie,
-        data: {
-          version: 2,
-          attendance: { [adult.id]: "no", [child.id]: "yes" },
-          claims: {},
-        },
-      })
-    ).status,
-    400,
-  );
-  assert.equal(
-    (
-      await f.request(path, {
-        method: "PUT",
-        cookie,
-        data: {
-          version: 2,
-          attendance: { [adult.id]: "yes", [child.id]: "yes" },
-          claims: { salad: 2 },
-        },
-      })
-    ).status,
-    200,
-  );
-  assert.equal(
-    (
-      await f.request(path, {
-        method: "PUT",
-        cookie,
-        data: {
-          version: 3,
-          attendance: { [adult.id]: "yes", [child.id]: "yes" },
-          claims: { salad: 3 },
-        },
-      })
-    ).status,
-    409,
-  );
+  const changed = await f.request("/api/host/events/" + event.id, {
+    method: "PUT",
+    cookie: h.cookie,
+    version: event.version,
+    data: {
+      ...event,
+      deadline: "2020-01-01",
+      menu: [{ ...event.menu[0], quantity: 1 }],
+    },
+  });
+  assert.equal(changed.status, 200);
+  for (const attendance of [
+    { [adult.id]: "no", [child.id]: "no" },
+    { [adult.id]: "yes", [child.id]: "yes" },
+  ])
+    assert.equal(
+      (
+        await f.request(path, {
+          method: "PUT",
+          cookie,
+          data: { version: 1, attendance, claims: { salad: 0 } },
+        })
+      ).status,
+      409,
+    );
+  const saved = f.store.list("response", h.household.id)[0];
+  assert.equal(saved.claims.salad, 3);
+  assert.equal(saved.attendance[child.id], "yes");
 });
 test("household and event styles are independent, versioned and shared across browser sessions", async (t) => {
   const f = await fixture(t),
@@ -582,7 +543,7 @@ test("household and event styles are independent, versioned and shared across br
         method: "PUT",
         cookie: a.cookie,
         version: 1,
-        data: { name: "Renamed family", design },
+        data: { name: a.household.name, design },
       })
     ).status,
     200,
@@ -593,7 +554,7 @@ test("household and event styles are independent, versioned and shared across br
         method: "PUT",
         cookie: a.cookie,
         version: 1,
-        data: { name: "Stale", design: {} },
+        data: { name: a.household.name, design: {} },
       })
     ).status,
     409,
@@ -615,20 +576,30 @@ test("household and event styles are independent, versioned and shared across br
     })
   ).cookie;
   const view = (await f.request("/api/host", { cookie: secondDevice })).body;
-  assert.equal(view.household.name, "Renamed family");
+  assert.equal(view.household.name, a.household.name);
   assert.equal(view.household.design.background, "#abcdef");
   assert.equal(
     view.events.find((e) => e.id === first.id).design.background,
     "#112233",
   );
-  assert.deepEqual(view.events.find((e) => e.id === second.id).design, {});
+  assert.equal(
+    view.events.find((e) => e.id === second.id).ui.design.background,
+    defaults.background,
+  );
+  const next = await f.addEvent(a, []);
+  assert.equal(
+    (await f.request("/api/host", { cookie: a.cookie })).body.events.find(
+      (e) => e.id === next.id,
+    ).ui.design.background,
+    "#abcdef",
+  );
   assert.deepEqual(
     (await f.request("/api/host", { cookie: b.cookie })).body.household.design,
     {},
   );
   assert.equal(
     (await f.request("/api/public/households/" + a.household.slug)).body.name,
-    "Renamed family",
+    a.household.name,
   );
   assert.equal(
     (
@@ -636,7 +607,7 @@ test("household and event styles are independent, versioned and shared across br
         method: "PUT",
         cookie: a.cookie,
         version: 2,
-        data: { name: "No injection", design: { titleFont: "url(evil)" } },
+        data: { name: a.household.name, design: { titleFont: "url(evil)" } },
       })
     ).status,
     400,
