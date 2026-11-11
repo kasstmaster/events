@@ -1,8 +1,8 @@
 # AnyList protocol reference
 
-The protobuf field mapping in `reader.js` is adapted from
+The read-only protobuf field mapping in `reader.js` is adapted from
 `codetheweb/anylist` version 0.8.6 (`lib/definitions.json`). The old client is not
-installed or executed. Events uses narrowly scoped read/write adapters and a patched,
+installed or executed. Events uses a narrowly scoped read adapter and a patched,
 pinned protobuf runtime instead.
 
 Upstream author: Max Isom. The upstream package declares the MIT license.
@@ -26,9 +26,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
-
-The v2 category-assignment protocol was also checked against the public
-`BookCatKid/aioanylist` shopping-list implementation at revision
-`8df7f406335ad5dca9f0cd15012f4b93a11de3c9`. Only protocol facts informed the
-independent JavaScript implementation; no Python implementation is bundled.
-Unknown protobuf fields are retained when moving existing items.
