@@ -1,0 +1,7 @@
+# Preserve the approved Gather page layouts
+
+The visual baseline is approved application commit `925c25ad0f89b6deb85838ae36f13d168444b1d0`, before the private guest security implementation. Restore its stylesheet exactly, including existing menu stacking and inline management sizing. Retain the established sign-in screen wrapper, headings and form placement; substitute the required host email/password inputs without switching to a different host-login design.
+
+Private guest URLs, verification, session preservation, administrator-only link access, guest Settings, the empty-calendar ornament removal and the existing page renderers remain. Hosts request link delivery from the existing adult contact editor, avoiding an extra action in every contact-row menu. Only the newly introduced administrator guest-access form gets its own natural-height adjustment; existing management screens retain their approved geometry. No saved formatting, defaults, household/event records, credentials or production settings are changed.
+
+The currently reported broad live formatting regression is separate: an earlier release deployed the historical operations application, and PR #69's corrected application was stopped before deployment by the missing runtime flag. This source correction does not claim that production has changed or that household routing is already restored. The runtime recovery is reviewed separately, with all deployment/CI/checkpoint/verification protections retained.

@@ -9,6 +9,17 @@ import {
 
 export const APPROVED_APPLICATION_BASE =
   "925c25ad0f89b6deb85838ae36f13d168444b1d0";
+// Baseline only: the documented PR #67 upload lost this required flag.
+// It never selects the commit/version to deploy or authorizes settings writes.
+export const RECOVERABLE_RUNTIME_VERSION =
+  "db244c24-b170-4cb9-a171-809462344b1a";
+const PUBLIC_FETCH_FLAG = "global_fetch_strictly_public";
+const APPROVED_FLAGS = [PUBLIC_FETCH_FLAG, "nodejs_compat"];
+const correctionPlan = () => ({
+  kind: "restore-required-public-fetch-flag",
+  from_version_id: RECOVERABLE_RUNTIME_VERSION,
+  flag: PUBLIC_FETCH_FLAG,
+});
 const ACCOUNT = "37d068144865a0b725ee272bc7b2eb71";
 const WORKER = "events";
 const NAMESPACE = "8203f4cd7fde45d2ab49de62e239d744";
@@ -196,17 +207,58 @@ async function request(fetcher, url, token, stage) {
     serverTime: response.headers.get("date"),
   };
 }
-async function snapshot(token, fetcher) {
+function runtimeSettings(raw, versionId, allowCorrection) {
+  if (
+    allowCorrection &&
+    versionId === RECOVERABLE_RUNTIME_VERSION &&
+    raw?.compatibility_date === "2026-10-30" &&
+    JSON.stringify(raw.compatibility_flags) ===
+      JSON.stringify(["nodejs_compat"])
+  ) {
+    // Validate every other setting using the unchanged strict validator.
+    // Record the real pre-deployment state; only Wrangler may apply the approved flag.
+    const approved = safeSettings({
+      ...raw,
+      compatibility_flags: APPROVED_FLAGS,
+    });
+    return {
+      settings: { ...approved, compatibility_flags: ["nodejs_compat"] },
+      runtimeCorrection: correctionPlan(),
+    };
+  }
+  return { settings: safeSettings(raw), runtimeCorrection: null };
+}
+function expectedCheckpointSettings(checkpoint) {
+  if (!Object.hasOwn(checkpoint, "runtime_correction"))
+    return checkpoint.settings;
+  if (
+    JSON.stringify(checkpoint.runtime_correction) !==
+      JSON.stringify(correctionPlan()) ||
+    checkpoint.before.version_id !== RECOVERABLE_RUNTIME_VERSION ||
+    checkpoint.settings.compatibility_date !== "2026-10-30" ||
+    JSON.stringify(checkpoint.settings.compatibility_flags) !==
+      JSON.stringify(["nodejs_compat"])
+  )
+    fail(
+      "checkpoint",
+      "Runtime correction does not match the documented recovery baseline.",
+    );
+  return { ...checkpoint.settings, compatibility_flags: [...APPROVED_FLAGS] };
+}
+async function snapshot(token, fetcher, allowCorrection = false) {
   const read = (path, stage) => request(fetcher, API + path, token, stage);
-  const settings = safeSettings(
-    (await read("/settings", "live-settings")).value,
-  );
+  const rawSettings = (await read("/settings", "live-settings")).value;
   const result = await read("/deployments", "deployment");
   const deployment = activeDeployment(result.value);
   const version = (await read(`/versions/${deployment.version_id}`, "version"))
     .value;
   if (version?.resources?.script_runtime?.migration_tag !== "events-v1")
     fail("sqlite", "Existing SQLite migration tag differs from events-v1.");
+  const { settings, runtimeCorrection } = runtimeSettings(
+    rawSettings,
+    deployment.version_id,
+    allowCorrection,
+  );
   const schedules = (await read("/schedules", "cron")).value;
   if (!Array.isArray(schedules?.schedules))
     fail("cron", "Existing cron inventory was not returned.");
@@ -223,6 +275,7 @@ async function snapshot(token, fetcher) {
     fail("setup", "Live administrator setup is not closed.");
   return {
     settings,
+    runtimeCorrection,
     deployment,
     version,
     crons,
@@ -289,7 +342,7 @@ export async function runAuto(mode, options = {}) {
   const file = options.file ?? CHECKPOINT;
   const fetcher = options.fetcher ?? fetch;
   if (mode === "preflight") {
-    const current = await snapshot(token, fetcher);
+    const current = await snapshot(token, fetcher, true);
     validateProductionRelease(
       current.version.annotations?.["workers/message"],
       release,
@@ -308,12 +361,14 @@ export async function runAuto(mode, options = {}) {
         "recovery",
         "No trustworthy Cloudflare server timestamp for the recovery checkpoint.",
       );
-    const second = await snapshot(token, fetcher);
+    const second = await snapshot(token, fetcher, true);
     if (
       JSON.stringify(second.deployment) !==
         JSON.stringify(current.deployment) ||
       JSON.stringify(second.settings) !== JSON.stringify(current.settings) ||
-      JSON.stringify(second.crons) !== JSON.stringify(current.crons)
+      JSON.stringify(second.crons) !== JSON.stringify(current.crons) ||
+      JSON.stringify(second.runtimeCorrection) !==
+        JSON.stringify(current.runtimeCorrection)
     )
       fail("preflight", "Production changed during preflight.");
     const checkpoint = {
@@ -325,6 +380,9 @@ export async function runAuto(mode, options = {}) {
       sqlite_migration_tag: "events-v1",
       before: current.deployment,
       settings: current.settings,
+      ...(current.runtimeCorrection
+        ? { runtime_correction: current.runtimeCorrection }
+        : {}),
       crons: current.crons,
       recovery: {
         kind: "sqlite-pitr-timestamp",
@@ -339,7 +397,9 @@ export async function runAuto(mode, options = {}) {
       mode: 0o600,
     });
     console.log(
-      "Preflight passed. Runtime settings, cron, SQLite binding and recovery timestamp recorded.",
+      current.runtimeCorrection
+        ? "Preflight passed. Known lost-flag baseline and recovery checkpoint recorded; the reviewed deployment must restore only the required public-fetch flag."
+        : "Preflight passed. Runtime settings, cron, SQLite binding and recovery timestamp recorded.",
     );
     return;
   }
@@ -368,15 +428,14 @@ export async function runAuto(mode, options = {}) {
       "checkpoint",
       "Recovery checkpoint does not match this merge and production identity.",
     );
+  const expectedSettings = expectedCheckpointSettings(checkpoint);
   const deployedVersion = await expectedVersion(options.outputFile ?? OUTPUT);
   const wait =
     options.wait ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const current = await snapshot(token, fetcher);
-      if (
-        JSON.stringify(current.settings) !== JSON.stringify(checkpoint.settings)
-      )
+      if (JSON.stringify(current.settings) !== JSON.stringify(expectedSettings))
         fail(
           "live-settings",
           "Worker runtime bindings, variables or compatibility settings changed after deployment.",
@@ -401,6 +460,9 @@ export async function runAuto(mode, options = {}) {
         JSON.stringify(
           {
             release,
+            ...(checkpoint.runtime_correction
+              ? { runtime_correction: checkpoint.runtime_correction }
+              : {}),
             after: current.deployment,
             verified_at: new Date().toISOString(),
             crons: current.crons,
@@ -411,7 +473,9 @@ export async function runAuto(mode, options = {}) {
         { mode: 0o600 },
       );
       console.log(
-        "Exact merged Worker version active; runtime settings, cron, SQLite namespace and closed setup verified.",
+        checkpoint.runtime_correction
+          ? "Exact merged Worker version active; required public-fetch flag restored; other runtime settings, cron, SQLite namespace and closed setup verified."
+          : "Exact merged Worker version active; runtime settings, cron, SQLite namespace and closed setup verified.",
       );
       return;
     } catch (error) {

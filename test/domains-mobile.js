@@ -275,7 +275,7 @@ try {
   await page.getByText("Appearance saved.", { exact: true }).waitFor();
   await page.goto("https://dubois.ilymmd.com/");
   await page
-    .getByRole("heading", { name: "Host Login", exact: true })
+    .getByRole("heading", { name: "INVITED YOU TO A NEW EVENT", exact: true })
     .waitFor();
   assert.equal(new URL(page.url()).hostname, "dubois.ilymmd.com");
   await context.close();

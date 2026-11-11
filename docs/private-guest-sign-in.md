@@ -8,7 +8,7 @@ Each adult's existing global identity has one random 256-bit URL ID, independent
 
 The database stores a SHA-256 lookup hash and an AES-256-GCM encrypted token with identity-bound authenticated data, never the plaintext ID. Ordinary host/contact/card/preview/export projections do not include either value. The owner can view/copy their own link in Settings → Private sign-in. Only a password-confirmed platform administrator can retrieve or reset someone else's link through Hosts → Guest sign-in access. Reset requires current record version and exact guest name, generates a fresh ID and revokes all that identity's guest sessions and outstanding codes. Existing links remain stable on ordinary reads and sends. Key/decryption failures fail closed; they never silently regenerate links.
 
-Address Book → adult Contact actions → Send / Resend sign-in link submits the existing link directly to that person's **verified** phone using the shared one-shot transport. Hosts cannot choose its destination, see the URL or reset it. A provider acceptance or uncertain result is not confirmed delivery. No automatic retry occurs. Regular family accounts cannot send or administer these links.
+Address Book → edit adult contact → Send / Resend sign-in link submits the existing link directly to that person's **verified** phone using the shared one-shot transport. Hosts cannot choose its destination, see the URL or reset it. A provider acceptance or uncertain result is not confirmed delivery. No automatic retry occurs. Regular family accounts cannot send or administer these links.
 
 ## Verification and enrollment
 
