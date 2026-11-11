@@ -18,7 +18,75 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run format:check
+      - name: Install isolated AnyList reader dependencies
+        run: npm ci --ignore-scripts --prefix integrations/anylist
+      - name: Check AnyList transport and two-way reconciliation
+        run: node --test integrations/anylist/reader.test.js integrations/anylist/writer.test.js
       - run: npm test
+      - name: Cloudflare runtime checks
+        if: ${{ !cancelled() }}
+        run: npm run test:cloudflare
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        group: [navigation, editors, accounts]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:mobile
-      - run: npm run test:cloudflare
+      - name: Original phone workflow
+        if: matrix.group == 'navigation'
+        run: node test/mobile.cjs
+      - name: Household phone and desktop routing
+        if: matrix.group == 'navigation'
+        run: node test/domains-mobile.js
+      - name: Shared editor browser checks
+        if: matrix.group == 'editors'
+        timeout-minutes: 3
+        run: node test/features-mobile.js
+      - name: Family workspace and invite-code browser checks
+        if: matrix.group == 'navigation'
+        timeout-minutes: 3
+        run: node test/family-mobile.js
+      - name: Shared navigation and workspace browser checks
+        if: matrix.group == 'navigation'
+        timeout-minutes: 3
+        run: node test/navigation-mobile.js
+      - name: Fixed toolbar and inline appearance browser checks
+        if: matrix.group == 'editors'
+        timeout-minutes: 3
+        run: node test/toolbar-mobile.js
+      - name: Household RSVP and event invitation selection on phones and desktop
+        if: matrix.group == 'editors'
+        run: node test/household-ui-mobile.js
+      - name: Selected Information pop-ups on phones and desktop
+        if: matrix.group == 'editors'
+        run: node test/information-popups-mobile.js
+      - name: Dedicated card and template pages on phones and desktop
+        if: matrix.group == 'accounts'
+        run: node test/cards-mobile.js
+      - name: Verified private guest sign-in on phones and desktop
+        if: matrix.group == 'accounts'
+        run: node test/guest-auth-mobile.js
+      - name: Private accounts and reciprocal Address Book on phones and desktop
+        if: matrix.group == 'accounts'
+        run: node test/personal-mobile.js
+      - name: Recipient e-vites and missing-phone recovery with mocked transport
+        if: matrix.group == 'accounts'
+        run: node test/evites-mobile.js
+      - name: Browser failure screenshots
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: browser-failure-screenshots-${{ matrix.group }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7

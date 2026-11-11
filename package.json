@@ -10,20 +10,23 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "admin": "node server/admin.js",
-    "test": "node --test test/platform.test.js",
-    "test:mobile": "node test/mobile.cjs",
+    "test": "node --test test/guest-auth.test.js test/platform.test.js test/domains.test.js test/provisioning.test.js test/features.test.js test/shared-guests.test.js test/guest-address.test.js test/family.test.js test/navigation.test.js test/appearance.test.js test/contact-invites.test.js test/household-integrations.test.js test/rsvp-notifications.test.js test/table-templates.test.js test/platform-access.test.js test/household-ui.test.js test/personal-accounts.test.js test/evites.test.js test/anylist-merge.test.js",
+    "test:mobile": "node test/guest-auth-mobile.js && node test/mobile.cjs && node test/domains-mobile.js && node test/features-mobile.js && node test/family-mobile.js && node test/navigation-mobile.js && node test/toolbar-mobile.js && node test/household-ui-mobile.js && node test/information-popups-mobile.js && node test/cards-mobile.js && node test/personal-mobile.js && node test/evites-mobile.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "dev:cloudflare": "wrangler dev --local",
     "deploy:cloudflare": "wrangler deploy",
     "cloudflare:bootstrap": "node scripts/cloudflare-admin.js",
-    "test:cloudflare": "node --test test/cloudflare.test.js"
+    "test:cloudflare": "node --test test/cloudflare.test.js",
+    "copy:catalog": "node scripts/build-copy-catalog.js"
   },
   "dependencies": {
     "qrcode": "1.5.4"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
     "jsonc-parser": "3.3.1",
+    "miniflare": "5.20261023.3-beta",
     "playwright": "1.58.2",
     "prettier": "3.8.1",
     "wrangler": "4.156.0"
