@@ -893,7 +893,11 @@ export async function run(mode, options = {}) {
 // Classify captured diagnostics against fixed patterns only. Never reflect raw
 // messages, headers, URLs, field values, arguments or provider response bodies.
 export function wranglerFailure(error, operation) {
-  const text = String(error?.stdout || "") + "\n" + String(error?.stderr || "");
+  const text = (
+    String(error?.stdout || "") +
+    "\n" +
+    String(error?.stderr || "")
+  ).replace(/\u001b\[[\d;]*m/g, "");
   const rules = [
     [
       "authentication",
@@ -906,12 +910,12 @@ export function wranglerFailure(error, operation) {
     ["rate-limit", /rate.limit|too many requests/i],
     [
       "network",
-      /ENOTFOUND|ECONNRESET|ETIMEDOUT|certificate|unable to verify|fetch failed|proxy/i,
+      /ENOTFOUND|ECONNRESET|ETIMEDOUT|certificate|unable to verify|fetch failed|proxy (error|failed|denied|refused)/i,
     ],
     ["unsupported-option", /unknown argument|unknown option/i],
     [
       "configuration",
-      /invalid configuration|configuration.*error|unexpected fields|invalid.*placement/i,
+      /invalid configuration|configuration.*error|unexpected fields|invalid.*placement|Processing [^\n]*configuration:|is a required field|Expected [^\n]*to be of type/i,
     ],
     [
       "bundle",
@@ -920,6 +924,46 @@ export function wranglerFailure(error, operation) {
   ];
   const category =
     rules.find(([, pattern]) => pattern.test(text))?.[0] || "unclassified";
+  const diagnosticFields = [
+    "placement",
+    "placement.mode",
+    "placement.hint",
+    "placement.region",
+    "placement.host",
+    "placement.hostname",
+    "logpush",
+    "tail_consumers",
+    "streaming_tail_consumers",
+    "limits",
+    "limits.cpu_ms",
+    "cache",
+    "cache.enabled",
+    "observability",
+    "observability.enabled",
+    "observability.logs",
+    "observability.traces",
+    "compatibility_date",
+    "compatibility_flags",
+    "main",
+    "assets.directory",
+    "durable_objects",
+    "migrations",
+  ].filter(
+    (field) =>
+      text.includes('"' + field + '"') || text.includes("`" + field + "`"),
+  );
+  const reasons = [
+    ["required-field", /is a required field/i],
+    [
+      "invalid-type",
+      /Expected [^\n]*to be of type|should be an object|must be a string/i,
+    ],
+    ["invalid-value", /Expected [^\n]*(?:one of|values)|not a valid value/i],
+    ["missing-path", /does not exist|not found|no such file/i],
+    ["unknown-field", /Unexpected fields|unrecognized.{0,40}(field|key)/i],
+  ]
+    .filter(([, pattern]) => pattern.test(text))
+    .map(([name]) => name);
   const codes = [
     ...new Set(
       [...text.matchAll(/\[code:\s*(\d{1,8})\]/g)].map((match) => match[1]),
@@ -931,7 +975,7 @@ export function wranglerFailure(error, operation) {
       : "unavailable";
   return new ReleaseError(
     operation,
-    `Wrangler ${operation === "local-build" ? "local build" : "upload"} failed; category ${category}; exit ${exit}; Cloudflare codes ${codes.join(",") || "none"}. Raw diagnostics withheld.${operation === "publish" ? " Inspect active version before any retry." : " No upload was attempted."}`,
+    `Wrangler ${operation === "local-build" ? "local build" : "upload"} failed; category ${category}; fields ${diagnosticFields.join(",") || "none"}; reasons ${reasons.join(",") || "none"}; exit ${exit}; Cloudflare codes ${codes.join(",") || "none"}. Raw diagnostics withheld.${operation === "publish" ? " Inspect active version before any retry." : " No upload was attempted."}`,
   );
 }
 export async function publishExact(

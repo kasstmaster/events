@@ -80,6 +80,15 @@ export async function checkMetadata({
       );
     }
   }
+  if (settings?.placement && typeof settings.placement === "object") {
+    log(
+      `placement-schema (names/types only): ${runtimeSchemaSummary(settings.placement)}`,
+    );
+    const mode = settings.placement.mode;
+    log(
+      `placement-mode: ${mode === undefined ? "absent" : ["off", "smart", "targeted"].includes(mode) ? mode : "unsupported-value-withheld"}`,
+    );
+  }
   if (settings && env.EVENTS_READ_ONLY_BUILD === "true") {
     try {
       await bundleValidator(

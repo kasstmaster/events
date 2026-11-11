@@ -167,3 +167,12 @@ and captured raw output are discarded. A real local equivalent and mock boundary
 tests verify no production command runs. A failed diagnostic must be investigated
 on its pushed feature branch; never merge or rerun production merely to obtain
 more diagnostics.
+
+The owner's diagnostic established `local-build` failure before any upload.
+Wrangler's required-field/type diagnostics are now recognized after stripping
+terminal color codes; only fixed configuration field names and reason labels
+are reported. The read-only inventory also reports placement field types and
+only its fixed supported mode (or `absent` / `unsupported-value-withheld`). This
+separates an API-to-Wrangler configuration mismatch from an upload permission
+failure without exposing runtime values. No placement normalization or live
+setting change is assumed before that evidence is available.

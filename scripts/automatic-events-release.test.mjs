@@ -862,3 +862,20 @@ test("diagnostic build can only invoke the dry run and never calls publication c
       !e.message.includes("synthetic-private-path"),
   );
 });
+
+test("configuration diagnostics recognize pinned Wrangler required-field errors without echoing values", () => {
+  const error = wranglerFailure(
+    {
+      code: 1,
+      stdout: "Proxy environment variables detected",
+      stderr:
+        '\u001b[31mProcessing PRIVATE-PATH configuration:\u001b[0m\n - "placement.mode" is a required field. PRIVATE-SECRET',
+    },
+    "local-build",
+  );
+  assert.ok(error.message.includes("category configuration"));
+  assert.ok(error.message.includes("fields placement.mode"));
+  assert.ok(error.message.includes("reasons required-field"));
+  assert.ok(!error.message.includes("PRIVATE"));
+  assert.ok(!error.message.includes("Proxy environment"));
+});
