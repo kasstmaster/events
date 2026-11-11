@@ -98,11 +98,11 @@ export function exampleState(view, ui) {
     person: { first: "Alex", last: "Example", name: "Alex Example" },
     account: {
       version: 1,
-      method: "username",
+      method: "private",
       username: view === "personalSetup" ? "" : "example.user",
       recoveryPhone: view === "personalSetup" ? "" : "+15005550123",
       recoveryVerified: false,
-      needsUsername: view === "personalSetup",
+      needsUsername: false,
       householdId: "0123",
     },
     profile: {

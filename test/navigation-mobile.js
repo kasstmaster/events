@@ -1,3 +1,4 @@
+import { existingGuestSession } from "./helpers/guest-session.js";
 import { enrollGuest } from "./helpers/guest-account.js";
 // Synthetic loopback data only. Native sharing/clipboard are mocked at the browser boundary.
 import assert from "node:assert/strict";
@@ -195,12 +196,11 @@ const e2 = (
     menu: [],
   })
 ).body;
-const guestCookie = (
-  await api(null, `/api/public/households/${household.slug}/login`, {
-    first: guest.first,
-    last: guest.last,
-    inviteCode: guest.inviteCode,
-  })
+const guestCookie = existingGuestSession(
+  store,
+  household,
+  guest,
+  origin,
 ).cookie;
 await enrollGuest(origin, guestCookie, "navigation.casey");
 const browser = await chromium.launch({
@@ -1664,11 +1664,11 @@ try {
   const currentLayoutGuest = (await api(owner, "/api/host")).body.guests.find(
     (g) => g.id === guest.id,
   );
-  const layoutGuestCookie = (
-    await api(null, "/api/sign-in", {
-      account: "navigation.casey",
-      secret: currentLayoutGuest.inviteCode,
-    })
+  const layoutGuestCookie = existingGuestSession(
+    store,
+    household,
+    currentLayoutGuest,
+    origin,
   ).cookie;
   const layoutGuest = await page(layoutGuestCookie);
   await layoutGuest

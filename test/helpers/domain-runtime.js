@@ -12,6 +12,7 @@ export const secret = "synthetic-gateway-key-not-a-real-secret-0123456789";
 export async function domainRuntime({
   automatic = false,
   cloudflareFetch,
+  guestAuth = false,
 } = {}) {
   const appConfig = parse(await readFile("wrangler.jsonc", "utf8"));
   const gatewayConfig = parse(await readFile("wrangler.gateway.jsonc", "utf8"));
@@ -41,6 +42,15 @@ export async function domainRuntime({
     bindings.HOUSEHOLD_DNS_TOKEN = "synthetic-management-token";
     bindings.HOUSEHOLD_HOSTS = "";
   }
+  const messages = [];
+  if (guestAuth)
+    Object.assign(bindings, {
+      GUEST_LINK_ENCRYPTION_KEY: "c3".repeat(32),
+      SMS_ENABLED: "true",
+      TWILIO_ACCOUNT_SID: "synthetic",
+      TWILIO_AUTH_TOKEN: "synthetic",
+      TWILIO_FROM: "+15005550006",
+    });
   const trace = [];
   let app;
   const runtime = new Miniflare(
@@ -52,13 +62,32 @@ export async function domainRuntime({
           name: "events",
           routes: ["events.synthetic.workers.dev/*"],
           modules: true,
-          script: await bundle("cloudflare/worker.js"),
+          script: await bundle(
+            guestAuth
+              ? "cloudflare/worker.js"
+              : "test/helpers/worker-fixture.js",
+          ),
           compatibilityDate: appConfig.compatibility_date,
           compatibilityFlags: appConfig.compatibility_flags,
           bindings,
           durableObjects: {
             EVENTS_DATABASE: { className: "EventsDatabase", useSQLite: true },
           },
+          ...(guestAuth
+            ? {
+                outboundService: async (req) => {
+                  if (new URL(req.url).hostname !== "api.twilio.com")
+                    throw Error("Unexpected synthetic auth destination");
+                  messages.push(
+                    Object.fromEntries(new URLSearchParams(await req.text())),
+                  );
+                  return Response.json(
+                    { sid: "synthetic-runtime-message" },
+                    { status: 201 },
+                  );
+                },
+              }
+            : {}),
           ...(automatic
             ? {
                 outboundService: async (req) => {
@@ -101,6 +130,7 @@ export async function domainRuntime({
                   "address-picker.js",
                   "address-system.js",
                   "personal-ui.js",
+                  "guest-access-ui.js",
                   "browse-ui.js",
                   "appearance-editor.js",
                   "event-information.js",
@@ -177,7 +207,35 @@ export async function domainRuntime({
         : await response.text(),
     };
   }
-  return { runtime, app, gateway, dispatch, request, bindings, trace };
+  const guestSession = async (
+    host,
+    guest,
+    origin,
+    entryHousehold = host.id,
+  ) => {
+    const ns = await runtime.getDurableObjectNamespace(
+      "EVENTS_DATABASE",
+      "events",
+    );
+    const result = await ns
+      .get(ns.idFromName("events-platform-v1"))
+      .existingGuestBrowser(host.id, guest.id, origin, entryHousehold);
+    return {
+      ...result,
+      headers: new Headers({ "set-cookie": result.setCookie }),
+    };
+  };
+  return {
+    runtime,
+    app,
+    gateway,
+    dispatch,
+    request,
+    bindings,
+    trace,
+    guestSession,
+    messages,
+  };
 }
 export async function seedDomains(f, { simpleNames = false } = {}) {
   const { request } = f;

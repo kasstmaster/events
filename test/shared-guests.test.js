@@ -148,8 +148,8 @@ test("suffix recognition requires the correct code and supports names with and w
         method: "POST",
         data: { first: jr.first, last: jr.last, inviteCode: "wrong" },
       })
-    ).body.suffixRequired,
-    false,
+    ).status,
+    401,
   );
   assert.equal(
     (
@@ -157,8 +157,8 @@ test("suffix recognition requires the correct code and supports names with and w
         method: "POST",
         data: { first: jr.first, last: jr.last, inviteCode: jr.inviteCode },
       })
-    ).body.suffixRequired,
-    true,
+    ).status,
+    401,
   );
   assert.equal((await f.guestLogin(a, jr, { suffix: "" })).status, 200);
   assert.equal((await f.guestLogin(a, jr, { suffix: "JR" })).status, 200);
@@ -217,7 +217,7 @@ test("expired deadlines close all RSVP edits and custom items are scoped, opt-in
   );
 });
 
-test("two current address codes can link identities without moving contacts or changing codes", async (t) => {
+test("address codes alone cannot claim or merge identities", async (t) => {
   const f = await application(t),
     a = await f.host("Alpha"),
     b = await f.host("Beta"),
@@ -244,19 +244,15 @@ test("two current address codes can link identities without moving contacts or c
         },
       )
     ).status,
-    200,
+    401,
   );
-  assert.equal(
+  assert.notEqual(
     f.store.one(
       "SELECT identity FROM guest_identity_links WHERE household=? AND guest=?",
       b.household.id,
       second.id,
     ).identity,
     before,
-  );
-  assert.equal(
-    (await f.guestLogin(b, second, { inviteCode: original.inviteCode })).status,
-    200,
   );
 });
 
@@ -485,11 +481,7 @@ test("shared invitations authenticate across actual gateway domains while keepin
       ).status,
       201,
     );
-  const login = await f.request("/api/public/households/" + b.slug + "/login", {
-    origin: betaOrigin,
-    method: "POST",
-    data: { first: "Casey", last: "Example", inviteCode: g.inviteCode },
-  });
+  const login = await f.guestSession(a, g, betaOrigin, b.id);
   assert.equal(login.status, 200);
   assert.match(
     login.headers.get("set-cookie"),

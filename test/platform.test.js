@@ -1,3 +1,4 @@
+import { existingGuestSession } from "./helpers/guest-session.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
@@ -117,18 +118,7 @@ async function fixture(
     return result.body;
   };
   const guestLogin = async (host, guest) => {
-    const result = await request(
-      `/api/public/households/${host.household.slug}/login`,
-      {
-        method: "POST",
-        data: {
-          first: guest.first,
-          last: guest.last,
-          suffix: guest.suffix,
-          inviteCode: guest.inviteCode,
-        },
-      },
-    );
+    const result = existingGuestSession(store, host.household, guest, origin);
     assert.equal(result.status, 200);
     return result.cookie;
   };
@@ -337,7 +327,7 @@ test("adult login, suffixes, duplicate names and guest privacy fail safely", asy
   assert.equal(duplicate.status, 401);
   assert.equal(
     duplicate.body.error,
-    "Unable to sign in with these details. Check your invite code with your host.",
+    "Guests must use their private sign-in page and phone verification.",
   );
 });
 test("children, shared addresses, exact invitations and adult/child totals", async (t) => {

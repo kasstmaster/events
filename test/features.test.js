@@ -1,3 +1,4 @@
+import { existingGuestSession } from "./helpers/guest-session.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
@@ -98,17 +99,7 @@ async function fixture(t, env = {}) {
     return r.body;
   };
   const guestLogin = async (h, g) =>
-    (
-      await request(`/api/public/households/${h.household.slug}/login`, {
-        method: "POST",
-        data: {
-          first: g.first,
-          last: g.last,
-          suffix: g.suffix,
-          inviteCode: g.inviteCode,
-        },
-      })
-    ).cookie;
+    existingGuestSession(store, h.household, g, origin).cookie;
   return {
     store,
     request,

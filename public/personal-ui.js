@@ -1,6 +1,7 @@
 import { ui, C, H } from "./ui-runtime.js";
 import { topbar, tool } from "./browse-ui.js";
 export function personalTools({
+  guestAccess,
   state,
   api,
   field,
@@ -83,6 +84,7 @@ export function personalTools({
     };
   }
   function accountPage() {
+    if (state.session.role === "guest") return guestAccess.settingsPage();
     const data = current(),
       a = data.account;
     if (a.method === "email")
@@ -138,6 +140,8 @@ export function personalTools({
           "username-recovery",
         ].includes(action)
       ) {
+        if (action === "personal-account" && state.session.role === "guest")
+          await guestAccess.loadSettings();
         state.view = action;
         render();
         return true;

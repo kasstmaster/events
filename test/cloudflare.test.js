@@ -28,7 +28,7 @@ test(
         await import("node:fs/promises")
       ).readFile("wrangler.jsonc", "utf8"),
     );
-    config.main = resolve("cloudflare/worker.js");
+    config.main = resolve("test/helpers/worker-fixture.js");
     config.assets.directory = resolve("public");
     config.send_metrics = false;
     await writeFile(join(dir, "wrangler.json"), JSON.stringify(config));
@@ -348,19 +348,12 @@ test(
     );
     const guests = [];
     for (const person of [first, second]) {
-      const login = await request(
-        `/api/public/households/${host.household.slug}/login`,
-        {
-          method: "POST",
-          data: {
-            first: person.first,
-            last: person.last,
-            inviteCode: person.inviteCode,
-          },
-        },
-      );
+      const login = await request("/__test/existing-guest-browser", {
+        method: "POST",
+        data: { household: host.household.id, guest: person.id },
+      });
       assert.equal(login.status, 200);
-      guests.push(login.cookie);
+      guests.push(login.body.cookie);
     }
     const guestView = (await request("/api/guest", { cookie: guests[0] })).body;
     assert.equal(guestView.events[0].members.length, 2);

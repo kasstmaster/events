@@ -1,14 +1,16 @@
+import { existingGuestSession } from "./guest-session.js";
 import { once } from "node:events";
 import { Store } from "../../server/node-store.js";
 import { createApp } from "../../server/app.js";
 export const password = "Isolated-family-test-passphrase";
-export async function application(t, env = {}) {
+export async function application(t, env = {}, options = {}) {
   const store = new Store(),
     server = createApp({
       store,
-      origin: "http://127.0.0.1:3000",
+      origin: options.origin || "http://127.0.0.1:3000",
       env,
       logger: { error: () => {} },
+      ...options,
     });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -23,7 +25,7 @@ export async function application(t, env = {}) {
     const r = await fetch("http://127.0.0.1:" + server.address().port + path, {
       method,
       headers: {
-        Origin: "http://127.0.0.1:3000",
+        Origin: options.origin || "http://127.0.0.1:3000",
         ...(cookie ? { Cookie: cookie } : {}),
         ...(data ? { "Content-Type": "application/json" } : {}),
         ...(version !== undefined ? { "If-Match": String(version) } : {}),
@@ -33,6 +35,7 @@ export async function application(t, env = {}) {
     });
     return {
       status: r.status,
+      headers: r.headers,
       body: r.headers.get("content-type")?.includes("application/json")
         ? await r.json()
         : await r.text(),
@@ -110,16 +113,13 @@ export async function application(t, env = {}) {
     return r.body;
   };
   const guestLogin = async (host, guest, extra = {}) =>
-    request("/api/public/households/" + host.household.slug + "/login", {
-      method: "POST",
-      data: {
-        first: guest.first,
-        last: guest.last,
-        suffix: guest.suffix,
-        inviteCode: guest.inviteCode,
-        ...extra,
-      },
-    });
+    existingGuestSession(
+      store,
+      host.household,
+      guest,
+      options.origin || "http://127.0.0.1:3000",
+      extra,
+    );
   const record = async (host, type, input = {}) => {
     const r = await request("/api/family/records", {
       method: "POST",

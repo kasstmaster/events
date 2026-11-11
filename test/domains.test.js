@@ -410,18 +410,7 @@ test(
         },
       });
       assert.equal(event.status, 201);
-      const guestLogin = await request(
-        `/api/public/households/${host.slug}/login`,
-        {
-          origin,
-          method: "POST",
-          data: {
-            first: "Casey",
-            last: "Synthetic",
-            inviteCode: guest.body.inviteCode,
-          },
-        },
-      );
+      const guestLogin = await f.guestSession(host, guest.body, origin);
       assert.equal(guestLogin.status, 200);
       const view = await request("/api/guest", {
         origin,

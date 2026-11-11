@@ -73,6 +73,7 @@ try {
       origin,
       background,
       event: event.body,
+      guest: guest.body,
       inviteCode: guest.body.inviteCode,
     });
   }
@@ -125,40 +126,23 @@ try {
       const { context, page } = await device(width),
         { host, origin, background, event } = fixture;
       await page.goto(origin);
-      await page
-        .getByRole("heading", {
-          name: "INVITED YOU TO A NEW EVENT",
-          exact: true,
-        })
-        .waitFor();
+      await page.getByLabel("Email address", { exact: true }).waitFor();
       assert.equal(
-        await page.evaluate(() =>
-          document.documentElement.style.getPropertyValue("--bg"),
-        ),
-        background,
+        await page.getByLabel("Household ID", { exact: true }).count(),
+        0,
       );
-      await page
-        .getByLabel("Name, email or username", { exact: true })
-        .waitFor();
-      assert.equal(
-        await page
-          .getByRole("button", { name: "Sign in", exact: true })
-          .count(),
-        1,
-      );
-      await page
-        .getByLabel("Name, email or username", { exact: true })
-        .fill(
-          width === 390
-            ? "Casey Synthetic"
-            : host.name.toLowerCase() + ".casey",
-        );
-      await page
-        .getByLabel("Password or Household ID", { exact: true })
-        .fill(fixture.inviteCode);
-      await page.getByRole("button", { name: "Sign in", exact: true }).click();
-      if (width === 390)
-        await completeGuestSetup(page, host.name.toLowerCase() + ".casey");
+      const existingSession = await f.guestSession(host, fixture.guest, origin);
+      await context.addCookies([
+        {
+          name: "__Host-events_session",
+          value: existingSession.cookie.split("=")[1],
+          url: origin,
+          secure: true,
+          httpOnly: true,
+          sameSite: "Strict",
+        },
+      ]);
+      await page.reload();
       await page
         .getByRole("button", { name: "View Event", exact: true })
         .click();
@@ -291,7 +275,7 @@ try {
   await page.getByText("Appearance saved.", { exact: true }).waitFor();
   await page.goto("https://dubois.ilymmd.com/");
   await page
-    .getByRole("heading", { name: "INVITED YOU TO A NEW EVENT", exact: true })
+    .getByRole("heading", { name: "Host Login", exact: true })
     .waitFor();
   assert.equal(new URL(page.url()).hostname, "dubois.ilymmd.com");
   await context.close();

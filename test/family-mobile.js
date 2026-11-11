@@ -1,3 +1,4 @@
+import { existingGuestBrowser } from "./helpers/guest-session.js";
 import { completeGuestSetup } from "./helpers/guest-account.js";
 import { clickNavigation } from "./helpers/navigation.js";
 // Synthetic loopback-only families and guest codes. No real accounts, messages or documents.
@@ -95,11 +96,9 @@ try {
   const owner = await device(1440);
   await owner.page.goto(origin);
   await owner.page
-    .getByLabel("Name, email or username", { exact: true })
+    .getByLabel("Email address", { exact: true })
     .fill("owner@example.test");
-  await owner.page
-    .getByLabel("Password or Household ID", { exact: true })
-    .fill(password);
+  await owner.page.getByLabel("Password", { exact: true }).fill(password);
   await click(owner.page, "Sign in");
   await click(owner.page, "Family Workspace");
   await owner.page
@@ -373,20 +372,7 @@ try {
   await click(owner.page, "Create Separate Guest");
   await save(owner.page);
   const guest = await device();
-  await guest.page.goto(origin + "/h/" + household.slug);
-  assert.equal(
-    await guest.page.getByLabel("Suffix", { exact: true }).isVisible(),
-    false,
-  );
-  await guest.page
-    .getByLabel("Name, email or username", { exact: true })
-    .fill("Casey Example");
-  await guest.page
-    .getByLabel("Password or Household ID", { exact: true })
-    .fill(adult.inviteCode);
-  // This code identifies one adult, so no suffix input is requested.
-  await click(guest.page, "Sign in");
-  await completeGuestSetup(guest.page, "family.casey");
+  await existingGuestBrowser(guest.page, store, household, adult, origin);
   const card = guest.page.locator("article.card").filter({
     has: guest.page.getByRole("heading", {
       name: "Shared supper",

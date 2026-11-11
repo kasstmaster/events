@@ -1456,7 +1456,8 @@ body.card-editor-active {
   position: absolute;
   top: 100%;
   right: 0;
-  z-index: 30;
+  /* Keep contact actions usable above fixed navigation on phones. */
+  z-index: 45;
   min-width: 220px;
   max-width: calc(100vw - 24px);
   padding: 6px;
@@ -1722,6 +1723,7 @@ main {
   margin: 0;
   width: 100%;
   max-width: none;
+  height: auto;
   max-height: none;
   overflow: visible;
   box-shadow: none;

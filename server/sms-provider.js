@@ -19,7 +19,8 @@ export async function sendText(
       `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(env.TWILIO_ACCOUNT_SID)}/Messages.json`,
       {
         method: "POST",
-        redirect: "error",
+        // Workers supports manual/follow; reject redirects below without forwarding credentials.
+        redirect: "manual",
         signal: AbortSignal.timeout(10000),
         headers: {
           Authorization:

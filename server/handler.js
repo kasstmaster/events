@@ -1,11 +1,9 @@
+import { guestAuthAPI } from "./guest-auth.js";
 import { eviteStatus, prepareEvites, eviteMedia } from "./evites.js";
-import { accessCandidates } from "./guest-access.js";
 import {
   personalAPI,
   accountProjection,
   privateIdentity,
-  authenticateUsername,
-  registeredMethod,
   autoAssociateContact,
   initializeHostPersonal,
   renamePersonalHousehold,
@@ -33,12 +31,9 @@ import {
   identityAPI,
   identityFor,
   guestContact,
-  authenticateGuest,
   invitationView,
   invitationsForIdentity,
-  compareName,
   requestGuestLink,
-  claimPermanentCode,
   guestBrandHousehold,
 } from "./guest-identities.js";
 import { familyAPI, membersView } from "./family-api.js";
@@ -103,6 +98,7 @@ const files = new Map([
     "appearance-editor.js",
     "event-information.js",
     "personal-ui.js",
+    "guest-access-ui.js",
   ].map((file) => ["/" + file, [file, "text/javascript; charset=utf-8"]]),
 ]);
 const date = (value) => {
@@ -379,6 +375,7 @@ export function createHandler({
   householdHostname = "",
   householdHosts = new Set(),
   canonicalOrigin = origin,
+  guestAuthFetcher = fetch,
 } = {}) {
   if (new URL(origin).origin !== origin)
     throw new Error(
@@ -437,7 +434,7 @@ export function createHandler({
       if (method === "GET" && !path.startsWith("/api/")) {
         const entry =
           files.get(path) ||
-          (path === "/setup" ? files.get("/") : null) ||
+          (["/setup", "/guest"].includes(path) ? files.get("/") : null) ||
           (/^\/h\/[A-Za-z0-9_-]+$/.test(path) ? files.get("/") : null);
         if (!entry) fail(404, "Page not found.");
         res.writeHead(200, { "Content-Type": entry[1] });
@@ -567,6 +564,27 @@ export function createHandler({
           10,
         );
       };
+      if (
+        await guestAuthAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          body,
+          version,
+          json,
+          env,
+          requireRole,
+          cookie,
+          newSession,
+          canonicalOrigin,
+          selected,
+          fetcher: guestAuthFetcher,
+        })
+      )
+        return;
       const familyLogin = path.match(
         /^\/api\/public\/households\/([A-Za-z0-9_-]+)\/members\/login$/,
       );
@@ -706,68 +724,9 @@ export function createHandler({
             json(res, { ok: true });
             return;
           }
-          let proof = authenticateUsername(store, account, secret);
-          if (!proof) {
-            const candidates = accessCandidates(store, secret).filter(
-              (r) =>
-                !r.record.parent &&
-                compareName([r.record.first, r.record.last].join(" ")) ===
-                  compareName(account),
-            );
-            const ids = new Set(
-              candidates.map(
-                (r) => identityFor(store, r.record, r.household).id,
-              ),
-            );
-            const needsSuffix = ids.size > 1;
-            if (needsSuffix && !input.suffix && input.suffixProvided !== true) {
-              json(res, { suffixRequired: true });
-              return;
-            }
-            const qualified = needsSuffix
-              ? candidates.filter(
-                  (r) =>
-                    compareName(r.record.suffix) ===
-                    compareName(input.suffix || ""),
-                )
-              : candidates;
-            const unique = new Set(
-              qualified.map(
-                (r) => identityFor(store, r.record, r.household).id,
-              ),
-            );
-            if (unique.size === 1) {
-              const relation = qualified[0],
-                identity = identityFor(
-                  store,
-                  relation.record,
-                  relation.household,
-                ),
-                method = registeredMethod(store, identity.id);
-              if (method)
-                fail(
-                  401,
-                  method === "email"
-                    ? "Use your registered email and password."
-                    : "Use your registered username and Household ID.",
-                );
-              proof = { identity, relation };
-            }
-            if (!proof && ids.size > 1 && !input.suffix) {
-              json(res, { suffixRequired: true });
-              return;
-            }
-          }
-          if (!proof) fail(401, "Unable to sign in with these details.");
-          cookie(
-            res,
-            newSession({
-              household: proof.relation.household,
-              guest: proof.relation.guest,
-              role: "guest",
-              identity: proof.identity.id,
-              entryHousehold: selected?.id || proof.relation.household,
-            }),
+          fail(
+            401,
+            "Guests must use their private sign-in page and phone verification.",
           );
         }
         json(res, { ok: true });
@@ -869,6 +828,7 @@ export function createHandler({
                     ? "host"
                     : "family"
                   : session.role,
+                principalType: session.role,
                 platformAdmin: platformAdministrator(store, session),
                 householdRole: ["host", "family"].includes(session.role)
                   ? familyMember(store, session).role
@@ -895,7 +855,12 @@ export function createHandler({
         const input = await body(req);
         authLimit("register", String(input.email).toLowerCase());
         const account = await store.register(input, (account) =>
-          initializeHostPersonal(store, account, input),
+          initializeHostPersonal(
+            store,
+            account,
+            input,
+            session?.role === "guest" ? privateIdentity(store, session) : null,
+          ),
         );
         cookie(res, store.newSession(account, origin));
         json(res, { ok: true }, 201);
@@ -1013,33 +978,10 @@ export function createHandler({
             "guest",
             household.id + ":" + String(input.first) + ":" + String(input.last),
           );
-          if (publicMatch[2] === "/claim-code") {
-            claimPermanentCode(store, input, household.id);
-            json(res, { ok: true });
-            return;
-          }
-          const result = authenticateGuest(store, input);
-          if (publicMatch[2] === "/recognize") {
-            json(res, { suffixRequired: !!result?.suffixRequired });
-            return;
-          }
-          if (!result?.relation)
-            fail(
-              401,
-              "Unable to sign in with these details. Check your invite code with your host.",
-            );
-          cookie(
-            res,
-            newSession({
-              household: result.relation.household,
-              guest: result.relation.guest,
-              role: "guest",
-              identity: result.identity.id,
-              entryHousehold: household.id,
-            }),
+          fail(
+            401,
+            "Guests must use their private sign-in page and phone verification.",
           );
-          json(res, { ok: true });
-          return;
         }
       }
 

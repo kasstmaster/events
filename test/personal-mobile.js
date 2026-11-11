@@ -1,3 +1,5 @@
+import { identityFor } from "../server/guest-identities.js";
+import { existingGuestBrowser } from "./helpers/guest-session.js";
 // Synthetic households only, no provider or non-loopback traffic.
 import assert from "node:assert/strict";
 import { once } from "node:events";
@@ -26,7 +28,11 @@ for (const name of ["Alpha", "Beta"]) {
     }),
   );
 }
-const server = createApp({ store, origin });
+const server = createApp({
+  store,
+  origin,
+  env: { GUEST_LINK_ENCRYPTION_KEY: "a1".repeat(32) },
+});
 server.listen(3198, "127.0.0.1");
 await once(server, "listening");
 const browser = await chromium.launch({
@@ -122,22 +128,21 @@ try {
   const guest = await device(390),
     p = guest.p;
   console.log(
-    "Personal browser: mandatory private enrollment and independent home",
+    "Personal browser: remembered private sign-in and independent home",
   );
-  await p.goto(origin + "/h/" + store.household(hosts[0].household).slug);
-  await p
-    .getByLabel("Name, email or username", { exact: true })
-    .fill("Casey Example");
-  await p
-    .getByLabel("Password or Household ID", { exact: true })
-    .fill(adult.inviteCode);
-  await click(p, "Sign in");
-  await p.getByLabel("Username", { exact: true }).waitFor();
-  assert.equal(
-    await p.getByRole("button", { name: "Home", exact: true }).count(),
-    0,
+  await existingGuestBrowser(
+    p,
+    store,
+    store.household(hosts[0].household),
+    adult,
+    origin,
   );
-  await completeGuestSetup(p, "casey.personal", "+15005550199");
+  // This suite models an already activated registered guest; fresh activation is tested through SMS separately.
+  const existingIdentity = identityFor(store, adult, hosts[0].household).id;
+  store.put("guest-auth-activation", existingIdentity, "platform", {
+    activatedAt: Date.now(),
+  });
+
   await p
     .getByRole("heading", { name: "Casey Example", exact: true })
     .waitFor();
@@ -258,12 +263,8 @@ try {
     .click();
   await click(p, "Home");
   await click(p, "Private sign-in");
-  await p.getByLabel("Username", { exact: true }).fill("casey.changed");
-  await p
-    .locator('form[data-form="personal-account"]')
-    .getByRole("button", { name: "Save", exact: true })
-    .click();
-  await p.getByText("Household information saved.", { exact: true }).waitFor();
+  await p.getByLabel("Your private sign-in link", { exact: true }).waitFor();
+  assert.equal(await p.getByLabel("Username", { exact: true }).count(), 0);
   await click(p, "Home");
   for (const width of [390, 1440]) {
     await p.setViewportSize({ width, height: 950 });
@@ -309,26 +310,21 @@ try {
     alpha,
   );
   const suffixDevice = await device(390);
-  await suffixDevice.p.goto(origin);
-  await suffixDevice.p
-    .getByLabel("Name, email or username", { exact: true })
-    .fill("Morgan Example");
-  await suffixDevice.p
-    .getByLabel("Password or Household ID", { exact: true })
-    .fill(suffixAdult.inviteCode);
-  assert.equal(
-    await suffixDevice.p.getByLabel("Suffix", { exact: true }).isVisible(),
-    false,
+  await existingGuestBrowser(
+    suffixDevice.p,
+    store,
+    store.household(hosts[0].household),
+    suffixAdult,
+    origin,
   );
-  await click(suffixDevice.p, "Sign in");
-  await suffixDevice.p.getByLabel("Suffix", { exact: true }).waitFor();
-  // Deliberately leave the revealed suffix empty to choose the suffixless adult.
-  await click(suffixDevice.p, "Sign in");
-  await suffixDevice.p.getByLabel("Username", { exact: true }).waitFor();
+  assert.equal(
+    await suffixDevice.p.getByLabel("Suffix", { exact: true }).count(),
+    0,
+  );
   assert.deepEqual(suffixDevice.errors, []);
   await suffixDevice.context.close();
   console.log(
-    "Personal browser passed: private enrollment, family sharing, address/phone propagation, cross-host invitations, RSVP scope, block/unblock and username changes.",
+    "Personal browser passed: private sessions, family sharing, address/phone propagation, cross-host invitations, RSVP scope, block/unblock and own private-link Settings.",
   );
 } finally {
   await browser.close();

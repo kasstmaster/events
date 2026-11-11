@@ -82,7 +82,7 @@ test("personal family bootstraps once, keeps host notes private and requires ver
   assert.ok(f.store.get("guest", child.id, host.household.id));
 });
 
-test("private usernames replace name sign-in, stay out of host projections, preserve address codes and never queue disabled SMS", async (t) => {
+test("legacy usernames cannot authenticate new browsers, remain private and never queue disabled SMS", async (t) => {
   const f = await application(t),
     host = await f.host("PrivateIdentity"),
     adult = await f.guest(host),
@@ -100,12 +100,12 @@ test("private usernames replace name sign-in, stay out of host projections, pres
     method: "POST",
     data: { account: "private.casey", secret: adult.inviteCode },
   });
-  assert.equal(signin.status, 200);
+  assert.equal(signin.status, 401);
   const contacts = (await f.request("/api/host", { cookie: host.cookie })).body
     .guests;
   assert.doesNotMatch(JSON.stringify(contacts), /private.casey|15551234567/);
   const phone = await f.request("/api/personal/phone/start", {
-    cookie: signin.cookie,
+    cookie: login.cookie,
     method: "POST",
     data: {},
   });
@@ -510,7 +510,7 @@ test("administrator aliases are all validated before cleanup and deleting a host
         data: { account: "alias.owner", secret: invited.inviteCode },
       })
     ).status,
-    200,
+    401,
   );
   for (const label of labels)
     assert.equal(f.store.domainAvailable(label), false);
@@ -631,31 +631,22 @@ test("reciprocal host-profile contacts share only approved data and profile-alia
   );
 });
 
-test("unified sign-in reveals code-qualified ambiguity and permits explicitly empty suffix", async (t) => {
+test("shared name and Household ID cannot authenticate, even when a suffix is supplied", async (t) => {
   const f = await application(t),
-    host = await f.host("SuffixFamily");
-  const adult = await f.guest(host, {
-    first: "Alex",
-    last: "Example",
-    addressDraft: { label: "Family", lines: "PO Box 12" },
-  });
-  await f.guest(host, {
-    first: "Alex",
-    last: "Example",
-    suffix: "Jr.",
-    address: adult.address,
-  });
-  const data = { account: "Alex Example", secret: adult.inviteCode };
-  const initial = await f.request("/api/sign-in", { method: "POST", data });
-  assert.equal(initial.body.suffixRequired, true);
-  assert.equal(initial.cookie, undefined);
-  const chosen = await f.request("/api/sign-in", {
-    method: "POST",
-    data: { ...data, suffix: "", suffixProvided: true },
-  });
-  assert.equal(chosen.status, 200);
-  const own = (await f.request("/api/personal", { cookie: chosen.cookie }))
-    .body;
-  assert.equal(own.profile.members.find((m) => m.id === own.self).suffix, "");
-  assert.equal(own.person.name, "Alex Example");
+    host = await f.host("NoSharedSignIn"),
+    adult = await f.guest(host);
+  for (const data of [
+    { account: "Casey Example", secret: adult.inviteCode },
+    {
+      account: "Casey Example",
+      secret: adult.inviteCode,
+      suffix: "",
+      suffixProvided: true,
+    },
+  ]) {
+    const result = await f.request("/api/sign-in", { method: "POST", data });
+    assert.equal(result.status, 401);
+    assert.equal(result.cookie, undefined);
+    assert.equal(result.body.suffixRequired, undefined);
+  }
 });

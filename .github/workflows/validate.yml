@@ -73,6 +73,9 @@ jobs:
       - name: Dedicated card and template pages on phones and desktop
         if: matrix.group == 'accounts'
         run: node test/cards-mobile.js
+      - name: Verified private guest sign-in on phones and desktop
+        if: matrix.group == 'accounts'
+        run: node test/guest-auth-mobile.js
       - name: Private accounts and reciprocal Address Book on phones and desktop
         if: matrix.group == 'accounts'
         run: node test/personal-mobile.js

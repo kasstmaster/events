@@ -29,12 +29,6 @@ export async function completeGuestSetup(
   username,
   phone = "+15005550123",
 ) {
-  await page.getByLabel("Username", { exact: true }).waitFor();
-  await page.getByLabel("Username", { exact: true }).fill(username);
-  await page.getByLabel("Recovery phone number", { exact: true }).fill(phone);
-  await page
-    .locator('form[data-form="personal-account"]')
-    .getByRole("button", { name: "Save", exact: true })
-    .click();
+  // Existing authorized migration sessions no longer require username enrollment.
   await page.locator(".home-invitations,.empty").waitFor();
 }

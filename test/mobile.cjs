@@ -91,12 +91,8 @@ const { existsSync, mkdirSync } = require("node:fs");
   }
   async function login(page, email) {
     await page.goto(origin);
-    await page
-      .getByLabel("Name, email or username", { exact: true })
-      .fill(email);
-    await page
-      .getByLabel("Password or Household ID", { exact: true })
-      .fill(password);
+    await page.getByLabel("Email address", { exact: true }).fill(email);
+    await page.getByLabel("Password", { exact: true }).fill(password);
     await click(page, "Sign in");
   }
   const dialog = (page) => page.locator("#editor[open], form[data-form=guest]");
@@ -239,34 +235,19 @@ const { existsSync, mkdirSync } = require("node:fs");
     await click(alpha.page, "✕");
     const guest = await device(),
       secondDevice = await device(1440, 1000);
-    await guest.page.goto(link);
-    await guest.page
-      .getByRole("heading", { name: "INVITED YOU TO A NEW EVENT", exact: true })
-      .waitFor();
-    assert.equal(
-      await guest.page.evaluate(
-        () => getComputedStyle(document.body).backgroundColor,
-      ),
-      "rgb(230, 237, 247)",
+    const { existingGuestBrowser } = await import("./helpers/guest-session.js");
+    const adultFixture = store.all(
+      "SELECT id,household FROM records WHERE kind='guest' AND json_extract(body,'$.first')='Casey' AND coalesce(json_extract(body,'$.parent'),'')='' LIMIT 1",
+    )[0];
+    const adultHousehold = adultFixture.household;
+    const savedAdult = store.get("guest", adultFixture.id, adultHousehold);
+    await existingGuestBrowser(
+      guest.page,
+      store,
+      store.household(adultHousehold),
+      savedAdult,
+      origin,
     );
-    await guest.page
-      .getByLabel("Name, email or username", { exact: true })
-      .fill("Casey Example");
-    await guest.page
-      .getByLabel("Password or Household ID", { exact: true })
-      .fill(
-        store.get(
-          "guest-access-code",
-          store.one(
-            "SELECT credential FROM guest_access_links WHERE guest IN (SELECT id FROM records WHERE kind='guest' AND json_extract(body,'$.first')='Casey') LIMIT 1",
-          ).credential,
-          "platform",
-        ).code,
-      );
-    await click(guest.page, "Sign in");
-    await (
-      await import("./helpers/guest-account.js")
-    ).completeGuestSetup(guest.page, "mobile.casey");
     await guest.page
       .getByRole("heading", { name: "Summer around the table", exact: true })
       .waitFor();
@@ -317,22 +298,13 @@ const { existsSync, mkdirSync } = require("node:fs");
       .click();
     await dialog(guest.page).waitFor({ state: "hidden" });
     await guest.page.getByText("Lemonade × 2", { exact: true }).waitFor();
-    await secondDevice.page.goto(link);
-    await secondDevice.page
-      .getByLabel("Name, email or username", { exact: true })
-      .fill("mobile.casey");
-    await secondDevice.page
-      .getByLabel("Password or Household ID", { exact: true })
-      .fill(
-        store.get(
-          "guest-access-code",
-          store.one(
-            "SELECT credential FROM guest_access_links WHERE guest IN (SELECT id FROM records WHERE kind='guest' AND json_extract(body,'$.first')='Casey') LIMIT 1",
-          ).credential,
-          "platform",
-        ).code,
-      );
-    await click(secondDevice.page, "Sign in");
+    await existingGuestBrowser(
+      secondDevice.page,
+      store,
+      store.household(adultHousehold),
+      savedAdult,
+      origin,
+    );
 
     await click(secondDevice.page, "View Event");
     await secondDevice.page

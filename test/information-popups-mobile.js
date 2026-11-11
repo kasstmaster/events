@@ -1,3 +1,4 @@
+import { existingGuestSession } from "./helpers/guest-session.js";
 import { enrollGuest } from "./helpers/guest-account.js";
 // Synthetic loopback fixtures only. Instructions are plain text; guest viewing performs no writes.
 import assert from "node:assert/strict";
@@ -106,11 +107,11 @@ try {
       owner,
     )
   ).body;
-  const signed = (
-    await api(
-      `/api/public/households/${store.household(host.household).slug}/login`,
-      { first: guest.first, last: guest.last, inviteCode: guest.inviteCode },
-    )
+  const signed = existingGuestSession(
+    store,
+    store.household(host.household),
+    guest,
+    origin,
   ).cookie;
   await enrollGuest(origin, signed, "popup.casey");
   const instructions =

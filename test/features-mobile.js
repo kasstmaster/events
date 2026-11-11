@@ -1,3 +1,4 @@
+import { existingGuestBrowser } from "./helpers/guest-session.js";
 import { setAppearance, saveAppearance } from "./helpers/appearance.js";
 import { clickNavigation } from "./helpers/navigation.js";
 // Isolated synthetic records, no production or messaging requests.
@@ -88,10 +89,8 @@ const click = clickNavigation;
 const dialog = (page) => page.locator("#editor[open], form[data-form=guest]");
 async function login(page, email) {
   await page.goto(origin);
-  await page.getByLabel("Name, email or username", { exact: true }).fill(email);
-  await page
-    .getByLabel("Password or Household ID", { exact: true })
-    .fill(password);
+  await page.getByLabel("Email address", { exact: true }).fill(email);
+  await page.getByLabel("Password", { exact: true }).fill(password);
   await click(page, "Sign in");
 }
 try {
@@ -200,7 +199,9 @@ try {
       );
     }
     if (view === "personalSetup")
-      await example.getByLabel("Username", { exact: true }).waitFor();
+      await example
+        .getByLabel("Your private sign-in link", { exact: true })
+        .waitFor();
     if (view === "personalContacts")
       await example
         .getByRole("button", { name: "Block", exact: true })
@@ -238,13 +239,17 @@ try {
       assert.equal(await example.getByRole("radio").count(), 4);
     }
     if (view === "login") {
-      await example
-        .getByLabel("Password or Household ID", { exact: true })
-        .waitFor();
-      assert.equal(await example.locator("#unified-suffix").isVisible(), false);
+      await example.getByLabel("Household ID", { exact: true }).waitFor();
+      assert.equal(
+        await example.getByLabel("Suffix", { exact: true }).count(),
+        0,
+      );
     }
     if (view === "guestLoginSuffix")
-      assert.equal(await example.locator("#unified-suffix").isVisible(), true);
+      assert.equal(
+        await example.getByLabel("Suffix", { exact: true }).count(),
+        0,
+      );
     if (view === "familyKidList")
       assert.equal(
         await example
@@ -587,39 +592,10 @@ try {
   stage("guest privacy and conditional uploads");
   const guest = await device(390),
     household = store.household(host.household);
-  await guest.page.goto(origin + "/h/" + household.slug);
-  await guest.page
-    .getByLabel("Name, email or username", { exact: true })
-    .fill("Casey Example");
-  const guestRecord = store.list("guest", host.household)[0];
-  await guest.page
-    .getByLabel("Password or Household ID", { exact: true })
-    .fill(
-      store.get(
-        "guest-access-code",
-        store.one(
-          "SELECT credential FROM guest_access_links WHERE guest=? AND household=?",
-          guestRecord.id,
-          host.household,
-        ).credential,
-        "platform",
-      ).code,
-    );
-  await click(guest.page, "Sign in");
-  await guest.page
-    .getByLabel("Username", { exact: true })
-    .fill("casey-editor-example");
-  await guest.page
-    .getByLabel("Recovery phone number", { exact: true })
-    .fill("+15005550123");
-  await guest.page
-    .locator('form[data-form="personal-account"]')
-    .getByRole("button", { name: "Save", exact: true })
-    .click();
-  await guest.page
-    .getByText("Household information saved.", { exact: true })
-    .waitFor();
-  await click(guest.page, "Home");
+  const guestRecord = store
+    .list("guest", host.household)
+    .find((g) => !g.parent);
+  await existingGuestBrowser(guest.page, store, household, guestRecord, origin);
   await click(guest.page, "View Event");
   assert.ok(await guest.page.locator(".event-deadline").isVisible());
   assert.equal(

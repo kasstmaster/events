@@ -98,7 +98,7 @@ export function featureTools(ctx) {
           eventSettings: "Event Settings · layout choices",
           guestEvent: "Guest event · RSVP saved",
           guestEventUnanswered: "Guest event · no RSVP yet",
-          guestLoginSuffix: "Guest sign-in · suffix revealed",
+          guestLoginSuffix: "Guest sign-in · private page",
           familyLogin: "Family member sign-in",
           contacts: "Address Book",
           adminApprovals: "Administrator approvals",
@@ -212,8 +212,6 @@ export function featureTools(ctx) {
     const frame = document.querySelector("#page-example-frame");
     frame.onload = () => {
       const doc = frame.contentDocument;
-      if (view === "guestLoginSuffix")
-        doc.querySelector("#unified-suffix")?.removeAttribute("hidden");
       doc.addEventListener("click", (event) => {
         if (!event.target.closest?.("summary")) event.preventDefault();
       });

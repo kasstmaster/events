@@ -24,7 +24,11 @@ export function personalAccount(store, identity) {
 }
 export function registeredMethod(store, identity) {
   const a = personalAccount(store, identity);
-  return a?.hostUser ? "email" : a?.username ? "username" : null;
+  return a?.hostUser
+    ? "email"
+    : a?.username || store.get("guest-auth-activation", identity, "platform")
+      ? "private"
+      : null;
 }
 export function privateIdentity(store, session) {
   if (session?.role === "guest") {
@@ -197,7 +201,12 @@ export function accountProjection(store, session) {
     },
     account: {
       version: account?.version || 0,
-      method: account?.hostUser ? "email" : "username",
+      method:
+        session.role === "guest"
+          ? "private"
+          : account?.hostUser
+            ? "email"
+            : "private",
       email: account?.hostUser
         ? store.one("SELECT email FROM users WHERE id=?", account.hostUser)
             ?.email || ""
@@ -205,8 +214,7 @@ export function accountProjection(store, session) {
       username: account?.username || "",
       recoveryPhone: account?.recoveryPhone || "",
       recoveryVerified: account?.recoveryVerified === true,
-      needsUsername:
-        session.role === "guest" && !account?.username && !account?.hostUser,
+      needsUsername: false,
       householdId:
         session.role === "guest"
           ? accessFor(
@@ -1104,19 +1112,27 @@ export function renamePersonalHousehold(store, household, name) {
   );
   propagatePersonalProfile(store, next);
 }
-export function initializeHostPersonal(store, host, input = {}) {
-  if (!input.existingUsername && !input.existingHouseholdId) return;
-  const proof = authenticateUsername(
-    store,
-    input.existingUsername,
-    input.existingHouseholdId,
-  );
-  if (!proof)
+export function initializeHostPersonal(
+  store,
+  host,
+  input = {},
+  provenIdentity = null,
+) {
+  if (
+    !input.attachGuest &&
+    !input.existingUsername &&
+    !input.existingHouseholdId
+  )
+    return;
+  if (!provenIdentity)
     fail(
-      400,
-      "Use the existing username and Household ID to link your account.",
+      403,
+      "Sign in securely to your guest account before linking host registration.",
     );
-  const account = personalAccount(store, proof.identity.id);
+  const proof = { identity: { id: provenIdentity } };
+  const account =
+    personalAccount(store, proof.identity.id) ||
+    store.put("person-account", proof.identity.id, PLATFORM, {});
   const profile = profileForIdentity(store, proof.identity.id);
   if (
     profile &&

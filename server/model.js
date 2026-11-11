@@ -172,6 +172,7 @@ export class Store {
       CREATE UNIQUE INDEX IF NOT EXISTS guest_address_code ON records(json_extract(body,'$.code')) WHERE kind='guest-access-code';
       CREATE UNIQUE INDEX IF NOT EXISTS guest_code_hash ON records(json_extract(body,'$.codeHash')) WHERE kind='guest-identity';
       CREATE UNIQUE INDEX IF NOT EXISTS household_slugs ON records(json_extract(body,'$.slug')) WHERE kind='household';
+      CREATE UNIQUE INDEX IF NOT EXISTS guest_private_url_hash ON records(json_extract(body,'$.tokenHash')) WHERE kind='guest-private-link';
       CREATE UNIQUE INDEX IF NOT EXISTS private_account_username ON records(json_extract(body,'$.usernameHash')) WHERE kind='person-account' AND json_extract(body,'$.usernameHash') IS NOT NULL;
       CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user TEXT, household TEXT, guest TEXT, role TEXT NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS session_origins(token TEXT PRIMARY KEY, origin TEXT NOT NULL);
