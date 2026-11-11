@@ -60,11 +60,30 @@ export function accessFor(store, guest, household, moved = false) {
       credential.id,
       legacy,
     );
-    if ((previous || moved) && identity)
-      store.run(
-        "DELETE FROM sessions WHERE token IN (SELECT token FROM guest_identity_sessions WHERE identity=?)",
+    if ((previous || moved) && identity) {
+      const account = store.get(
+        "person-account",
         identity.identity,
+        "platform",
       );
+      if (
+        account?.username ||
+        account?.hostUser ||
+        store.get("guest-auth-activation", identity.identity, "platform")
+      ) {
+        // A host can invalidate only this local party context, never another
+        // household's registered account sessions/devices.
+        store.run(
+          "DELETE FROM sessions WHERE household=? AND guest=?",
+          household,
+          guest.id,
+        );
+      } else
+        store.run(
+          "DELETE FROM sessions WHERE token IN (SELECT token FROM guest_identity_sessions WHERE identity=?)",
+          identity.identity,
+        );
+    }
     return credential;
   });
 }

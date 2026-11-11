@@ -132,9 +132,11 @@ export function authenticateGuest(store, input) {
     if (method)
       fail(
         401,
-        method === "email"
-          ? "Use your registered email and password."
-          : "Use your registered username and Household ID.",
+        method === "private"
+          ? "Use your private sign-in link and verify your phone."
+          : method === "email"
+            ? "Use your registered email and password."
+            : "Use your registered username and Household ID.",
       );
   }
   return {

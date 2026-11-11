@@ -324,7 +324,7 @@ test("task assignments, recurring occurrences and in-app reminders retain histor
     false,
   );
 });
-test("disabling members and password recovery revoke sessions while protecting ownership", async (t) => {
+test("membership disable revokes sessions while managers cannot reset another account password", async (t) => {
   const f = await application(t),
     a = await f.host("Alpha"),
     m = await f.member(a, "member", "Adult");
@@ -340,6 +340,17 @@ test("disabling members and password recovery revoke sessions while protecting o
           password: "Replacement-test-passphrase",
           disabled: true,
         },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await f.request("/api/family/members/" + m.id, {
+        method: "PUT",
+        cookie: a.cookie,
+        version: m.version,
+        data: { name: m.name, role: "member", disabled: true },
       })
     ).status,
     200,

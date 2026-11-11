@@ -34,7 +34,7 @@ test(
     await writeFile(join(dir, "wrangler.json"), JSON.stringify(config));
     await writeFile(
       join(dir, ".dev.vars"),
-      `ADMIN_SETUP_TOKEN=${setupToken}\n`,
+      `ADMIN_SETUP_TOKEN=${setupToken}\nGUEST_LINK_ENCRYPTION_KEY=${"ab".repeat(32)}\n`,
       { mode: 0o600 },
     );
     let child;
@@ -618,6 +618,52 @@ test(
       ).body.records.some((r) => r.id === home.body.id),
       false,
     );
+    // Password-confirmed central administration and encrypted private-link reset
+    // exercise the actual Worker crypto and persistent Durable Object adapter.
+    const central = await request("/api/admin/accounts", {
+      method: "POST",
+      cookie: admin,
+      data: { password },
+    });
+    assert.equal(central.status, 200);
+    const subject = central.body.accounts.find((a) => a.type === "guest");
+    assert.ok(subject);
+    const forbiddenCentral = await request("/api/admin/accounts", {
+      method: "POST",
+      cookie: host.cookie,
+      data: { password },
+    });
+    assert.equal(forbiddenCentral.status, 403);
+    const reveal = await request("/api/admin/account", {
+      method: "POST",
+      cookie: admin,
+      data: { password, id: subject.id, action: "reveal" },
+    });
+    assert.equal(reveal.status, 200);
+    assert.equal(reveal.body.privateId.length, 43);
+    const reset = await request("/api/admin/account", {
+      method: "POST",
+      cookie: admin,
+      data: {
+        password,
+        id: subject.id,
+        action: "reset",
+        linkVersion: reveal.body.version,
+        confirm: subject.id,
+      },
+    });
+    assert.equal(reset.status, 200);
+    assert.notEqual(reset.body.privateId, reveal.body.privateId);
+    const afterReset = (
+      await request("/api/host/events/" + event.id + "/dashboard", {
+        cookie: host.cookie,
+      })
+    ).body;
+    assert.deepEqual(afterReset.event.invited, [
+      first.id,
+      second.id,
+      childGuest.id,
+    ]);
     // The edge discards caller-supplied IP headers rather than letting them bypass limits.
     const loginPath = `/api/public/households/${host.household.slug}/login`;
     for (let index = 0; index < 10; index++)

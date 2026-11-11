@@ -1,3 +1,4 @@
+import { accountControls } from "/account-controls.js";
 import { personalTools } from "/personal-ui.js";
 import { householdGroups } from "/address-system.js";
 import {
@@ -252,6 +253,9 @@ window.addEventListener("blur", () => {
   pointerInteraction = false;
 });
 const isEditing = () =>
+  ["account-management", "private-guest-sign-in", "own-account"].includes(
+    state.view,
+  ) ||
   !!state.eventLayoutDraft ||
   !!state.eventInviteDraft ||
   pointerInteraction ||
@@ -821,7 +825,16 @@ function render(target = $("#app"), example = false) {
   const role = state.session?.role;
   let content = "",
     event = null;
-  if (state.view.startsWith("personal-") || state.view === "username-recovery")
+  if (
+    ["account-management", "private-guest-sign-in", "own-account"].includes(
+      state.view,
+    )
+  )
+    content = accounts.page();
+  else if (
+    state.view.startsWith("personal-") ||
+    state.view === "username-recovery"
+  )
     content = personal.page();
   else if (state.view === "evites") content = tools.evitesPage();
   else if (state.view === "cards-page") content = tools.cardsPage();
@@ -836,13 +849,14 @@ function render(target = $("#app"), example = false) {
   else if (role === "family" || state.view === "family")
     content = example
       ? family.renderExample(state.exampleRecord)
-      : family.render();
+      : family.render() +
+        (role === "family" ? button("my-account", H("My account")) : "");
   else if (role === "admin" || (role === "host" && state.adminMode)) {
     content =
       state.view === "admin-approvals"
         ? ui`<section class="panel"><h2>Approved emails</h2><form data-form="approval">${field(H("Email address"), "email", "", "email", "required")}<p class="form-error" role="alert"></p><button>Approve host</button></form><ul class="guest-list">${state.data.approvals.map((a) => ui`<li class="row between"><span>${escape(a.email)}</span>${button("revoke", H("Remove"), `data-email="${escape(a.email)}"`, "quiet")}</li>`).join("") || M('<li class="muted">No pending approvals.</li>')}</ul></section>`
         : state.view === "admin-hosts"
-          ? ui`<section class="panel"><h2>Registered hosts</h2><ul>${state.data.hosts.map((h) => ui`<li>${escape(h.email)} ${button("admin-household-identity", H("Household name / domain"), `data-id="${h.id}"`)} ${h.logoRequested ? ui`<span class="small">Family icon requested</span>` : ""} ${button("recover-owner", H("Recover owner sign-in"), `data-id="${h.id}"`)}${h.platformAdmin ? ui`<span>Administrator tools enabled</span>` : button("grant-platform-access", H("Make administrator"), `data-id="${h.id}"`)}${button("delete-host", H("Delete account"), `data-id="${h.id}"`, "danger")}</li>`).join("") || M("<li>No hosts yet.</li>")}</ul><p class="small muted">Host guest records and RSVPs are not included here.</p></section>` +
+          ? ui`<section class="panel"><h2>Registered hosts</h2>${button("account-management", H("Registered accounts"))}<ul>${state.data.hosts.map((h) => ui`<li>${escape(h.email)} ${button("admin-household-identity", H("Household name / domain"), `data-id="${h.id}"`)} ${h.logoRequested ? ui`<span class="small">Family icon requested</span>` : ""} ${button("recover-owner", H("Recover owner sign-in"), `data-id="${h.id}"`)}${h.platformAdmin ? ui`<span>Administrator tools enabled</span>` : button("grant-platform-access", H("Make administrator"), `data-id="${h.id}"`)}${button("delete-host", H("Delete account"), `data-id="${h.id}"`, "danger")}</li>`).join("") || M("<li>No hosts yet.</li>")}</ul><p class="small muted">Host guest records and RSVPs are not included here.</p></section>` +
             tools.cleanupPanel() +
             (role === "host"
               ? ui`<section class="panel"><h2>Old administrator accounts</h2>${(state.data.legacyAdministrators || []).map((a) => ui`<p>${escape(a.email)} ${button("retire-legacy-admin", H("Remove old administrator"), `data-email="${escape(a.email)}"`, "danger")}</p>`).join("") || M("<p>No old administrator accounts remain.</p>")}</section>`
@@ -1237,7 +1251,7 @@ function guestEditor(guest = {}) {
   const host = document.querySelector(
     `[data-contact-editor="${guest.id || "new"}"]`,
   );
-  host.innerHTML = ui`<form data-form="guest" data-guest="${guest.id || "new"}"><h3>${guest.id ? C("Edit guest") : C("Add guest")}</h3>${markup}<div class="inline-identity"></div><p class="form-error" role="alert"></p><div class="row">${button("guest-cancel", H("Cancel"))}<button>${C("Save")}</button></div></form>`;
+  host.innerHTML = ui`<form data-form="guest" data-guest="${guest.id || "new"}"><h3>${guest.id ? C("Edit guest") : C("Add guest")}</h3>${markup}${guest.id && !guest.parent ? button("send-private-link", H("Send private sign-in link"), `data-id="${guest.id}"`) : ""}<div class="inline-identity"></div><p class="form-error" role="alert"></p><div class="row">${button("guest-cancel", H("Cancel"))}<button>${C("Save")}</button></div></form>`;
   document
     .querySelector(".inline-identity")
     .insertAdjacentHTML(
@@ -3391,6 +3405,15 @@ const family = familyTools({
   load,
 });
 family.bind();
+const accounts = accountControls({
+  state,
+  api,
+  field,
+  button,
+  notify,
+  render,
+  load,
+});
 const personal = personalTools({
   state,
   api,

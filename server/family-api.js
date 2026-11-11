@@ -397,6 +397,11 @@ export async function familyAPI(ctx) {
       fail(403, "Only the owner appoints administrators.");
     if (current.role === "kid" && role !== "kid" && member.role !== "owner")
       fail(403, "Only the owner can promote a child to adult access.");
+    if (input.password)
+      fail(
+        403,
+        "Only the system administrator may reset another registered account password. Use your own password settings for your account.",
+      );
     const password = input.password
       ? await hashPassword(input.password)
       : current.password;

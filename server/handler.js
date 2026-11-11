@@ -1,3 +1,8 @@
+import { guestAuthAPI } from "./guest-auth.js";
+import {
+  accountManagementAPI,
+  rejectCentralContactEdits,
+} from "./account-management.js";
 import { eviteStatus, prepareEvites, eviteMedia } from "./evites.js";
 import { accessCandidates } from "./guest-access.js";
 import {
@@ -77,6 +82,11 @@ import {
 } from "./model.js";
 const files = new Map([
   ["/", ["index.html", "text/html; charset=utf-8"]],
+  ["/guest", ["index.html", "text/html; charset=utf-8"]],
+  [
+    "/account-controls.js",
+    ["account-controls.js", "text/javascript; charset=utf-8"],
+  ],
   [
     "/household-address.js",
     ["household-address.js", "text/javascript; charset=utf-8"],
@@ -142,6 +152,7 @@ async function body(req) {
   }
 }
 function guestInput(input, store, household, existing) {
+  rejectCentralContactEdits(input);
   if (
     input.position !== undefined &&
     (!Number.isFinite(Number(input.position)) ||
@@ -603,6 +614,42 @@ export function createHandler({
         return;
       }
       if (
+        await guestAuthAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          body,
+          version,
+          json,
+          env,
+          requireRole,
+          cookie,
+          newSession,
+          canonicalOrigin,
+          selected,
+        })
+      )
+        return;
+      if (
+        await accountManagementAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          body,
+          version,
+          json,
+          env,
+          canonicalOrigin,
+        })
+      )
+        return;
+      if (
         await personalAPI({
           path,
           method,
@@ -747,9 +794,11 @@ export function createHandler({
               if (method)
                 fail(
                   401,
-                  method === "email"
-                    ? "Use your registered email and password."
-                    : "Use your registered username and Household ID.",
+                  method === "private"
+                    ? "Use your private sign-in link and verify your phone."
+                    : method === "email"
+                      ? "Use your registered email and password."
+                      : "Use your registered username and Household ID.",
                 );
               proof = { identity, relation };
             }

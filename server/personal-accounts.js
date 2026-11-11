@@ -1,3 +1,4 @@
+import { revokeGuestDevices } from "./guest-auth.js";
 import { createHash, randomInt } from "node:crypto";
 import { id, text, fail, normalizeName } from "./model.js";
 import {
@@ -24,7 +25,13 @@ export function personalAccount(store, identity) {
 }
 export function registeredMethod(store, identity) {
   const a = personalAccount(store, identity);
-  return a?.hostUser ? "email" : a?.username ? "username" : null;
+  return a?.hostUser
+    ? "email"
+    : store.get("guest-auth-activation", identity, PLATFORM)
+      ? "private"
+      : a?.username
+        ? "username"
+        : null;
 }
 export function privateIdentity(store, session) {
   if (session?.role === "guest") {
@@ -628,6 +635,8 @@ export function authenticateUsername(store, username, code) {
   );
   if (!row) return null;
   const account = personalAccount(store, row.id);
+  if (store.get("guest-auth-activation", row.id, PLATFORM))
+    fail(401, "Use your private sign-in link and verify your phone.");
   const relation = accessCandidates(store, String(code || "")).find(
     (r) =>
       !r.record.parent &&
@@ -689,6 +698,21 @@ function savePrivateAccount(store, session, input, expected) {
     },
     previous?.version,
   );
+  if (previous?.recoveryPhone !== recoveryPhone) {
+    const contact = store.get("guest-auth-contact", identity, PLATFORM);
+    if (contact)
+      store.remove("guest-auth-contact", identity, PLATFORM, contact.version);
+    revokeGuestDevices(store, identity, session.token);
+    const pending = store.get("phone-verification", identity, PLATFORM);
+    if (pending)
+      store.put(
+        "phone-verification",
+        identity,
+        PLATFORM,
+        { ...pending, state: "cancelled", message: "", codeHash: "" },
+        pending.version,
+      );
+  }
   revokeOtherSessions(store, identity, session.token);
   return next;
 }
@@ -715,6 +739,18 @@ export function savePersonalProfile(store, session, input, expected) {
       const old = known.get(key);
       if (p.id && !old && !/^[a-f0-9-]{36}$/.test(p.id))
         fail(400, "Invalid family member.");
+      if (
+        old &&
+        old.identity !== identity &&
+        registeredMethod(store, old.identity) &&
+        ["first", "last", "suffix", "phone", "parent"].some(
+          (key) => String(p[key] || "") !== String(old[key] || ""),
+        )
+      )
+        fail(
+          403,
+          "Another registered adult must update their own account information.",
+        );
       let personIdentity = old?.identity;
       if (!personIdentity) {
         personIdentity = id();
@@ -744,7 +780,14 @@ export function savePersonalProfile(store, session, input, expected) {
         fail(400, "Choose a designated adult.");
     // Omitted entries retain stable identities and existing relationships; removal is an explicit archive.
     for (const old of profile.members)
-      if (!ids.has(old.id)) members.push({ ...old, archived: true });
+      if (!ids.has(old.id)) {
+        if (old.identity !== identity && registeredMethod(store, old.identity))
+          fail(
+            403,
+            "Another registered adult controls their own account information.",
+          );
+        members.push({ ...old, archived: true });
+      }
     const allowed = new Set(
       personalContacts(store, identity).flatMap((c) =>
         recipientKeys(store, c.id),
