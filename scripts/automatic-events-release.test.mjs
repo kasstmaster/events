@@ -42,6 +42,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import {
   runAuto,
+  RECOVERABLE_RUNTIME_VERSION,
   validateConfig,
   validateSource,
   validateProductionRelease,
@@ -123,7 +124,7 @@ async function fixture(t) {
       let result;
       if (url.endsWith("/settings"))
         result = {
-          compatibility_date: "2026-10-30",
+          compatibility_date: f.date ?? "2026-10-30",
           compatibility_flags: f.flags,
           bindings: [
             { type: "assets", name: "ASSETS" },
@@ -150,7 +151,9 @@ async function fixture(t) {
         };
       } else if (url.includes("/versions/"))
         result = {
-          resources: { script_runtime: { migration_tag: "events-v1" } },
+          resources: {
+            script_runtime: { migration_tag: f.migrationTag ?? "events-v1" },
+          },
           annotations: { "workers/message": f.message },
         };
       else if (url.endsWith("/schedules"))
@@ -158,6 +161,7 @@ async function fixture(t) {
       else if (url.endsWith("/subdomain"))
         result = { enabled: true, previews_enabled: f.preview ?? false };
       else assert.fail("Unexpected fixed endpoint");
+      if (url.endsWith("/settings")) f.editSettings?.(result);
       return Response.json(
         { success: true, result },
         { headers: { date: "Tue, 10 Nov 2026 23:40:00 GMT" } },
@@ -400,4 +404,158 @@ test("repository configuration retains the approved production runtime footprint
       await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
     ),
   );
+});
+
+test("documented lost-flag baseline records the real checkpoint and only the approved flag restoration", async (t) => {
+  const f = await fixture(t);
+  f.version = RECOVERABLE_RUNTIME_VERSION;
+  f.flags = ["nodejs_compat"];
+  await runAuto("preflight", f.options);
+  const raw = await readFile(f.options.file, "utf8"),
+    cp = JSON.parse(raw);
+  assert.equal(f.version, RECOVERABLE_RUNTIME_VERSION);
+  assert.deepEqual(f.flags, ["nodejs_compat"]);
+  assert.deepEqual(cp.settings.compatibility_flags, ["nodejs_compat"]);
+  assert.equal(cp.before.version_id, RECOVERABLE_RUNTIME_VERSION);
+  assert.deepEqual(cp.runtime_correction, {
+    kind: "restore-required-public-fetch-flag",
+    from_version_id: RECOVERABLE_RUNTIME_VERSION,
+    flag: "global_fetch_strictly_public",
+  });
+  assert.ok(cp.recovery.timestamp);
+  assert.doesNotMatch(raw, new RegExp(privateValue));
+  assert.equal(f.paths.filter((x) => x.endsWith("/settings")).length, 2);
+  f.version = after;
+  f.flags = ["nodejs_compat", "global_fetch_strictly_public"];
+  f.message = release;
+  await runAuto("verify", f.options);
+  const receipt = JSON.parse(
+    await readFile(f.options.file.replace(/\.json$/, "-after.json"), "utf8"),
+  );
+  assert.equal(receipt.after.version_id, after);
+  assert.deepEqual(receipt.runtime_correction, cp.runtime_correction);
+});
+
+test("unknown versions and any compatibility drift beyond the documented single missing flag cannot use recovery", async (t) => {
+  for (const edit of [
+    (f) => (f.version = before),
+    (f) => (f.date = "2026-10-29"),
+    (f) => (f.flags = []),
+    (f) => (f.flags = ["global_fetch_strictly_public"]),
+    (f) => (f.flags = ["nodejs_compat", "unreviewed_flag"]),
+    (f) => (f.flags = ["nodejs_compat", "nodejs_compat"]),
+  ]) {
+    const f = await fixture(t);
+    f.version = RECOVERABLE_RUNTIME_VERSION;
+    f.flags = ["nodejs_compat"];
+    edit(f);
+    await assert.rejects(
+      runAuto("preflight", f.options),
+      /Runtime date\/flags/,
+    );
+    await assert.rejects(access(f.options.file));
+  }
+});
+
+test("known-version recovery preserves all database, asset, SMS, cron, preview and setup prerequisites", async (t) => {
+  for (const edit of [
+    (f) =>
+      (f.editSettings = (s) =>
+        (s.bindings.find((b) => b.name === "EVENTS_DATABASE").namespace_id =
+          "other")),
+    (f) =>
+      (f.editSettings = (s) =>
+        (s.bindings = s.bindings.filter((b) => b.name !== "ASSETS"))),
+    (f) =>
+      (f.editSettings = (s) =>
+        s.bindings.push({
+          type: "plain_text",
+          name: "SMS_ENABLED",
+          text: "true",
+        })),
+    (f) => (f.crons = []),
+    (f) => (f.preview = true),
+    (f) => (f.setup.required = true),
+    (f) => (f.migrationTag = "other"),
+  ]) {
+    const f = await fixture(t);
+    f.version = RECOVERABLE_RUNTIME_VERSION;
+    f.flags = ["nodejs_compat"];
+    edit(f);
+    await assert.rejects(runAuto("preflight", f.options));
+    await assert.rejects(access(f.options.file));
+  }
+});
+
+test("recovery verification requires restored flags and unchanged bindings, values, cron and exact new version", async (t) => {
+  for (const edit of [
+    (f) => (f.flags = ["nodejs_compat"]),
+    (f) =>
+      (f.editSettings = (s) =>
+        (s.bindings.find((b) => b.name === "PRIVATE_SETTING").text =
+          "changed")),
+    (f) => (f.crons = []),
+    (f) => (f.version = RECOVERABLE_RUNTIME_VERSION),
+    (f) => (f.message = "b".repeat(40)),
+  ]) {
+    const f = await fixture(t);
+    f.version = RECOVERABLE_RUNTIME_VERSION;
+    f.flags = ["nodejs_compat"];
+    await runAuto("preflight", f.options);
+    f.version = after;
+    f.flags = ["nodejs_compat", "global_fetch_strictly_public"];
+    f.message = release;
+    edit(f);
+    await assert.rejects(runAuto("verify", f.options));
+    await f.noAfter();
+  }
+});
+
+test("modified runtime-correction receipts fail before verification requests", async (t) => {
+  for (const edit of [
+    (c) => (c.runtime_correction.flag = "other"),
+    (c) => (c.runtime_correction.from_version_id = before),
+    (c) => (c.runtime_correction.extra = true),
+    (c) => (c.runtime_correction = null),
+    (c) => (c.before.version_id = before),
+    (c) => c.settings.compatibility_flags.push("other"),
+    (c) => (c.settings.compatibility_date = "2026-10-29"),
+  ]) {
+    const f = await fixture(t);
+    f.version = RECOVERABLE_RUNTIME_VERSION;
+    f.flags = ["nodejs_compat"];
+    await runAuto("preflight", f.options);
+    const cp = JSON.parse(await readFile(f.options.file, "utf8"));
+    edit(cp);
+    await writeFile(f.options.file, JSON.stringify(cp));
+    f.paths = [];
+    await assert.rejects(
+      runAuto("verify", f.options),
+      /correction does not match/,
+    );
+    assert.equal(f.paths.length, 0);
+    await f.noAfter();
+  }
+});
+
+test("normal deployments and an already-corrected known version never get a correction allowance", async (t) => {
+  const f = await fixture(t);
+  f.version = RECOVERABLE_RUNTIME_VERSION;
+  await runAuto("preflight", f.options);
+  const cp = JSON.parse(await readFile(f.options.file, "utf8"));
+  assert.equal(Object.hasOwn(cp, "runtime_correction"), false);
+  f.version = after;
+  f.message = release;
+  await runAuto("verify", f.options);
+});
+
+test("production changes during known-version recovery prevent checkpoint creation", async (t) => {
+  const f = await fixture(t);
+  f.version = RECOVERABLE_RUNTIME_VERSION;
+  f.flags = ["nodejs_compat"];
+  f.onRead = (url) => {
+    if (url.endsWith("/api/setup")) f.version = after;
+  };
+  await assert.rejects(runAuto("preflight", f.options));
+  await assert.rejects(access(f.options.file));
 });
