@@ -97,7 +97,7 @@ test("missing credentials, malformed environments and transport errors fail clos
   assert.ok(!logs.concat(f.logs).join("\n").includes(privateValue));
 });
 
-test("schema diagnostics expose only fixed vendor field names/types, never values or arbitrary keys", async () => {
+test("schema diagnostics expose only bounded schema field names/types, never values or arbitrary keys", async () => {
   const f = fixture();
   const original = f.options.fetcher;
   f.options.fetcher = async (url, init) => {
@@ -105,6 +105,7 @@ test("schema diagnostics expose only fixed vendor field names/types, never value
       return Response.json({
         success: true,
         result: {
+          asset_config: { jwt: privateValue },
           assets: { jwt: privateValue, config: { nestedSecret: privateValue } },
           bindings: [{ name: privateValue, text: privateValue }],
           [privateValue]: privateValue,
@@ -114,6 +115,7 @@ test("schema diagnostics expose only fixed vendor field names/types, never value
   };
   assert.equal(await checkMetadata(f.options), true);
   assert.ok(f.logs.some((line) => line.includes("assets:object")));
+  assert.ok(f.logs.some((line) => line.includes("asset_config:object")));
   assert.ok(
     f.logs.some((line) => line.includes("[unrecognized-field]:string")),
   );

@@ -78,9 +78,9 @@ Application files, public assets, dependencies, Worker configurations and the ma
 When preflight stops at `settings-schema`, do not relax the allowlist or retry a
 production run to discover the response. The read-only **Check Cloudflare
 authentication (read only)** workflow can run against a pushed diagnostic branch
-using its existing GitHub-held credential. Its settings read reports only fixed
-vendor field names and types. Arbitrary keys, nested settings, bindings and all
-values remain withheld. Unknown fields still stop production; this diagnostic
+using its existing GitHub-held credential. Its settings read reports only bounded lowercase
+schema field names and types. Credential-shaped/free-form keys, nested settings,
+bindings and all values remain withheld. Unknown fields still stop production; this diagnostic
 adds no accepted settings and no publish operation.
 
 Run it from Actions → Check Cloudflare authentication (read only) → Run workflow,
