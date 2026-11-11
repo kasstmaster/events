@@ -197,7 +197,7 @@ try {
       const row = page
         .locator("li.browse-row")
         .filter({ has: page.getByText("Casey Example", { exact: true }) });
-      await row.locator("summary").click();
+      await row.locator('[data-action="edit-guest"]').first().click();
       await page.locator('[data-action="guest-send-private-link"]').click();
       await page
         .getByText(

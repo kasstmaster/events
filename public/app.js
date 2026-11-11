@@ -461,6 +461,8 @@ function authPage(designTarget) {
   if (household) applyDesign(household.design, designTarget);
   if (state.view === "family-login" && household)
     return ui`<section class="auth"><div class="panel"><h1>${escape(household.name)}</h1><h2>Family member sign-in</h2><form data-form="family-login">${field(H("Username"), "login", "", "text", 'required autocomplete="username"')}${field(H("Password"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Sign in</button></form></div></section>`;
+  if (state.view !== "register")
+    return ui`<section class="auth"><p class="eyebrow">${household ? escape(household.name) : C("Welcome to Gather")}</p>${household ? ui`<h1>INVITED YOU TO A NEW EVENT</h1>` : ui`<h1>Sign in</h1>`}<form data-form="login">${field(H("Email address"), "email", "", "email", 'required autocomplete="username" maxlength="254"')}${field(H("Password"), "password", "", "password", 'required autocomplete="current-password" maxlength="256"')}<p class="form-error" role="alert"></p><button>${C("Sign in")}</button></form><div class="row">${button("register", H("Create your account"))}${household ? button("family-login", H("Family member sign-in")) : ""}</div></section>`;
   const register = state.view === "register";
   return ui`<section class="auth"><p class="eyebrow">A place for your people</p><h1>${register ? C("Make yourself at home.") : C("Good things begin together.")}</h1><div class="panel"><h2>${register ? C("Create your host account") : C("Host Login")}</h2><p class="muted">${register ? C("Registration is available only for administrator-approved email addresses. No emails will be sent.") : C("Plan a little. Gather a lot.")}</p><form data-form="${register ? "register" : "login"}">${field(H("Email address"), "email", "", "email", 'required autocomplete="username" maxlength="254"')}${field(H("Password"), "password", "", "password", `required minlength="12" maxlength="256" autocomplete="${register ? "new-password" : "current-password"}"`)}${register ? field(H("Family household name"), "name", "", "text", 'required maxlength="100" placeholder="Household name"') + subdomainField() + familyLogoChoice() : ""}<p class="form-error" role="alert"></p><button>${register ? C("Create account") : C("Sign in")}</button></form></div><p class="small">${register ? C("Already registered?") : C("Approved to host?")} ${button(register ? "host-login" : "register", register ? C("Sign in") : C("Create your account"), "", "quiet")}</p>${household ? ui`<p>Guests must open their own private sign-in link. Ask your host to send it to your verified contact.</p>${button("family-login", H("Family member sign-in"))}` : ""}</section>`;
 }
@@ -1118,6 +1120,9 @@ function modal(title, content, form = "", save = C("Save")) {
     render();
   }
   dialog.classList.toggle("inline-management", !!inline);
+  // Only this newly added security form needs natural height; preserve existing page geometry.
+  if (form === "guest-access-admin" && inline) dialog.style.height = "auto";
+  else dialog.style.removeProperty("height");
   dialog.setAttribute("role", inline ? "region" : "dialog");
   dialog.innerHTML = ui`<div class="dialog-head"><h2 id="dialog-title">${escape(title)}</h2>${button("close", "✕", 'aria-label="Close editor"', "quiet")}</div>${form ? ui`<form data-form="${form}">` : ""}<div class="dialog-body">${content}<p class="form-error" role="alert"></p></div>${form && form !== "ui-settings" ? ui`<div class="dialog-foot">${button("close", H("Cancel"))}<button>${save}</button></div>` : ""}${form ? "</form>" : ""}`;
   if (inline) {
@@ -1228,7 +1233,7 @@ function guestEditor(guest = {}) {
   const host = document.querySelector(
     `[data-contact-editor="${guest.id || "new"}"]`,
   );
-  host.innerHTML = ui`<form data-form="guest" data-guest="${guest.id || "new"}"><h3>${guest.id ? C("Edit guest") : C("Add guest")}</h3>${markup}<div class="inline-identity"></div><p class="form-error" role="alert"></p><div class="row">${button("guest-cancel", H("Cancel"))}<button>${C("Save")}</button></div></form>`;
+  host.innerHTML = ui`<form data-form="guest" data-guest="${guest.id || "new"}"><h3>${guest.id ? C("Edit guest") : C("Add guest")}</h3>${markup}<div class="inline-identity"></div><p class="form-error" role="alert"></p><div class="row">${guest.id && !guest.parent && state.session.principalType === "host" ? button("guest-send-private-link", H("Send / Resend sign-in link"), `data-id="${guest.id}"`) : ""}${button("guest-cancel", H("Cancel"))}<button>${C("Save")}</button></div></form>`;
   document
     .querySelector(".inline-identity")
     .insertAdjacentHTML(
@@ -1391,17 +1396,6 @@ function contactsPage() {
                               {
                                 action: "contact-uninvite",
                                 label: "Uninvite",
-                                id: g.id,
-                              },
-                            ]
-                          : []),
-                        ...(!g.parent &&
-                        (state.example ||
-                          state.session.principalType === "host")
-                          ? [
-                              {
-                                action: "guest-send-private-link",
-                                label: "Send / Resend sign-in link",
                                 id: g.id,
                               },
                             ]
