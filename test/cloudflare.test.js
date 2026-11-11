@@ -1,5 +1,4 @@
 import test from "node:test";
-import { completeGuestSetup } from "./helpers/guest-account.js";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -28,7 +27,7 @@ test(
         await import("node:fs/promises")
       ).readFile("wrangler.jsonc", "utf8"),
     );
-    config.main = resolve("test/helpers/worker-fixture.js");
+    config.main = resolve("cloudflare/worker.js");
     config.assets.directory = resolve("public");
     config.send_metrics = false;
     await writeFile(join(dir, "wrangler.json"), JSON.stringify(config));
@@ -66,11 +65,7 @@ test(
           String(port),
         ],
         {
-          env: {
-            ...process.env,
-            WRANGLER_SEND_METRICS: "false",
-            NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require ${resolve("test/helpers/loopback-only.cjs")}`,
-          },
+          env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
@@ -197,9 +192,6 @@ test(
       await page.getByLabel("Confirm password", { exact: true }).fill(password);
       await page
         .getByRole("button", { name: "Create administrator", exact: true })
-        .click();
-      await page
-        .getByRole("button", { name: "Approvals", exact: true })
         .click();
       await page
         .getByRole("heading", { name: "Approved emails", exact: true })
@@ -348,12 +340,12 @@ test(
     );
     const guests = [];
     for (const person of [first, second]) {
-      const login = await request("/__test/existing-guest-browser", {
-        method: "POST",
-        data: { household: host.household.id, guest: person.id },
-      });
+      const login = await request(
+        `/api/public/households/${host.household.slug}/login`,
+        { method: "POST", data: { first: person.first, last: person.last } },
+      );
       assert.equal(login.status, 200);
-      guests.push(login.body.cookie);
+      guests.push(login.cookie);
     }
     const guestView = (await request("/api/guest", { cookie: guests[0] })).body;
     assert.equal(guestView.events[0].members.length, 2);
@@ -447,17 +439,19 @@ test(
           : route.abort(),
       );
       await page.goto(origin + "/h/" + host.household.slug);
-      await completeGuestSetup(page, "runtime.casey");
       await page
-        .getByRole("button", { name: "View Event", exact: true })
+        .getByRole("button", { name: "View event", exact: true })
         .click();
       await page
         .getByRole("link", { name: "Our registry", exact: true })
         .waitFor();
       await page
-        .locator("#main")
         .getByRole("button", {
-          name: "RSVP",
+          name: (await page
+            .getByRole("button", { name: "Update my RSVP", exact: true })
+            .count())
+            ? "Update my RSVP"
+            : "Save my RSVP",
           exact: true,
         })
         .click();
@@ -465,15 +459,17 @@ test(
         .getByLabel("Casey Example", { exact: true })
         .selectOption("yes");
       await page
-        .getByLabel("Robin · child", { exact: true })
+        .getByLabel("Robin Example · child", { exact: true })
         .selectOption("yes");
       await page.getByLabel("Quantity for Juice").fill("0");
       await page
         .getByRole("dialog")
-        .getByRole("button", { name: "RSVP", exact: true })
+        .getByRole("button", { name: "Save my RSVP", exact: true })
         .click();
       await page.getByRole("dialog").waitFor({ state: "hidden" });
-      await page.getByText("Robin: Attending", { exact: true }).waitFor();
+      await page
+        .getByText("Robin Example: Attending", { exact: true })
+        .waitFor();
       assert.ok(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth + 1,
@@ -483,134 +479,6 @@ test(
     } finally {
       await browser.close();
     }
-    // Exercise additive membership, fine-grained ACL and chunked private files in actual durable SQLite.
-    const kid = await request("/api/family/members", {
-      method: "POST",
-      cookie: host.cookie,
-      data: { name: "Family child", login: "child", role: "kid", password },
-    });
-    assert.equal(kid.status, 201);
-    const kidLogin = await request(
-      `/api/public/households/${host.household.slug}/members/login`,
-      { method: "POST", data: { login: "child", password } },
-    );
-    assert.equal(kidLogin.status, 200);
-    assert.equal(
-      (await request("/api/host", { cookie: kidLogin.cookie })).status,
-      403,
-    );
-    const list = await request("/api/family/records", {
-      method: "POST",
-      cookie: host.cookie,
-      data: {
-        type: "list",
-        title: "Private groceries",
-        childAccess: [kid.body.id],
-      },
-    });
-    assert.equal(list.status, 201);
-    const additions = await Promise.all(
-      [host.cookie, kidLogin.cookie].map((cookie, i) =>
-        request("/api/family/items", {
-          method: "POST",
-          cookie,
-          data: { list: list.body.id, title: "Item " + i },
-        }),
-      ),
-    );
-    assert.deepEqual(
-      additions.map((r) => r.status),
-      [201, 201],
-    );
-    const item = additions[1].body;
-    assert.equal(
-      (
-        await request(`/api/family/items/${item.id}`, {
-          method: "PUT",
-          cookie: kidLogin.cookie,
-          version: item.version,
-          data: { completed: true },
-        })
-      ).status,
-      200,
-    );
-    assert.equal(
-      (
-        await request(`/api/family/items/${item.id}`, {
-          method: "PUT",
-          cookie: host.cookie,
-          version: item.version,
-          data: { completed: false },
-        })
-      ).status,
-      409,
-    );
-    const home = await request("/api/family/records", {
-      method: "POST",
-      cookie: host.cookie,
-      data: { type: "record", title: "Warranty", childAccess: [kid.body.id] },
-    });
-    assert.equal(home.status, 201);
-    const contents = "Private warranty\n".repeat(90000);
-    const document = await request("/api/family/files", {
-      method: "POST",
-      cookie: host.cookie,
-      data: {
-        record: home.body.id,
-        name: "warranty.txt",
-        mime: "text/plain",
-        base64: Buffer.from(contents).toString("base64"),
-      },
-    });
-    assert.equal(document.status, 201);
-    await stop();
-    await start();
-    assert.equal(
-      (
-        await request(`/api/family/files/${document.body.id}`, {
-          cookie: kidLogin.cookie,
-        })
-      ).body,
-      contents,
-    );
-    assert.equal(
-      (
-        await request(`/api/family/files/${document.body.id}`, {
-          cookie: other.cookie,
-        })
-      ).status,
-      404,
-    );
-    assert.equal(
-      (await request("/api/family", { cookie: kidLogin.cookie })).body.items
-        .length,
-      2,
-    );
-    assert.equal(
-      (
-        await request(`/api/family/records/${home.body.id}`, {
-          method: "PUT",
-          cookie: host.cookie,
-          version: home.body.version,
-          data: { ...home.body, childAccess: [] },
-        })
-      ).status,
-      200,
-    );
-    assert.equal(
-      (
-        await request(`/api/family/files/${document.body.id}`, {
-          cookie: kidLogin.cookie,
-        })
-      ).status,
-      404,
-    );
-    assert.equal(
-      (
-        await request("/api/family", { cookie: kidLogin.cookie })
-      ).body.records.some((r) => r.id === home.body.id),
-      false,
-    );
     // The edge discards caller-supplied IP headers rather than letting them bypass limits.
     const loginPath = `/api/public/households/${host.household.slug}/login`;
     for (let index = 0; index < 10; index++)
@@ -634,93 +502,5 @@ test(
       ).status,
       429,
     );
-  },
-);
-
-test(
-  "AnyList dispatch uses Cloudflare-native fetch and refuses redirects without forwarding credentials",
-  { timeout: 30000 },
-  async () => {
-    const { Miniflare, convertV4MiniflareOptions } = await import("miniflare");
-    const { build } = await import("esbuild");
-    const bundle = await build({
-      stdin: {
-        resolveDir: process.cwd(),
-        sourcefile: "anylist-runtime-fixture.js",
-        contents: `
-        import { startAnyListSync, syncStatus } from './server/household-integrations.js';
-        export default { async fetch(request) {
-          const jobs = new Map();
-          const store = {
-            one(sql) { return sql.includes('FROM users') ? {id:'host',household:'household'} : null; },
-            list(kind) { return kind === 'anylist-job' ? [...jobs.values()] : []; },
-            limit() {}, transaction(fn) { return fn(); },
-            put(kind,id,household,data) { const record={...data,id,household,version:(jobs.get(id)?.version||0)+1};jobs.set(id,record);return record; }
-          };
-          const env = {MEYER_HOST_EMAIL:'host@example.test',GITHUB_TOKEN:'synthetic-token',ANYLIST_IMPORT_SECRET:'synthetic-import-secret-for-runtime-tests'};
-          try { await startAnyListSync(store,env,'household'); }
-          catch { /* Only fixed status/code leaves the fixture. */ }
-          return Response.json(syncStatus(store,'household'));
-        }};
-      `,
-      },
-      bundle: true,
-      write: false,
-      platform: "neutral",
-      format: "esm",
-      external: ["node:*"],
-    });
-    const config = parseConfig(
-      await (
-        await import("node:fs/promises")
-      ).readFile("wrangler.jsonc", "utf8"),
-    );
-    for (const providerStatus of [204, 302]) {
-      const mf = new Miniflare(
-        convertV4MiniflareOptions({
-          workers: [
-            {
-              name: "dispatcher",
-              modules: true,
-              compatibilityDate: config.compatibility_date,
-              compatibilityFlags: config.compatibility_flags,
-              script: bundle.outputFiles[0].text,
-              outboundService: "github-fixture",
-            },
-            {
-              name: "github-fixture",
-              modules: true,
-              compatibilityDate: config.compatibility_date,
-              script: `
-        let requests=0;
-        export default {fetch(request) {
-          if(new URL(request.url).pathname==='/request-count') return Response.json({requests});
-          requests++;
-          const valid=request.url==='https://api.github.com/repos/kasstmaster/events/actions/workflows/sync-meyer-anylist.yml/dispatches' && request.method==='POST' && request.headers.get('Authorization')==='Bearer synthetic-token';
-          if(!valid)return new Response(null,{status:500});
-          return new Response(null,{status:${providerStatus},headers:${providerStatus === 302 ? "{Location:'https://untrusted.example/credential-trap'}" : "{}"}});
-        }};`,
-            },
-          ],
-        }),
-      );
-      try {
-        const result = await (
-          await mf.dispatchFetch("http://localhost/")
-        ).json();
-        assert.equal(
-          result.state,
-          providerStatus === 204 ? "running" : "failed",
-        );
-        const provider = await mf.getWorker("github-fixture");
-        assert.equal(
-          (await (await provider.fetch("http://fixture/request-count")).json())
-            .requests,
-          1,
-        );
-      } finally {
-        await mf.dispose();
-      }
-    }
   },
 );

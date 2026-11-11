@@ -1,10 +1,3 @@
-import {
-  roleDefaults,
-  resolveUI,
-  categoryDesign,
-  appearanceKeys,
-  appearancePreset,
-} from "../public/ui-system.js";
 import { Buffer } from "node:buffer";
 import {
   randomBytes,
@@ -14,7 +7,6 @@ import {
   createHash,
 } from "node:crypto";
 import { promisify } from "node:util";
-import { normalizeLabel, suggestLabel } from "./household-domains.js";
 const scrypt = promisify(scryptCallback);
 export const id = () => randomUUID();
 export class Problem extends Error {
@@ -26,19 +18,14 @@ export class Problem extends Error {
 export const fail = (status, message) => {
   throw new Problem(status, message);
 };
-export const text = (
-  value,
-  max = 200,
-  required = false,
-  preserveSpace = false,
-) => {
+export const text = (value, max = 200, required = false) => {
   if (
     typeof value !== "string" ||
     value.length > max ||
     (required && !value.trim())
   )
     fail(400, "Please check the supplied fields.");
-  return preserveSpace ? value : value.trim();
+  return value.trim();
 };
 export const email = (value) => {
   const result = text(value, 254, true).toLowerCase();
@@ -72,7 +59,18 @@ export async function checkPassword(password, stored = dummyHash) {
   );
   return timingSafeEqual(actual, Buffer.from(expected, "hex"));
 }
-export const defaults = Object.freeze(roleDefaults);
+export const defaults = Object.freeze({
+  background: "#f3eee8",
+  backgroundImage: "",
+  container: "#fffdf9",
+  opacity: 96,
+  titleColor: "#294d42",
+  titleFont: "Georgia",
+  titleSize: 34,
+  textColor: "#263c35",
+  textFont: "system-ui",
+  textSize: 17,
+});
 export function image(value) {
   const source = text(value ?? "", 2_800_000);
   if (
@@ -90,13 +88,9 @@ export function design(value = {}) {
   const result = {};
   for (const [key, val] of Object.entries(value)) {
     if (!(key in defaults)) fail(400, "Unknown appearance setting.");
-    if (["backgroundImage", "containerImage"].includes(key))
-      result[key] = image(val);
+    if (key === "backgroundImage") result[key] = image(val);
     else if (
-      key.endsWith("Color") ||
-      key.endsWith("Background") ||
-      key.endsWith("Surface") ||
-      ["background", "container", "buttonText"].includes(key)
+      ["background", "container", "titleColor", "textColor"].includes(key)
     ) {
       if (!/^#[0-9a-f]{6}$/i.test(val)) fail(400, "Choose a valid color.");
       result[key] = val;
@@ -112,40 +106,19 @@ export function design(value = {}) {
       )
         fail(400, "Choose a supported font.");
       result[key] = val;
-    } else if (
-      [
-        "titleStyle",
-        "descriptionStyle",
-        "textStyle",
-        "toolbarLabelStyle",
-        "buttonLabelStyle",
-      ].includes(key)
-    ) {
-      if (!["normal", "bold", "italic", "boldItalic"].includes(val))
-        fail(400, "Choose a supported text style.");
-      result[key] = val;
-    } else if (key === "borderStyle" || key.endsWith("BorderStyle")) {
-      if (!["solid", "dashed", "dotted", "none"].includes(val))
-        fail(400, "Choose a supported border style.");
-      result[key] = val;
     } else {
       const [min, max] =
-        key === "borderWidth" || key.endsWith("BorderWidth")
-          ? [0, 6]
-          : key === "containerImageOpacity" ||
-              ["toolbarOpacity", "buttonOpacity"].includes(key)
-            ? [0, 100]
-            : key === "opacity"
-              ? [0, 100]
-              : key === "titleSize"
-                ? [22, 64]
-                : [14, 28];
+        key === "opacity"
+          ? [35, 100]
+          : key === "titleSize"
+            ? [22, 64]
+            : [14, 28];
       if (!Number.isInteger(val) || val < min || val > max)
         fail(400, "Appearance value is out of range.");
       result[key] = val;
     }
   }
-  return categoryDesign(result);
+  return result;
 }
 export class Store {
   constructor(database) {
@@ -153,32 +126,12 @@ export class Store {
     this.transactionDepth = 0;
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','host')), household TEXT);
-      CREATE TABLE IF NOT EXISTS household_deletions(household TEXT PRIMARY KEY,user TEXT NOT NULL,email TEXT NOT NULL,label TEXT NOT NULL,phase TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,next_attempt INTEGER NOT NULL DEFAULT 0,error TEXT);
-      CREATE TABLE IF NOT EXISTS reminder_deliveries(id TEXT PRIMARY KEY,household TEXT NOT NULL,event TEXT NOT NULL,reminder TEXT NOT NULL,guest TEXT NOT NULL,phone TEXT NOT NULL,status TEXT NOT NULL,provider_id TEXT,error TEXT,updated INTEGER NOT NULL);
-      CREATE UNIQUE INDEX IF NOT EXISTS reminder_guest_once ON reminder_deliveries(event,reminder,guest);
-      CREATE TABLE IF NOT EXISTS guest_identity_links(household TEXT NOT NULL,guest TEXT NOT NULL,identity TEXT NOT NULL,linked INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(household,guest));
-      CREATE INDEX IF NOT EXISTS identity_guests ON guest_identity_links(identity);
-      CREATE TABLE IF NOT EXISTS guest_identity_history(household TEXT NOT NULL,guest TEXT NOT NULL,position INTEGER NOT NULL,identity TEXT NOT NULL,linked INTEGER NOT NULL,PRIMARY KEY(household,guest,position));
-      CREATE TABLE IF NOT EXISTS guest_access_links(household TEXT NOT NULL,guest TEXT NOT NULL,address TEXT NOT NULL,credential TEXT NOT NULL,legacy_hash TEXT,PRIMARY KEY(household,guest));
-      CREATE INDEX IF NOT EXISTS guest_access_credential ON guest_access_links(credential);
-      CREATE TABLE IF NOT EXISTS guest_identity_sessions(token TEXT PRIMARY KEY,identity TEXT NOT NULL,entry_household TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS family_members(id TEXT PRIMARY KEY,household TEXT NOT NULL,login TEXT NOT NULL COLLATE NOCASE,name TEXT NOT NULL,password TEXT NOT NULL,role TEXT NOT NULL,disabled INTEGER NOT NULL DEFAULT 0,version INTEGER NOT NULL DEFAULT 1,UNIQUE(household,login));
-      CREATE TABLE IF NOT EXISTS family_owners(household TEXT PRIMARY KEY,owner TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS sms_optouts(phone TEXT PRIMARY KEY,created INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS setup_state(id INTEGER PRIMARY KEY CHECK(id=1), completed INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS approvals(email TEXT PRIMARY KEY, created TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL, id TEXT NOT NULL, household TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, body TEXT NOT NULL, PRIMARY KEY(kind,id));
       CREATE INDEX IF NOT EXISTS tenant_records ON records(household,kind);
-      CREATE UNIQUE INDEX IF NOT EXISTS guest_address_code ON records(json_extract(body,'$.code')) WHERE kind='guest-access-code';
-      CREATE UNIQUE INDEX IF NOT EXISTS guest_code_hash ON records(json_extract(body,'$.codeHash')) WHERE kind='guest-identity';
       CREATE UNIQUE INDEX IF NOT EXISTS household_slugs ON records(json_extract(body,'$.slug')) WHERE kind='household';
-      CREATE UNIQUE INDEX IF NOT EXISTS guest_private_url_hash ON records(json_extract(body,'$.tokenHash')) WHERE kind='guest-private-link';
-      CREATE UNIQUE INDEX IF NOT EXISTS private_account_username ON records(json_extract(body,'$.usernameHash')) WHERE kind='person-account' AND json_extract(body,'$.usernameHash') IS NOT NULL;
       CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user TEXT, household TEXT, guest TEXT, role TEXT NOT NULL, expires INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS session_origins(token TEXT PRIMARY KEY, origin TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS gateway_nonces(nonce TEXT PRIMARY KEY, expires INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS household_domains(label TEXT PRIMARY KEY COLLATE NOCASE, household TEXT NOT NULL, retired INTEGER NOT NULL DEFAULT 0);
-      CREATE TABLE IF NOT EXISTS household_routing(label TEXT PRIMARY KEY COLLATE NOCASE, household TEXT NOT NULL, id TEXT NOT NULL, probe TEXT NOT NULL, phase TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0, dns_id TEXT, route_id TEXT, error TEXT, verified_at INTEGER);
       CREATE TABLE IF NOT EXISTS limits(key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS record_chunks(kind TEXT NOT NULL, id TEXT NOT NULL, household TEXT NOT NULL, chunk INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(kind,id,household,chunk));`);
   }
@@ -242,21 +195,8 @@ export class Store {
       household,
     ).map((row) => this.unpack(row));
   }
-  contactSyncWriteGuard(kind, household) {
-    if (
-      ["guest", "address"].includes(kind) &&
-      this.list("anylist-job", household).some(
-        (job) => job.state === "writing" && job.expires > Date.now(),
-      )
-    )
-      fail(
-        409,
-        "A contact sync is finishing. Your draft is retained; try saving again shortly.",
-      );
-  }
   put(kind, recordId, household, body, version) {
     return this.transaction(() => {
-      this.contactSyncWriteGuard(kind, household);
       const serialized = JSON.stringify(body),
         chunked = serialized.length > 250000;
       const stored = chunked
@@ -264,17 +204,6 @@ export class Store {
             $chunked: true,
             ...(kind === "household" ? { slug: body.slug } : {}),
             ...(kind === "event" ? { template: body.template } : {}),
-            ...(kind === "family-record"
-              ? { type: body.type, cancelled: body.cancelled || false }
-              : {}),
-            ...(kind === "family-file"
-              ? {
-                  size: body.size,
-                  record: body.record,
-                  name: body.name,
-                  mime: body.mime,
-                }
-              : {}),
           })
         : serialized;
       if (version === undefined)
@@ -329,7 +258,6 @@ export class Store {
   }
   remove(kind, recordId, household, version) {
     return this.transaction(() => {
-      this.contactSyncWriteGuard(kind, household);
       if (
         !this.run(
           "DELETE FROM records WHERE kind=? AND id=? AND household=? AND version=?",
@@ -351,299 +279,6 @@ export class Store {
   household(household) {
     return this.get("household", household, household);
   }
-  domainAvailable(value, household = null) {
-    const label = normalizeLabel(value);
-    if (!label) return false;
-    const claim = this.one(
-      "SELECT * FROM household_domains WHERE label=?",
-      label,
-    );
-    return !claim || (claim.household === household && !claim.retired);
-  }
-  routingClaim(label, household) {
-    const claim = this.one(
-      "SELECT * FROM household_domains WHERE label=? AND household=? AND retired=0",
-      label,
-      household,
-    );
-    const record = this.household(household);
-    return (
-      !!claim &&
-      (record?.subdomain === label || record?.domainAliases?.includes(label))
-    );
-  }
-  routingJob(label) {
-    return this.one("SELECT * FROM household_routing WHERE label=?", label);
-  }
-  nextRoutingJob(now) {
-    return this.one(
-      "SELECT * FROM household_routing WHERE phase NOT IN ('active','deleting') AND next_attempt<=? ORDER BY next_attempt,label LIMIT 1",
-      now,
-    );
-  }
-  routingDue() {
-    return this.one(
-      "SELECT min(next_attempt) AS due FROM household_routing WHERE phase NOT IN ('active','deleting')",
-    )?.due;
-  }
-  routingReceipt(label, receipt) {
-    this.run(
-      "UPDATE household_routing SET dns_id=COALESCE(?,dns_id), route_id=COALESCE(?,route_id) WHERE label=?",
-      receipt.dns_id || null,
-      receipt.route_id || null,
-      label,
-    );
-  }
-  routingPhase(label, phase) {
-    this.run(
-      "UPDATE household_routing SET phase=? WHERE label=?",
-      phase,
-      label,
-    );
-  }
-  retryRouting(label, code, now) {
-    const attempts = (this.routingJob(label)?.attempts || 0) + 1;
-    this.run(
-      "UPDATE household_routing SET phase='pending', attempts=?, next_attempt=?, error=? WHERE label=?",
-      attempts,
-      now + Math.min(3600000, 30000 * 2 ** Math.min(attempts - 1, 7)),
-      code,
-      label,
-    );
-  }
-  activateRouting(label, household, now) {
-    this.transaction(() => {
-      if (!this.routingClaim(label, household))
-        fail(409, "Household address unavailable.");
-      this.run(
-        "UPDATE household_routing SET phase='active', verified_at=?, error=NULL WHERE label=? AND household=?",
-        now,
-        label,
-        household,
-      );
-    });
-  }
-  activeRoutingHosts() {
-    return this.all(
-      "SELECT label,household FROM household_routing WHERE phase='active'",
-    )
-      .filter((j) => this.routingClaim(j.label, j.household))
-      .map((j) => `${j.label}.ilymmd.com`);
-  }
-  routingAllowed(label, probe) {
-    const job = this.routingJob(label);
-    if (!job || !this.routingClaim(label, job.household)) return false;
-    return (
-      job.phase === "active" ||
-      (job.phase === "verifying" &&
-        typeof probe === "string" &&
-        /^[a-f0-9]{64}$/.test(probe) &&
-        probe.length === job.probe.length &&
-        timingSafeEqual(Buffer.from(probe), Buffer.from(job.probe)))
-    );
-  }
-  consumeGatewayNonce(nonce) {
-    this.transaction(() => {
-      this.run("DELETE FROM gateway_nonces WHERE expires<?", Date.now());
-      if (this.one("SELECT nonce FROM gateway_nonces WHERE nonce=?", nonce))
-        fail(403, "Request already used.");
-      this.run(
-        "INSERT INTO gateway_nonces VALUES(?,?)",
-        nonce,
-        Date.now() + 120_000,
-      );
-    });
-  }
-  claimDomain(value, household, previous = "") {
-    const label = normalizeLabel(value);
-    if (!label)
-      fail(
-        400,
-        "Use an available 3–63 character address: letters, numbers and internal hyphens only.",
-      );
-    if (!this.domainAvailable(label, household))
-      fail(409, "That household address is unavailable.");
-    // Called only inside the same transaction as registration or version-checked editing.
-    this.run(
-      "INSERT OR IGNORE INTO household_domains(label,household) VALUES(?,?)",
-      label,
-      household,
-    );
-    if (previous && previous !== label)
-      this.run(
-        "UPDATE household_domains SET retired=1 WHERE label=? AND household=?",
-        previous,
-        household,
-      );
-    return label;
-  }
-  renameHousehold(household, input, version) {
-    return this.transaction(() => {
-      const existing = this.household(household);
-      if (!existing) fail(404, "Household not found.");
-      if (
-        this.one(
-          "SELECT household FROM household_deletions WHERE household=?",
-          household,
-        )
-      )
-        fail(409, "This household is disabled and cannot be renamed.");
-      if (existing.version !== version)
-        fail(409, "Household changed. Refresh first.");
-      const name = text(input.name, 100, true);
-      const label = input.subdomain
-        ? normalizeLabel(input.subdomain)
-        : existing.subdomain;
-      if (input.subdomain && !label)
-        fail(400, "Choose a valid household web address.");
-      const aliases = new Set(existing.domainAliases || []);
-      if (label !== existing.subdomain) {
-        this.claimDomain(label, household);
-        if (existing.subdomain) aliases.add(existing.subdomain);
-        aliases.delete(label);
-        if (!this.routingJob(label))
-          this.run(
-            "INSERT INTO household_routing(label,household,id,probe) VALUES(?,?,?,?)",
-            label,
-            household,
-            id(),
-            randomBytes(32).toString("hex"),
-          );
-      }
-      return this.put(
-        "household",
-        household,
-        household,
-        { ...existing, name, subdomain: label, domainAliases: [...aliases] },
-        version,
-      );
-    });
-  }
-  updateHousehold(household, input, version, { administrator = false } = {}) {
-    return this.transaction(() => {
-      const existing = this.household(household);
-      if (!existing) fail(404, "Household not found.");
-      if (
-        !administrator &&
-        input.name !== undefined &&
-        input.name !== existing.name
-      )
-        fail(403, "Only the administrator can change household names.");
-      if (
-        input.subdomain !== undefined &&
-        input.subdomain !== existing.subdomain
-      )
-        fail(403, "Household web addresses cannot be changed.");
-      const timezone = text(input.timezone ?? existing.timezone ?? "UTC", 100);
-      try {
-        new Intl.DateTimeFormat("en", { timeZone: timezone });
-      } catch {
-        fail(400, "Choose a valid household IANA timezone.");
-      }
-      const nextMode = input.appearanceMode ?? existing.appearanceMode;
-      if (
-        nextMode !== undefined &&
-        !["light", "dark", "custom"].includes(nextMode)
-      )
-        fail(400, "Choose a supported appearance mode.");
-      if (
-        input.applyAppearanceMode !== undefined &&
-        input.applyAppearanceMode !== true
-      )
-        fail(400, "Invalid appearance mode update.");
-      const applyMode = input.applyAppearanceMode === true;
-      if (applyMode && input.appearanceMode === undefined)
-        fail(400, "Choose an appearance mode.");
-      const nextDesign = design(input.design);
-      const before = resolveUI(
-        this.get("ui", "defaults", "platform"),
-        { design: existing.ui?.design },
-        { design: existing.design },
-      ).design;
-      const after = resolveUI(
-        this.get("ui", "defaults", "platform"),
-        { design: existing.ui?.design },
-        { design: nextDesign },
-      ).design;
-      if (applyMode || JSON.stringify(before) !== JSON.stringify(after)) {
-        const platform = resolveUI(
-          this.get("ui", "defaults", "platform"),
-        ).design;
-        const legacyDefaults = [
-          before,
-          platform,
-          resolveUI({ design: appearancePreset("dark", platform) }).design,
-        ];
-        for (const event of this.list("event", household)) {
-          const preserved = resolveUI(
-            { design: before },
-            { design: event.ui?.design },
-            { design: event.design },
-          ).design;
-          const inherits =
-            event.appearanceMode === "inherit" ||
-            (event.appearanceMode !== "custom" &&
-              legacyDefaults.some((d) =>
-                appearanceKeys.every((key) => d[key] === preserved[key]),
-              ));
-          const nextEvent =
-            applyMode && inherits
-              ? {
-                  ...event,
-                  design: {},
-                  ui: { ...(event.ui || {}), design: {} },
-                  appearanceMode: "inherit",
-                }
-              : {
-                  ...event,
-                  design: preserved,
-                  ...(applyMode ? { appearanceMode: "custom" } : {}),
-                };
-          if (JSON.stringify(nextEvent) !== JSON.stringify(event))
-            this.put("event", event.id, household, nextEvent, event.version);
-        }
-      }
-      const subdomain = existing.subdomain;
-      return this.put(
-        "household",
-        household,
-        household,
-        {
-          name: text(input.name, 100, true),
-          slug: existing.slug,
-          logo: image(input.logo ?? existing.logo ?? ""),
-          logoRequested:
-            (input.logo ?? existing.logo)
-              ? false
-              : existing.logoRequested === true,
-          timezone,
-          design: nextDesign,
-          ...(nextMode ? { appearanceMode: nextMode } : {}),
-          notes: text(input.notes ?? existing.notes ?? "", 20000),
-          ui: input.ui ?? existing.ui ?? {},
-          ...(subdomain ? { subdomain } : {}),
-          ...(existing.domainAliases
-            ? { domainAliases: existing.domainAliases }
-            : {}),
-        },
-        version,
-      );
-    });
-  }
-  hostnameHousehold(label) {
-    const claim = this.one(
-      "SELECT * FROM household_domains WHERE label=? AND retired=0",
-      label,
-    );
-    const household = claim && this.household(claim.household);
-    if (
-      !household ||
-      (household.subdomain !== label &&
-        !household.domainAliases?.includes(label))
-    )
-      fail(404, "This household address is unavailable.");
-    return this.publicHousehold(household.slug);
-  }
   publicHousehold(slug) {
     const row = this.one(
       "SELECT * FROM records WHERE kind='household' AND json_extract(body,'$.slug')=?",
@@ -651,23 +286,14 @@ export class Store {
     );
     if (!row) fail(404, "Household not found.");
     const record = this.unpack(row);
-    if (
-      this.one(
-        "SELECT household FROM household_deletions WHERE household=?",
-        record.id,
-      )
-    )
-      fail(404, "Household not found.");
     return {
       id: record.id,
       slug: record.slug,
       name: record.name,
       design: record.design,
-      logo: record.logo || "",
-      ui: record.ui || {},
     };
   }
-  session(raw, origin, allowLegacy = true) {
+  session(raw) {
     if (!raw) return null;
     const session = this.one(
       "SELECT * FROM sessions WHERE token=? AND expires>?",
@@ -675,69 +301,16 @@ export class Store {
       Date.now(),
     );
     if (!session) return null;
-    if (
-      session.household &&
-      this.one(
-        "SELECT household FROM household_deletions WHERE household=?",
-        session.household,
-      )
-    )
-      return null;
-    if (origin) {
-      const scope = this.one(
-        "SELECT origin FROM session_origins WHERE token=?",
-        session.token,
-      );
-      if (scope ? scope.origin !== origin : !allowLegacy) return null;
-    }
     if (session.guest) {
       const guest = this.get("guest", session.guest, session.household);
-      if (
-        !guest ||
-        guest.parent ||
-        !this.one(
-          "SELECT identity FROM guest_identity_sessions WHERE token=?",
-          session.token,
-        )
-      )
-        return null;
-    }
-    if (
-      session.role === "host" &&
-      this.one("SELECT disabled FROM family_members WHERE id=?", session.user)
-        ?.disabled
-    )
-      return null;
-    if (session.role === "family") {
-      const member = this.one(
-        "SELECT disabled FROM family_members WHERE id=? AND household=?",
-        session.user,
-        session.household,
-      );
-      if (!member || member.disabled) return null;
+      if (!guest || guest.parent) return null;
     }
     return session;
   }
-  newSession(
-    {
-      user = null,
-      household = null,
-      guest = null,
-      role,
-      identity = null,
-      entryHousehold = household,
-    },
-    origin,
-  ) {
+  newSession({ user = null, household = null, guest = null, role }) {
     const token = randomBytes(32).toString("base64url");
     const seconds = role === "guest" ? 7 * 86400 : 8 * 3600;
     this.run("DELETE FROM sessions WHERE expires<?", Date.now());
-    this.run(
-      "DELETE FROM guest_identity_sessions WHERE token NOT IN (SELECT token FROM sessions)",
-    );
-    this.run(
-      "DELETE FROM session_origins WHERE token NOT IN (SELECT token FROM sessions)",
-    );
     this.run(
       "INSERT INTO sessions VALUES(?,?,?,?,?,?)",
       createHash("sha256").update(token).digest("hex"),
@@ -747,19 +320,6 @@ export class Store {
       role,
       Date.now() + seconds * 1000,
     );
-    if (origin)
-      this.run(
-        "INSERT INTO session_origins VALUES(?,?)",
-        createHash("sha256").update(token).digest("hex"),
-        origin,
-      );
-    if (identity)
-      this.run(
-        "INSERT INTO guest_identity_sessions VALUES(?,?,?)",
-        createHash("sha256").update(token).digest("hex"),
-        identity,
-        entryHousehold,
-      );
     return { token, seconds };
   }
   limit(key, max = 15, window = 15 * 60_000) {
@@ -811,7 +371,7 @@ export class Store {
       "admin",
     );
   }
-  async register(input, initialize = null) {
+  async register(input) {
     const address = email(input.email),
       name = text(input.name, 100, true),
       password = await hashPassword(input.password);
@@ -824,35 +384,13 @@ export class Store {
           403,
           "Registration is unavailable for these details. Contact the administrator.",
         );
-      const label = suggestLabel(name);
-      if (
-        input.subdomain !== undefined &&
-        normalizeLabel(input.subdomain) !== label
-      )
-        fail(400, "The address must match the household name.");
-      const logoChoice = input.logoChoice ?? "request";
-      if (!["request", "upload"].includes(logoChoice))
-        fail(400, "Choose an icon option.");
-      const logo = logoChoice === "upload" ? image(input.logo) : "";
-      if (logoChoice === "upload" && !logo)
-        fail(400, "Upload a family icon or ask Kassandra to create one.");
       const household = id(),
         user = id();
       this.put("household", household, household, {
         name,
-        logo,
-        logoRequested: logoChoice === "request",
         slug: randomBytes(18).toString("base64url"),
         design: {},
-        subdomain: this.claimDomain(label, household),
       });
-      this.run(
-        "INSERT INTO household_routing(label,household,id,probe) VALUES(?,?,?,?)",
-        label,
-        household,
-        id(),
-        randomBytes(32).toString("hex"),
-      );
       this.run(
         "INSERT INTO users VALUES(?,?,?,?,?)",
         user,
@@ -861,10 +399,8 @@ export class Store {
         "host",
         household,
       );
-      const account = { user, household, role: "host" };
-      initialize?.(account);
       this.run("DELETE FROM approvals WHERE email=?", address);
-      return account;
+      return { user, household, role: "host" };
     });
   }
   totals(event, household) {
@@ -899,10 +435,10 @@ export class Store {
       `${event.id}:${guest.id}`,
       session.household,
     );
-    const { invited, notes, reminders, ...safe } = event;
+    const { invited, ...safe } = event;
     return {
       ...safe,
-      totals: { attending: this.totals(event, session.household).attending },
+      totals: this.totals(event, session.household),
       menu: this.menuView(event, session.household),
       members: [guest, ...children].map(
         ({ id, first, last, suffix, parent }) => ({
@@ -916,12 +452,7 @@ export class Store {
       response: response || { version: 0, attendance: {}, claims: {} },
     };
   }
-  saveResponse(
-    event,
-    session,
-    input,
-    { partial = false, allowClosed = false } = {},
-  ) {
+  saveResponse(event, session, input) {
     return this.transaction(() => {
       const current = this.get("event", event.id, session.household);
       if (!current?.invited.includes(session.guest))
@@ -930,12 +461,6 @@ export class Store {
         previous = this.get("response", key, session.household);
       if ((previous?.version || 0) !== input.version)
         fail(409, "Your RSVP changed on another device. Reload before saving.");
-      if (
-        !allowClosed &&
-        current.deadline &&
-        current.deadline < new Date().toISOString().slice(0, 10)
-      )
-        fail(409, "The RSVP deadline has passed. Responses are closed.");
       const members = this.guestEvent(current, session).members,
         allowed = new Set(members.map((m) => m.id));
       if (
@@ -947,19 +472,12 @@ export class Store {
         fail(400, "Invalid RSVP members.");
       const attendance = {};
       for (const member of members) {
-        const choice =
-          partial &&
-          (input.attendance[member.id] === undefined ||
-            input.attendance[member.id] === "")
-            ? previous?.attendance[member.id]
-            : input.attendance[member.id];
-        if (partial && choice === undefined) continue;
-        if (!["yes", "no"].includes(choice))
+        if (!["yes", "no"].includes(input.attendance[member.id]))
           fail(400, "Choose attendance for each invited person.");
-        attendance[member.id] = choice;
+        attendance[member.id] = input.attendance[member.id];
       }
       if (
-        attendance[session.guest] !== "yes" &&
+        attendance[session.guest] === "no" &&
         members.some((m) => m.parent && attendance[m.id] === "yes")
       )
         fail(400, "Children must attend with their designated adult.");
@@ -981,9 +499,17 @@ export class Store {
         )
           fail(400, "Invalid menu quantity.");
       }
+      const deadlinePassed =
+        current.deadline &&
+        current.deadline < new Date().toISOString().slice(0, 10);
       for (const item of menu) {
         const desired = attending ? input.claims[item.id] || 0 : 0,
           old = previous?.claims[item.id] || 0;
+        if (deadlinePassed && desired > old)
+          fail(
+            409,
+            "The RSVP deadline has passed. You may reduce items or update attendance.",
+          );
         if (desired > old && item.claimed - old + desired > item.quantity)
           fail(
             409,
@@ -991,41 +517,6 @@ export class Store {
           );
         if (desired) claims[item.id] = desired;
       }
-      let customItems = input.customItems ?? previous?.customItems ?? [];
-      if (!Array.isArray(customItems) || customItems.length > 20)
-        fail(400, "Use up to 20 custom menu items.");
-      if (!current.customItemsEnabled) {
-        const previousItems = previous?.customItems || [];
-        if (
-          customItems.length &&
-          JSON.stringify(customItems) !== JSON.stringify(previousItems)
-        )
-          fail(400, "Custom menu items are not enabled.");
-        customItems = previousItems;
-      }
-      const custom = attending
-        ? customItems.map((item) => {
-            const name = text(item.name, 160, true),
-              quantity = Number(item.quantity ?? 1);
-            if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10000)
-              fail(400, "Choose a valid custom item quantity.");
-            return { name, quantity };
-          })
-        : [];
-      if (current.saveCustomItems)
-        for (const item of custom) {
-          const normalized = normalizeName(item.name);
-          if (
-            !this.list("menu-saved", session.household).some(
-              (saved) => normalizeName(saved.name) === normalized,
-            )
-          )
-            this.put("menu-saved", id(), session.household, {
-              name: item.name,
-              quantity: 1,
-              kind: "potluck",
-            });
-        }
       this.put(
         "response",
         key,
@@ -1035,7 +526,6 @@ export class Store {
           guest: session.guest,
           attendance,
           claims,
-          customItems: custom,
           updated: new Date().toISOString(),
         },
         previous?.version,

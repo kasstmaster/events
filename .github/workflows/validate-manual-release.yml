@@ -4,10 +4,6 @@ on:
   pull_request:
     paths:
       - .github/workflows/deploy-events-manual.yml
-      - .github/workflows/deploy-events-auto.yml
-      - scripts/automatic-events-release*.mjs
-      - docs/automatic-events-release.md
-      - wrangler.jsonc
       - .github/workflows/validate-manual-release.yml
       - scripts/manual-events-release*.mjs
       - scripts/cloudflare-metadata-check*.mjs
@@ -31,12 +27,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: node --test scripts/manual-events-release.test.mjs scripts/cloudflare-metadata-check.test.mjs scripts/automatic-events-release.test.mjs
+      - run: node --test scripts/manual-events-release.test.mjs scripts/cloudflare-metadata-check.test.mjs
       - name: Install isolated read-only AnyList adapter
         run: npm ci --ignore-scripts --prefix integrations/anylist
       - name: Check AnyList transport and protobuf decoding
         run: node --test integrations/anylist/reader.test.js
       - name: Check formatting and show corrections
         run: |
-          npx --no-install prettier --write .github/workflows/inspect-events-settings.yml scripts/manual-events-release*.mjs scripts/automatic-events-release*.mjs scripts/cloudflare-metadata-check*.mjs .github/workflows/deploy-events-auto.yml docs/automatic-events-release.md wrangler.jsonc .github/workflows/check-cloudflare-auth.yml .github/workflows/deploy-events-manual.yml .github/workflows/validate-manual-release.yml docs/manual-events-release.md .github/workflows/sync-meyer-anylist.yml integrations/anylist docs/meyer-anylist.md docs/contacts-event-admin-release.md
+          npx --no-install prettier --write .github/workflows/inspect-events-settings.yml scripts/manual-events-release*.mjs scripts/cloudflare-metadata-check*.mjs .github/workflows/check-cloudflare-auth.yml .github/workflows/deploy-events-manual.yml .github/workflows/validate-manual-release.yml docs/manual-events-release.md .github/workflows/sync-meyer-anylist.yml integrations/anylist docs/meyer-anylist.md docs/contacts-event-admin-release.md
           git diff --exit-code
