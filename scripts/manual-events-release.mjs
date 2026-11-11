@@ -11,7 +11,7 @@ const REQUIRED_FLAGS = ["nodejs_compat", "global_fetch_strictly_public"];
 const EXPECTED_PREVIOUS_VERSION = "3046c37d-2fd5-4965-83e4-319ff0215ba4";
 const digest = (value) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
-class ReleaseCheckError extends Error {}
+export class ReleaseCheckError extends Error {}
 function requireValue(condition, message) {
   if (!condition) throw new ReleaseCheckError(message);
 }
