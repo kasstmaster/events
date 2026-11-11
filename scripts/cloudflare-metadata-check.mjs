@@ -3,6 +3,9 @@ import {
   runtimeSchemaSummary,
   annotationSchemaSummary,
   versionAnnotations,
+  runtimeOverlay,
+  publishExact,
+  ReleaseError,
 } from "./automatic-events-release.mjs";
 
 const ACCOUNT = "37d068144865a0b725ee272bc7b2eb71";
@@ -15,6 +18,7 @@ export async function checkMetadata({
   env = process.env,
   fetcher = fetch,
   log = console.log,
+  bundleValidator = publishExact,
 } = {}) {
   if (!env.CLOUDFLARE_API_TOKEN) {
     log("credential: missing");
@@ -73,6 +77,42 @@ export async function checkMetadata({
       passed = false;
       log(
         "annotations-validation: fail; unsupported metadata; values withheld",
+      );
+    }
+  }
+  if (settings?.placement && typeof settings.placement === "object") {
+    log(
+      `placement-schema (names/types only): ${runtimeSchemaSummary(settings.placement)}`,
+    );
+    const mode = settings.placement.mode;
+    log(
+      `placement-mode: ${mode === undefined ? "absent" : ["off", "smart", "targeted"].includes(mode) ? mode : "unsupported-value-withheld"}`,
+    );
+  }
+  if (settings && env.EVENTS_READ_ONLY_BUILD === "true") {
+    try {
+      await bundleValidator(
+        undefined,
+        env,
+        ".",
+        runtimeOverlay(settings),
+        undefined,
+        () => {
+          throw new ReleaseError(
+            "read-only",
+            "Publishing is prohibited by the diagnostic.",
+          );
+        },
+        versionAnnotations(settings)["workers/tag"],
+        true,
+      );
+      log("runtime-build: pass; local dry run only; no upload attempted");
+    } catch (error) {
+      passed = false;
+      log(
+        error instanceof ReleaseError
+          ? `runtime-build: fail; ${error.stage}; ${error.message}`
+          : "runtime-build: fail; private diagnostics withheld",
       );
     }
   }

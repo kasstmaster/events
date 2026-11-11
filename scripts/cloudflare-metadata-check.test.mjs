@@ -153,3 +153,37 @@ test("read-only check accepts provider-defined provenance without exposing its v
   assert.ok(f.logs.includes("annotations-validation: pass"));
   assert.ok(!f.logs.join("\n").includes(privateValue));
 });
+
+test("read-only live-settings build passes an explicit dry-run-only boundary and never receives release authority", async () => {
+  const f = fixture();
+  const original = f.options.fetcher;
+  f.options.env = { ...env, EVENTS_READ_ONLY_BUILD: "true" };
+  f.options.fetcher = async (url, init) =>
+    new URL(url).pathname.endsWith("/settings")
+      ? Response.json({
+          success: true,
+          result: {
+            bindings: [],
+            compatibility_flags: [],
+            placement: {},
+            annotations: { "workers/triggered_by": "api" },
+          },
+        })
+      : original(url, init);
+  let calls = 0;
+  f.options.bundleValidator = async (...args) => {
+    calls++;
+    assert.equal(args[0], undefined);
+    assert.equal(args[7], true);
+    assert.deepEqual(args[3], { placement: { mode: "off" } });
+    assert.throws(args[5], /Publishing is prohibited/);
+  };
+  assert.equal(await checkMetadata(f.options), true);
+  assert.equal(calls, 1);
+  assert.ok(
+    f.logs.includes(
+      "runtime-build: pass; local dry run only; no upload attempted",
+    ),
+  );
+  assert.ok(!f.logs.join("\n").includes(privateValue));
+});

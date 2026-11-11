@@ -14,9 +14,11 @@ import {
   appearanceManifest,
   runtimeOverlay,
   runtimeSettingsFingerprint,
+  normalizedPlacement,
   versionAnnotations,
   annotationSchemaSummary,
   publishExact,
+  wranglerFailure,
   ReleaseError,
   ACCOUNT,
   NAMESPACE,
@@ -339,6 +341,8 @@ async function fixture(fn) {
       let result;
       if (u.pathname.endsWith("/settings")) {
         result = settings();
+        result.placement =
+          state.version === INITIAL_VERSION ? {} : { mode: "off" };
         result.annotations["workers/tag"] = state.versionTag;
         result.annotations["workers/triggered_by"] =
           state.version === INITIAL_VERSION ? "rollback" : "upload";
@@ -408,6 +412,7 @@ async function fixture(fn) {
     publisher: async (...args) => {
       const release = args[0];
       assert.equal(args[6], state.versionTag);
+      assert.deepEqual(args[3].placement, { mode: "off" });
       assert.equal(release, RELEASE);
       state.publishes++;
       state.version = VERSION;
@@ -789,4 +794,128 @@ test("annotation shape diagnostics never expose values or arbitrary annotation n
   assert.equal(annotationSchemaSummary(null), "null");
   assert.equal(annotationSchemaSummary([]), "array");
   assert.equal(annotationSchemaSummary({}), "empty-object");
+});
+
+test("Wrangler failures distinguish build from upload and reveal only fixed categories and numeric codes", () => {
+  const privateText =
+    "synthetic-private-secret https://private.invalid Authorization: Bearer private";
+  for (const operation of ["local-build", "publish"]) {
+    const error = wranglerFailure(
+      {
+        code: 1,
+        stdout: privateText,
+        stderr: "Authentication error [code: 10000] " + privateText,
+      },
+      operation,
+    );
+    assert.equal(error.stage, operation);
+    assert.ok(error.message.includes("category authentication"));
+    assert.ok(error.message.includes("10000"));
+    assert.ok(!error.message.includes("synthetic-private"));
+    assert.ok(!error.message.includes("Authorization"));
+    assert.ok(!error.message.includes("private.invalid"));
+    assert.ok(
+      error.message.includes(
+        operation === "local-build"
+          ? "No upload was attempted"
+          : "Inspect active version",
+      ),
+    );
+  }
+  assert.ok(
+    wranglerFailure(
+      { code: "PRIVATE", stderr: privateText },
+      "publish",
+    ).message.includes("exit unavailable"),
+  );
+});
+test("diagnostic build can only invoke the dry run and never calls publication callback", async () => {
+  let calls = 0;
+  const result = await publishExact(
+    undefined,
+    environment(),
+    ".",
+    {},
+    async (command, args) => {
+      calls++;
+      assert.ok(args.includes("--dry-run"));
+      return { stdout: "bundle ready", stderr: "" };
+    },
+    () => assert.fail("must not invoke publication callback"),
+    undefined,
+    true,
+  );
+  assert.equal(result, undefined);
+  assert.equal(calls, 1);
+  await assert.rejects(
+    publishExact(
+      undefined,
+      environment(),
+      ".",
+      {},
+      async () => {
+        throw { code: 1, stderr: "Could not resolve synthetic-private-path" };
+      },
+      () => assert.fail("must not publish"),
+      undefined,
+      true,
+    ),
+    (e) =>
+      e.stage === "local-build" &&
+      e.message.includes("category bundle") &&
+      !e.message.includes("synthetic-private-path"),
+  );
+});
+
+test("configuration diagnostics recognize pinned Wrangler required-field errors without echoing values", () => {
+  const error = wranglerFailure(
+    {
+      code: 1,
+      stdout: "Proxy environment variables detected",
+      stderr:
+        '\u001b[31mProcessing PRIVATE-PATH configuration:\u001b[0m\n - "placement.mode" is a required field. PRIVATE-SECRET',
+    },
+    "local-build",
+  );
+  assert.ok(error.message.includes("category configuration"));
+  assert.ok(error.message.includes("fields placement.mode"));
+  assert.ok(error.message.includes("reasons required-field"));
+  assert.ok(!error.message.includes("PRIVATE"));
+  assert.ok(!error.message.includes("Proxy environment"));
+});
+
+test("only Cloudflare's empty disabled placement is converted to explicit Wrangler off", () => {
+  const raw = { ...settings(), placement: {} };
+  assert.deepEqual(runtimeOverlay(raw).placement, { mode: "off" });
+  assert.deepEqual(raw.placement, {});
+  assert.equal(
+    runtimeSettingsFingerprint(raw),
+    runtimeSettingsFingerprint({ ...raw, placement: { mode: "off" } }),
+  );
+  for (const placement of [
+    { mode: "smart" },
+    { mode: "smart", hint: "synthetic-region" },
+    { mode: "targeted", region: "synthetic-region" },
+    { status: "unknown" },
+    { mode: "off", unexpected: true },
+    null,
+    [],
+  ]) {
+    assert.deepEqual(normalizedPlacement(placement), placement);
+    assert.notEqual(
+      runtimeSettingsFingerprint({ ...raw, placement }),
+      runtimeSettingsFingerprint(raw),
+    );
+  }
+  assert.ok(!("placement" in runtimeOverlay(settings())));
+  assert.notEqual(
+    runtimeSettingsFingerprint({
+      ...raw,
+      bindings: [
+        ...raw.bindings,
+        { name: "OTHER", type: "plain_text", text: "private" },
+      ],
+    }),
+    runtimeSettingsFingerprint(raw),
+  );
 });

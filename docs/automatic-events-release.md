@@ -142,3 +142,60 @@ check. The formatter's fallback is now covered explicitly: synthetic API and
 other provenance strings pass without printing or interpreting their contents.
 The exact merged commit message and active version verification continue to
 control release identity; provenance cannot authorize or redirect a deployment.
+
+## Wrangler failure investigation
+
+A generic publish error from older helpers does not establish whether upload
+was attempted. Confirm the active version with the read-only metadata workflow
+before any retry. For failed run `43116253427`, the owner's subsequent read-only
+check confirmed the restored version `2445780c-00a8-4be8-be81-64e450420038`
+remained active. Its recovery checkpoint uploaded successfully; no new deployment
+receipt was recorded.
+
+The helper now distinguishes `local-build` from `publish` failures and extracts
+only fixed error categories, bounded numeric exit statuses and Cloudflare's
+numeric `[code: ...]` identifiers. It never emits raw output, commands, URLs,
+headers, response bodies or arbitrary exception messages. This is diagnostic
+classification, not proof that credentials require rotation.
+
+The existing read-only authentication workflow installs the pinned dependencies
+and also builds a private temporary effective configuration from the actual live
+runtime settings. It uses only `wrangler deploy --dry-run`, returns before the
+publication callback, and has a callback that independently prohibits publishing.
+It cannot upload a Worker or change runtime settings/data. The temporary config
+and captured raw output are discarded. A real local equivalent and mock boundary
+tests verify no production command runs. A failed diagnostic must be investigated
+on its pushed feature branch; never merge or rerun production merely to obtain
+more diagnostics.
+
+The owner's diagnostic established `local-build` failure before any upload.
+Wrangler's required-field/type diagnostics are now recognized after stripping
+terminal color codes; only fixed configuration field names and reason labels
+are reported. The read-only inventory also reports placement field types and
+only its fixed supported mode (or `absent` / `unsupported-value-withheld`). This
+separates an API-to-Wrangler configuration mismatch from an upload permission
+failure without exposing runtime values. No live setting change is authorized by that diagnostic. The confirmed empty
+placement representation is handled as described below.
+
+## Confirmed empty-placement conversion
+
+The owner's diagnostic at `6786a5110c05230e8a70ece456c2b132fb63b138`
+reported an empty placement schema, `placement-mode: absent`, and Wrangler's
+required-field error for `placement.mode`. The active version remained
+`2445780c-00a8-4be8-be81-64e450420038`; no upload occurred.
+
+Normalize only an exact empty placement object `{}` to `{ "mode": "off" }`
+when generating the private Wrangler configuration. Apply the same narrow
+normalization to the runtime fingerprint so Cloudflare's empty response and its
+explicit disabled response compare equally after publishing. This retains the
+existing disabled placement behavior; it does not enable smart placement.
+Absent, null, nonempty, smart, targeted and unknown placement data are not
+silently rewritten or dropped. All other fields and bindings remain protected.
+
+The regression fixture starts with Cloudflare's empty placement object, checks
+that the publisher receives explicit off, then verifies a new version whose
+response uses explicit off. Other placement/runtime/binding changes still fail
+preservation. The real pinned Wrangler dry run must also pass with the normalized
+empty-response configuration; tests never upload or change production settings.
+Run the read-only workflow on this fix branch before owner merge to confirm the
+actual live-settings build now passes.

@@ -325,11 +325,24 @@ export function versionAnnotations(raw) {
   );
   return annotations;
 }
+// Cloudflare's observed disabled-placement response is {}, while Wrangler
+// requires an explicit mode. Normalize this exact empty-object case only.
+export function normalizedPlacement(value) {
+  return value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 0
+    ? { mode: "off" }
+    : structuredClone(value);
+}
 export function runtimeSettingsFingerprint(raw) {
   const annotations = versionAnnotations(raw);
   const { annotations: _versionMetadata, ...runtime } = raw;
   return fingerprint({
     ...runtime,
+    ...(Object.hasOwn(raw, "placement")
+      ? { placement: normalizedPlacement(raw.placement) }
+      : {}),
     // Omitted and empty version annotations have identical runtime meaning.
     ...(annotations["workers/tag"]
       ? { annotations: { "workers/tag": annotations["workers/tag"] } }
@@ -402,6 +415,8 @@ export function runtimeOverlay(raw) {
       .filter((key) => Object.hasOwn(raw, key))
       .map((key) => [key, structuredClone(raw[key])]),
   );
+  if (Object.hasOwn(overlay, "placement"))
+    overlay.placement = normalizedPlacement(overlay.placement);
   if (typeof overlay.cache === "boolean")
     overlay.cache = { enabled: overlay.cache };
   return overlay;
@@ -890,6 +905,94 @@ export async function run(mode, options = {}) {
     "Public assets have not converged to the merged application. Do not redeploy; investigate or retry verification only.",
   );
 }
+// Classify captured diagnostics against fixed patterns only. Never reflect raw
+// messages, headers, URLs, field values, arguments or provider response bodies.
+export function wranglerFailure(error, operation) {
+  const text = (
+    String(error?.stdout || "") +
+    "\n" +
+    String(error?.stderr || "")
+  ).replace(/\u001b\[[\d;]*m/g, "");
+  const rules = [
+    [
+      "authentication",
+      /authentication error|authenticate|invalid access token|invalid api token|unauthorized/i,
+    ],
+    [
+      "permissions",
+      /permission|forbidden|not authorized|authorization failed/i,
+    ],
+    ["rate-limit", /rate.limit|too many requests/i],
+    [
+      "network",
+      /ENOTFOUND|ECONNRESET|ETIMEDOUT|certificate|unable to verify|fetch failed|proxy (error|failed|denied|refused)/i,
+    ],
+    ["unsupported-option", /unknown argument|unknown option/i],
+    [
+      "configuration",
+      /invalid configuration|configuration.*error|unexpected fields|invalid.*placement|Processing [^\n]*configuration:|is a required field|Expected [^\n]*to be of type/i,
+    ],
+    [
+      "bundle",
+      /could not resolve|cannot find module|build failed|no such file/i,
+    ],
+  ];
+  const category =
+    rules.find(([, pattern]) => pattern.test(text))?.[0] || "unclassified";
+  const diagnosticFields = [
+    "placement",
+    "placement.mode",
+    "placement.hint",
+    "placement.region",
+    "placement.host",
+    "placement.hostname",
+    "logpush",
+    "tail_consumers",
+    "streaming_tail_consumers",
+    "limits",
+    "limits.cpu_ms",
+    "cache",
+    "cache.enabled",
+    "observability",
+    "observability.enabled",
+    "observability.logs",
+    "observability.traces",
+    "compatibility_date",
+    "compatibility_flags",
+    "main",
+    "assets.directory",
+    "durable_objects",
+    "migrations",
+  ].filter(
+    (field) =>
+      text.includes('"' + field + '"') || text.includes("`" + field + "`"),
+  );
+  const reasons = [
+    ["required-field", /is a required field/i],
+    [
+      "invalid-type",
+      /Expected [^\n]*to be of type|should be an object|must be a string/i,
+    ],
+    ["invalid-value", /Expected [^\n]*(?:one of|values)|not a valid value/i],
+    ["missing-path", /does not exist|not found|no such file/i],
+    ["unknown-field", /Unexpected fields|unrecognized.{0,40}(field|key)/i],
+  ]
+    .filter(([, pattern]) => pattern.test(text))
+    .map(([name]) => name);
+  const codes = [
+    ...new Set(
+      [...text.matchAll(/\[code:\s*(\d{1,8})\]/g)].map((match) => match[1]),
+    ),
+  ].slice(0, 8);
+  const exit =
+    Number.isSafeInteger(error?.code) && error.code >= 0 && error.code <= 255
+      ? error.code
+      : "unavailable";
+  return new ReleaseError(
+    operation,
+    `Wrangler ${operation === "local-build" ? "local build" : "upload"} failed; category ${category}; fields ${diagnosticFields.join(",") || "none"}; reasons ${reasons.join(",") || "none"}; exit ${exit}; Cloudflare codes ${codes.join(",") || "none"}. Raw diagnostics withheld.${operation === "publish" ? " Inspect active version before any retry." : " No upload was attempted."}`,
+  );
+}
 export async function publishExact(
   release,
   env,
@@ -898,6 +1001,7 @@ export async function publishExact(
   execute = promisify(execFile),
   beforePublish = async () => {},
   versionTag,
+  dryRunOnly = false,
 ) {
   const dir = await mkdtemp(join(tmpdir(), "events-publish-"));
   const output = join(dir, "output.jsonl");
@@ -915,6 +1019,7 @@ export async function publishExact(
   const effectivePath = join(dir, "wrangler.jsonc");
   await writeFile(effectivePath, JSON.stringify(effective), { mode: 0o600 });
   try {
+    let operation = "local-build";
     try {
       const local = await execute(
         process.execPath,
@@ -942,7 +1047,9 @@ export async function publishExact(
         "runtime-schema",
         "Wrangler cannot preserve an observed runtime field; stop before publishing.",
       );
+      if (dryRunOnly) return;
       await beforePublish();
+      operation = "publish";
       await execute(
         process.execPath,
         [
@@ -971,10 +1078,7 @@ export async function publishExact(
       );
     } catch (error) {
       if (error instanceof ReleaseError) throw error;
-      throw new ReleaseError(
-        "publish",
-        "Wrangler failed; raw output withheld. Inspect active version before any retry.",
-      );
+      throw wranglerFailure(error, operation);
     }
     const records = (await readFile(output, "utf8"))
       .trim()
