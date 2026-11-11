@@ -14,6 +14,7 @@ import {
   appearanceManifest,
   runtimeOverlay,
   runtimeSettingsFingerprint,
+  normalizedPlacement,
   versionAnnotations,
   annotationSchemaSummary,
   publishExact,
@@ -340,6 +341,8 @@ async function fixture(fn) {
       let result;
       if (u.pathname.endsWith("/settings")) {
         result = settings();
+        result.placement =
+          state.version === INITIAL_VERSION ? {} : { mode: "off" };
         result.annotations["workers/tag"] = state.versionTag;
         result.annotations["workers/triggered_by"] =
           state.version === INITIAL_VERSION ? "rollback" : "upload";
@@ -409,6 +412,7 @@ async function fixture(fn) {
     publisher: async (...args) => {
       const release = args[0];
       assert.equal(args[6], state.versionTag);
+      assert.deepEqual(args[3].placement, { mode: "off" });
       assert.equal(release, RELEASE);
       state.publishes++;
       state.version = VERSION;
@@ -878,4 +882,40 @@ test("configuration diagnostics recognize pinned Wrangler required-field errors 
   assert.ok(error.message.includes("reasons required-field"));
   assert.ok(!error.message.includes("PRIVATE"));
   assert.ok(!error.message.includes("Proxy environment"));
+});
+
+test("only Cloudflare's empty disabled placement is converted to explicit Wrangler off", () => {
+  const raw = { ...settings(), placement: {} };
+  assert.deepEqual(runtimeOverlay(raw).placement, { mode: "off" });
+  assert.deepEqual(raw.placement, {});
+  assert.equal(
+    runtimeSettingsFingerprint(raw),
+    runtimeSettingsFingerprint({ ...raw, placement: { mode: "off" } }),
+  );
+  for (const placement of [
+    { mode: "smart" },
+    { mode: "smart", hint: "synthetic-region" },
+    { mode: "targeted", region: "synthetic-region" },
+    { status: "unknown" },
+    { mode: "off", unexpected: true },
+    null,
+    [],
+  ]) {
+    assert.deepEqual(normalizedPlacement(placement), placement);
+    assert.notEqual(
+      runtimeSettingsFingerprint({ ...raw, placement }),
+      runtimeSettingsFingerprint(raw),
+    );
+  }
+  assert.ok(!("placement" in runtimeOverlay(settings())));
+  assert.notEqual(
+    runtimeSettingsFingerprint({
+      ...raw,
+      bindings: [
+        ...raw.bindings,
+        { name: "OTHER", type: "plain_text", text: "private" },
+      ],
+    }),
+    runtimeSettingsFingerprint(raw),
+  );
 });

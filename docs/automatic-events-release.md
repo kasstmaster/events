@@ -174,5 +174,28 @@ terminal color codes; only fixed configuration field names and reason labels
 are reported. The read-only inventory also reports placement field types and
 only its fixed supported mode (or `absent` / `unsupported-value-withheld`). This
 separates an API-to-Wrangler configuration mismatch from an upload permission
-failure without exposing runtime values. No placement normalization or live
-setting change is assumed before that evidence is available.
+failure without exposing runtime values. No live setting change is authorized by that diagnostic. The confirmed empty
+placement representation is handled as described below.
+
+## Confirmed empty-placement conversion
+
+The owner's diagnostic at `6786a5110c05230e8a70ece456c2b132fb63b138`
+reported an empty placement schema, `placement-mode: absent`, and Wrangler's
+required-field error for `placement.mode`. The active version remained
+`2445780c-00a8-4be8-be81-64e450420038`; no upload occurred.
+
+Normalize only an exact empty placement object `{}` to `{ "mode": "off" }`
+when generating the private Wrangler configuration. Apply the same narrow
+normalization to the runtime fingerprint so Cloudflare's empty response and its
+explicit disabled response compare equally after publishing. This retains the
+existing disabled placement behavior; it does not enable smart placement.
+Absent, null, nonempty, smart, targeted and unknown placement data are not
+silently rewritten or dropped. All other fields and bindings remain protected.
+
+The regression fixture starts with Cloudflare's empty placement object, checks
+that the publisher receives explicit off, then verifies a new version whose
+response uses explicit off. Other placement/runtime/binding changes still fail
+preservation. The real pinned Wrangler dry run must also pass with the normalized
+empty-response configuration; tests never upload or change production settings.
+Run the read-only workflow on this fix branch before owner merge to confirm the
+actual live-settings build now passes.

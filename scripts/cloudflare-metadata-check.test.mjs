@@ -165,7 +165,7 @@ test("read-only live-settings build passes an explicit dry-run-only boundary and
           result: {
             bindings: [],
             compatibility_flags: [],
-            placement: { mode: "off" },
+            placement: {},
             annotations: { "workers/triggered_by": "api" },
           },
         })

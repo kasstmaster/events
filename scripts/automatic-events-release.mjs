@@ -325,11 +325,24 @@ export function versionAnnotations(raw) {
   );
   return annotations;
 }
+// Cloudflare's observed disabled-placement response is {}, while Wrangler
+// requires an explicit mode. Normalize this exact empty-object case only.
+export function normalizedPlacement(value) {
+  return value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 0
+    ? { mode: "off" }
+    : structuredClone(value);
+}
 export function runtimeSettingsFingerprint(raw) {
   const annotations = versionAnnotations(raw);
   const { annotations: _versionMetadata, ...runtime } = raw;
   return fingerprint({
     ...runtime,
+    ...(Object.hasOwn(raw, "placement")
+      ? { placement: normalizedPlacement(raw.placement) }
+      : {}),
     // Omitted and empty version annotations have identical runtime meaning.
     ...(annotations["workers/tag"]
       ? { annotations: { "workers/tag": annotations["workers/tag"] } }
@@ -402,6 +415,8 @@ export function runtimeOverlay(raw) {
       .filter((key) => Object.hasOwn(raw, key))
       .map((key) => [key, structuredClone(raw[key])]),
   );
+  if (Object.hasOwn(overlay, "placement"))
+    overlay.placement = normalizedPlacement(overlay.placement);
   if (typeof overlay.cache === "boolean")
     overlay.cache = { enabled: overlay.cache };
   return overlay;
