@@ -17,6 +17,7 @@ import {
   versionAnnotations,
   annotationSchemaSummary,
   publishExact,
+  wranglerFailure,
   ReleaseError,
   ACCOUNT,
   NAMESPACE,
@@ -789,4 +790,75 @@ test("annotation shape diagnostics never expose values or arbitrary annotation n
   assert.equal(annotationSchemaSummary(null), "null");
   assert.equal(annotationSchemaSummary([]), "array");
   assert.equal(annotationSchemaSummary({}), "empty-object");
+});
+
+test("Wrangler failures distinguish build from upload and reveal only fixed categories and numeric codes", () => {
+  const privateText =
+    "synthetic-private-secret https://private.invalid Authorization: Bearer private";
+  for (const operation of ["local-build", "publish"]) {
+    const error = wranglerFailure(
+      {
+        code: 1,
+        stdout: privateText,
+        stderr: "Authentication error [code: 10000] " + privateText,
+      },
+      operation,
+    );
+    assert.equal(error.stage, operation);
+    assert.ok(error.message.includes("category authentication"));
+    assert.ok(error.message.includes("10000"));
+    assert.ok(!error.message.includes("synthetic-private"));
+    assert.ok(!error.message.includes("Authorization"));
+    assert.ok(!error.message.includes("private.invalid"));
+    assert.ok(
+      error.message.includes(
+        operation === "local-build"
+          ? "No upload was attempted"
+          : "Inspect active version",
+      ),
+    );
+  }
+  assert.ok(
+    wranglerFailure(
+      { code: "PRIVATE", stderr: privateText },
+      "publish",
+    ).message.includes("exit unavailable"),
+  );
+});
+test("diagnostic build can only invoke the dry run and never calls publication callback", async () => {
+  let calls = 0;
+  const result = await publishExact(
+    undefined,
+    environment(),
+    ".",
+    {},
+    async (command, args) => {
+      calls++;
+      assert.ok(args.includes("--dry-run"));
+      return { stdout: "bundle ready", stderr: "" };
+    },
+    () => assert.fail("must not invoke publication callback"),
+    undefined,
+    true,
+  );
+  assert.equal(result, undefined);
+  assert.equal(calls, 1);
+  await assert.rejects(
+    publishExact(
+      undefined,
+      environment(),
+      ".",
+      {},
+      async () => {
+        throw { code: 1, stderr: "Could not resolve synthetic-private-path" };
+      },
+      () => assert.fail("must not publish"),
+      undefined,
+      true,
+    ),
+    (e) =>
+      e.stage === "local-build" &&
+      e.message.includes("category bundle") &&
+      !e.message.includes("synthetic-private-path"),
+  );
 });

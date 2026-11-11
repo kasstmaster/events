@@ -142,3 +142,28 @@ check. The formatter's fallback is now covered explicitly: synthetic API and
 other provenance strings pass without printing or interpreting their contents.
 The exact merged commit message and active version verification continue to
 control release identity; provenance cannot authorize or redirect a deployment.
+
+## Wrangler failure investigation
+
+A generic publish error from older helpers does not establish whether upload
+was attempted. Confirm the active version with the read-only metadata workflow
+before any retry. For failed run `43116253427`, the owner's subsequent read-only
+check confirmed the restored version `2445780c-00a8-4be8-be81-64e450420038`
+remained active. Its recovery checkpoint uploaded successfully; no new deployment
+receipt was recorded.
+
+The helper now distinguishes `local-build` from `publish` failures and extracts
+only fixed error categories, bounded numeric exit statuses and Cloudflare's
+numeric `[code: ...]` identifiers. It never emits raw output, commands, URLs,
+headers, response bodies or arbitrary exception messages. This is diagnostic
+classification, not proof that credentials require rotation.
+
+The existing read-only authentication workflow installs the pinned dependencies
+and also builds a private temporary effective configuration from the actual live
+runtime settings. It uses only `wrangler deploy --dry-run`, returns before the
+publication callback, and has a callback that independently prohibits publishing.
+It cannot upload a Worker or change runtime settings/data. The temporary config
+and captured raw output are discarded. A real local equivalent and mock boundary
+tests verify no production command runs. A failed diagnostic must be investigated
+on its pushed feature branch; never merge or rerun production merely to obtain
+more diagnostics.

@@ -890,6 +890,50 @@ export async function run(mode, options = {}) {
     "Public assets have not converged to the merged application. Do not redeploy; investigate or retry verification only.",
   );
 }
+// Classify captured diagnostics against fixed patterns only. Never reflect raw
+// messages, headers, URLs, field values, arguments or provider response bodies.
+export function wranglerFailure(error, operation) {
+  const text = String(error?.stdout || "") + "\n" + String(error?.stderr || "");
+  const rules = [
+    [
+      "authentication",
+      /authentication error|authenticate|invalid access token|invalid api token|unauthorized/i,
+    ],
+    [
+      "permissions",
+      /permission|forbidden|not authorized|authorization failed/i,
+    ],
+    ["rate-limit", /rate.limit|too many requests/i],
+    [
+      "network",
+      /ENOTFOUND|ECONNRESET|ETIMEDOUT|certificate|unable to verify|fetch failed|proxy/i,
+    ],
+    ["unsupported-option", /unknown argument|unknown option/i],
+    [
+      "configuration",
+      /invalid configuration|configuration.*error|unexpected fields|invalid.*placement/i,
+    ],
+    [
+      "bundle",
+      /could not resolve|cannot find module|build failed|no such file/i,
+    ],
+  ];
+  const category =
+    rules.find(([, pattern]) => pattern.test(text))?.[0] || "unclassified";
+  const codes = [
+    ...new Set(
+      [...text.matchAll(/\[code:\s*(\d{1,8})\]/g)].map((match) => match[1]),
+    ),
+  ].slice(0, 8);
+  const exit =
+    Number.isSafeInteger(error?.code) && error.code >= 0 && error.code <= 255
+      ? error.code
+      : "unavailable";
+  return new ReleaseError(
+    operation,
+    `Wrangler ${operation === "local-build" ? "local build" : "upload"} failed; category ${category}; exit ${exit}; Cloudflare codes ${codes.join(",") || "none"}. Raw diagnostics withheld.${operation === "publish" ? " Inspect active version before any retry." : " No upload was attempted."}`,
+  );
+}
 export async function publishExact(
   release,
   env,
@@ -898,6 +942,7 @@ export async function publishExact(
   execute = promisify(execFile),
   beforePublish = async () => {},
   versionTag,
+  dryRunOnly = false,
 ) {
   const dir = await mkdtemp(join(tmpdir(), "events-publish-"));
   const output = join(dir, "output.jsonl");
@@ -915,6 +960,7 @@ export async function publishExact(
   const effectivePath = join(dir, "wrangler.jsonc");
   await writeFile(effectivePath, JSON.stringify(effective), { mode: 0o600 });
   try {
+    let operation = "local-build";
     try {
       const local = await execute(
         process.execPath,
@@ -942,7 +988,9 @@ export async function publishExact(
         "runtime-schema",
         "Wrangler cannot preserve an observed runtime field; stop before publishing.",
       );
+      if (dryRunOnly) return;
       await beforePublish();
+      operation = "publish";
       await execute(
         process.execPath,
         [
@@ -971,10 +1019,7 @@ export async function publishExact(
       );
     } catch (error) {
       if (error instanceof ReleaseError) throw error;
-      throw new ReleaseError(
-        "publish",
-        "Wrangler failed; raw output withheld. Inspect active version before any retry.",
-      );
+      throw wranglerFailure(error, operation);
     }
     const records = (await readFile(output, "utf8"))
       .trim()
