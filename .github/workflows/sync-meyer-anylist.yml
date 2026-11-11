@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.workflow_sha }}
+          ref: 925c25ad0f89b6deb85838ae36f13d168444b1d0
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:

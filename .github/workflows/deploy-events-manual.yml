@@ -1,0 +1,82 @@
+name: Deploy events manually
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: events-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out workflow safety checks
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: operations
+          persist-credentials: false
+
+      - name: Check out the exact approved release
+        uses: actions/checkout@v5
+        with:
+          ref: 925c25ad0f89b6deb85838ae36f13d168444b1d0
+          path: release
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: release/package-lock.json
+
+      - name: Install approved release dependencies
+        working-directory: release
+        run: npm ci
+
+      - name: Validate deployment safety checks
+        run: node --test operations/scripts/manual-events-release.test.mjs
+
+      - name: Check authentication and record recovery checkpoint
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          mkdir -p recovery
+          node operations/scripts/manual-events-release.mjs preflight
+
+      # A failed checkpoint upload stops the job before Wrangler can publish.
+      - name: Save recovery checkpoint before deployment
+        uses: actions/upload-artifact@v6
+        with:
+          name: events-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: recovery/events-checkpoint.json
+          if-no-files-found: error
+          retention-days: 29
+
+      - name: Deploy approved events release
+        working-directory: release
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 37d068144865a0b725ee272bc7b2eb71
+          WRANGLER_SEND_METRICS: "false"
+        run: npx wrangler deploy --name events --config wrangler.jsonc
+
+      - name: Verify deployment and preserved database binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node operations/scripts/manual-events-release.mjs verify
+
+      - name: Save post-deployment verification
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: events-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: recovery/*-after.json
+          if-no-files-found: ignore
+          retention-days: 29
