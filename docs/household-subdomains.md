@@ -12,7 +12,7 @@ The six public checks now run in bounded pairs rather than one serial callback c
 
 Safe verifier diagnostics persist only fixed stage/status codes. Signed private verification reads to the shared runtime additionally emit `events-routing-check`, a fixed `status`/`context` stage, a fixed outcome and numeric HTTP status. These contain no hostname, household ID, email, probe, header, body, cookie, token or exception text. Temporary real-time tails can distinguish a route-gate denial from a shared-handler response without enabling persistent observability or copying private request envelopes. Diagnostic access does not authorize claims, sessions, DNS changes or activation.
 
-Local topology tests derive dates/flags from the checked-in configs and exercise safe diagnostics. Mocked transport cannot establish actual public cross-account routing. Further source publication must be gated by disabled builds; deployment still requires explicit owner authorization. Preserve every existing flag/setting during a correction and restore disabled builds after any separately authorized one-off Git build.
+Local topology tests derive dates/flags from the checked-in configs and exercise safe diagnostics. Mocked transport cannot establish actual public cross-account routing. Further feature-branch publication follows AGENTS.md’s publication-only checks; any known matching external deployment trigger must still be resolved before pushing. Fresh live build-control checks remain mandatory for production deployment, which requires owner authorization. Preserve every existing flag/setting during a correction and restore disabled builds after any separately authorized one-off Git build.
 
 ## Shared registration and immutable claims
 
