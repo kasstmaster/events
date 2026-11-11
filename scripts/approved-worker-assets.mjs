@@ -18,8 +18,28 @@ for (const origin of roots) {
     );
     const actual = Buffer.from(await r.arrayBuffer());
     const hash = (x) => createHash("sha256").update(x).digest("hex");
-    if (!r.ok || hash(bytes) !== hash(actual))
-      mismatches.push({ file, status: r.status });
+    if (!r.ok || hash(bytes) !== hash(actual)) {
+      const fresh = await fetch(
+        `${origin}/${file === "index.html" ? "" : encodeURIComponent(file)}?gather-recovery=2445780c`,
+        {
+          headers: { "Cache-Control": "no-cache" },
+          redirect: "error",
+          signal: AbortSignal.timeout(20000),
+        },
+      );
+      const freshBytes = Buffer.from(await fresh.arrayBuffer());
+      mismatches.push({
+        file,
+        status: r.status,
+        etag: r.headers.get("etag"),
+        cache: r.headers.get("cf-cache-status"),
+        age: r.headers.get("age"),
+        cache_control: r.headers.get("cache-control"),
+        fresh_matches: fresh.ok && hash(bytes) === hash(freshBytes),
+        actual_digest: hash(actual),
+        expected_digest: hash(bytes),
+      });
+    }
   }
   results.push({ origin, checked: files.length, mismatches });
 }
