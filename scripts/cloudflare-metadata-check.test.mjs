@@ -96,3 +96,29 @@ test("missing credentials, malformed environments and transport errors fail clos
   assert.equal(await checkMetadata(f.options), false);
   assert.ok(!logs.concat(f.logs).join("\n").includes(privateValue));
 });
+
+test("schema diagnostics expose only bounded schema field names/types, never values or arbitrary keys", async () => {
+  const f = fixture();
+  const original = f.options.fetcher;
+  f.options.fetcher = async (url, init) => {
+    if (new URL(url).pathname.endsWith("/settings"))
+      return Response.json({
+        success: true,
+        result: {
+          asset_config: { jwt: privateValue },
+          assets: { jwt: privateValue, config: { nestedSecret: privateValue } },
+          bindings: [{ name: privateValue, text: privateValue }],
+          [privateValue]: privateValue,
+        },
+      });
+    return original(url, init);
+  };
+  assert.equal(await checkMetadata(f.options), true);
+  assert.ok(f.logs.some((line) => line.includes("assets:object")));
+  assert.ok(f.logs.some((line) => line.includes("asset_config:object")));
+  assert.ok(
+    f.logs.some((line) => line.includes("[unrecognized-field]:string")),
+  );
+  assert.ok(!f.logs.join("\n").includes(privateValue));
+  assert.ok(!f.logs.join("\n").includes("nestedSecret"));
+});

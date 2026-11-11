@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { runtimeSchemaSummary } from "./automatic-events-release.mjs";
 
 const ACCOUNT = "37d068144865a0b725ee272bc7b2eb71";
 const SCRIPT = `/accounts/${ACCOUNT}/workers/scripts/events`;
@@ -51,7 +52,11 @@ export async function checkMetadata({
       return null;
     }
   }
-  await read("settings", `${SCRIPT}/settings`);
+  const settings = await read("settings", `${SCRIPT}/settings`);
+  if (settings)
+    log(
+      `settings-schema (names/types only): ${runtimeSchemaSummary(settings)}`,
+    );
   const deployment = await read("active-deployment", `${SCRIPT}/deployments`);
   const versions = deployment?.deployments?.[0]?.versions;
   if (
