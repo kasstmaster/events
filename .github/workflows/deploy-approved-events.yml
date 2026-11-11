@@ -1,0 +1,152 @@
+name: Deploy approved merged Gather
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  checks:
+    if: github.repository == 'kasstmaster/events' && github.event.pull_request.merged == true && github.event.pull_request.merged_by.login == 'kasstmaster' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == 'kasstmaster/events'
+    name: Merged source and safety checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      MERGED_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.MERGED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node scripts/automatic-events-release.mjs source
+      - run: npm run format:check
+      - run: npm test
+      - run: node --test scripts/automatic-events-release.test.mjs scripts/manual-events-release.test.mjs scripts/cloudflare-metadata-check.test.mjs
+      - run: npm ci --ignore-scripts --prefix integrations/anylist
+      - run: node --test integrations/anylist/reader.test.js integrations/anylist/writer.test.js
+      - run: npm run test:cloudflare
+      - name: Validate the events bundle without publishing
+        run: npx wrangler deploy --dry-run --name events --config wrangler.jsonc --outdir test-results/merge-dry-run
+      - run: node scripts/automatic-events-release.mjs source
+  browser:
+    if: github.repository == 'kasstmaster/events' && github.event.pull_request.merged == true && github.event.pull_request.merged_by.login == 'kasstmaster' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == 'kasstmaster/events'
+    name: Merged browser checks (${{ matrix.group }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        group: [navigation, editors, accounts]
+    env:
+      MERGED_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.MERGED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node scripts/automatic-events-release.mjs source
+      - run: npx playwright install --with-deps chromium
+      - name: Navigation, household routing and family permissions
+        if: matrix.group == 'navigation'
+        run: |
+          node test/mobile.cjs
+          node test/domains-mobile.js
+          node test/family-mobile.js
+          node test/navigation-mobile.js
+      - name: Shared editors, toolbars and RSVP grouping
+        if: matrix.group == 'editors'
+        run: |
+          node test/features-mobile.js
+          node test/toolbar-mobile.js
+          node test/household-ui-mobile.js
+          node test/information-popups-mobile.js
+      - name: Cards, private accounts and mocked e-vites
+        if: matrix.group == 'accounts'
+        run: |
+          node test/cards-mobile.js
+          node test/personal-mobile.js
+          node test/evites-mobile.js
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: merge-browser-failure-${{ matrix.group }}-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: ignore
+  publish:
+    name: Publish verified merged events
+    needs: [checks, browser]
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # Same lock as the unchanged manual recovery workflow. Never cancel a release.
+    concurrency:
+      group: events-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      issues: read
+    env:
+      MERGED_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.MERGED_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node scripts/automatic-events-release.mjs source
+      - name: Verify latest owner merge and capture stable production checkpoint
+        id: preflight
+        env:
+          ACTIONS_GITHUB_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          mkdir -p recovery
+          node scripts/automatic-events-release.mjs preflight
+      - name: Upload recovery checkpoint before publishing
+        id: checkpoint
+        uses: actions/upload-artifact@v6
+        with:
+          name: events-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: recovery/events-checkpoint.json
+          if-no-files-found: error
+          retention-days: 29
+      - name: Recheck checkpoint upload, latest main and production; publish exactly once
+        env:
+          ACTIONS_GITHUB_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CHECKPOINT_SHA256: ${{ steps.preflight.outputs.checkpoint_sha256 }}
+          CHECKPOINT_ARTIFACT_ID: ${{ steps.checkpoint.outputs.artifact-id }}
+          CHECKPOINT_ARTIFACT_DIGEST: sha256:${{ steps.checkpoint.outputs.artifact-digest }}
+        run: node scripts/automatic-events-release.mjs publish
+      - name: Verify actual active version, preserved state and live application assets
+        env:
+          ACTIONS_GITHUB_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/automatic-events-release.mjs verify
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: events-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: recovery/*.json
+          if-no-files-found: warn
+          retention-days: 29
