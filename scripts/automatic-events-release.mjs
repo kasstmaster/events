@@ -257,7 +257,55 @@ export function runtimeSchemaSummary(raw) {
       .join(", ") + (fields.length > 64 ? ", [additional-fields]" : "")
   );
 }
+// Provider-defined annotations describe a *version*, not its runtime settings.
+// Message/CI metadata must change with a release; retain the optional user tag.
+// Unknown annotations still require review rather than being silently dropped.
+export function versionAnnotations(raw) {
+  const annotations = raw.annotations;
+  if (annotations === undefined) return {};
+  const limits = {
+    "workers/alias": 512,
+    "workers/commit_sha": 64,
+    "workers/message": 1000,
+    "workers/pull_request_number": 20,
+    "workers/pull_request_title": 512,
+    "workers/pull_request_url": 512,
+    "workers/repository_url": 512,
+    "workers/tag": 100,
+  };
+  must(
+    annotations !== null &&
+      typeof annotations === "object" &&
+      !Array.isArray(annotations) &&
+      Object.entries(annotations).every(
+        ([key, value]) =>
+          Object.hasOwn(limits, key) &&
+          typeof value === "string" &&
+          Buffer.byteLength(value, "utf8") <= limits[key],
+      ),
+    "settings-schema",
+    "Unsupported version annotations; values withheld. Review version metadata before publishing.",
+  );
+  return annotations;
+}
+export function runtimeSettingsFingerprint(raw) {
+  const annotations = versionAnnotations(raw);
+  const { annotations: _versionMetadata, ...runtime } = raw;
+  return fingerprint({
+    ...runtime,
+    // Omitted and empty version annotations have identical runtime meaning.
+    ...(annotations["workers/tag"]
+      ? { annotations: { "workers/tag": annotations["workers/tag"] } }
+      : {}),
+    bindings: [...raw.bindings].sort((a, b) => a.name.localeCompare(b.name)),
+    ...(typeof raw.cache === "boolean"
+      ? { cache: { enabled: raw.cache } }
+      : {}),
+    compatibility_flags: [...raw.compatibility_flags].sort(),
+  });
+}
 export function runtimeOverlay(raw) {
+  versionAnnotations(raw);
   const passthrough = [
     "observability",
     "logpush",
@@ -272,6 +320,7 @@ export function runtimeOverlay(raw) {
     "compatibility_date",
     "compatibility_flags",
     "migration_tag",
+    "annotations",
     "migrations",
     "usage_model",
     "tags",
@@ -362,7 +411,7 @@ export async function run(mode, options = {}) {
     "Existing GitHub-held credentials are required.",
   );
   const fetcher = options.fetcher || fetch;
-  let serverTime, runtimeConfiguration;
+  let serverTime, runtimeConfiguration, versionTag;
   async function json(url, token, stage, cloudflare = false) {
     let r;
     try {
@@ -483,18 +532,10 @@ export async function run(mode, options = {}) {
     const raw = await cf(`${SCRIPT}/settings`, "settings");
     const settings = safeSettings(raw);
     runtimeConfiguration = runtimeOverlay(raw);
-    const allBindings = [...raw.bindings].sort((a, b) =>
-      a.name.localeCompare(b.name),
-    );
-    // Hash the complete settings, including unknown runtime settings, without emitting values.
-    const runtimeDigest = fingerprint({
-      ...raw,
-      bindings: allBindings,
-      ...(typeof raw.cache === "boolean"
-        ? { cache: { enabled: raw.cache } }
-        : {}),
-      compatibility_flags: [...raw.compatibility_flags].sort(),
-    });
+    versionTag = versionAnnotations(raw)["workers/tag"];
+    // All runtime fields/bindings remain hashed. Only validated per-version
+    // message/CI annotations are excluded; the optional user tag is preserved.
+    const runtimeDigest = runtimeSettingsFingerprint(raw);
     const deployed = await cf(`${SCRIPT}/deployments`, "version");
     const latest = [...(deployed.deployments || [])].sort(
       (a, b) => Date.parse(b.created_on) - Date.parse(a.created_on),
@@ -702,6 +743,7 @@ export async function run(mode, options = {}) {
         );
         await githubGate();
       },
+      versionTag,
     );
     must(
       /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(version_id || "") &&
@@ -818,6 +860,7 @@ export async function publishExact(
   runtimeConfiguration = {},
   execute = promisify(execFile),
   beforePublish = async () => {},
+  versionTag,
 ) {
   const dir = await mkdtemp(join(tmpdir(), "events-publish-"));
   const output = join(dir, "output.jsonl");
@@ -842,6 +885,7 @@ export async function publishExact(
           resolve(root, "node_modules/wrangler/bin/wrangler.js"),
           "deploy",
           "--dry-run",
+          ...(versionTag ? ["--tag", versionTag] : []),
           "--config",
           effectivePath,
           "--outdir",
@@ -874,6 +918,7 @@ export async function publishExact(
           "--keep-vars",
           "--message",
           release,
+          ...(versionTag ? ["--tag", versionTag] : []),
         ],
         {
           cwd: root,

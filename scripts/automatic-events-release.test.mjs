@@ -13,6 +13,8 @@ import {
   validateSource,
   appearanceManifest,
   runtimeOverlay,
+  runtimeSettingsFingerprint,
+  versionAnnotations,
   publishExact,
   ReleaseError,
   ACCOUNT,
@@ -221,6 +223,7 @@ async function appearanceManifestFixture(root, paths) {
 const settings = () => ({
   compatibility_date: "2026-10-30",
   compatibility_flags: ["nodejs_compat", "global_fetch_strictly_public"],
+  annotations: { "workers/message": "previous-release" },
   observability: { enabled: true },
   bindings: [
     { name: "ASSETS", type: "assets" },
@@ -244,6 +247,7 @@ async function fixture(fn) {
   const env = environment(),
     state = {
       version: INITIAL_VERSION,
+      versionTag: "retained-version-tag",
       publishes: 0,
       protected: true,
       latest: RELEASE,
@@ -331,6 +335,9 @@ async function fixture(fn) {
       let result;
       if (u.pathname.endsWith("/settings")) {
         result = settings();
+        result.annotations["workers/tag"] = state.versionTag;
+        result.annotations["workers/message"] =
+          state.version === INITIAL_VERSION ? "previous-release" : RELEASE;
         if (state.drift) result.observability.enabled = false;
         if (state.wrongNamespace) result.bindings[1].namespace_id = "wrong";
       } else if (u.pathname.endsWith("/deployments"))
@@ -392,7 +399,9 @@ async function fixture(fn) {
     fetcher,
     sourceValidator: async () => {},
     wait: async () => {},
-    publisher: async (release) => {
+    publisher: async (...args) => {
+      const release = args[0];
+      assert.equal(args[6], state.versionTag);
       assert.equal(release, RELEASE);
       state.publishes++;
       state.version = VERSION;
@@ -592,10 +601,12 @@ test("publisher validates private runtime config locally, rechecks immediately b
     assert.ok(effective.assets.directory.startsWith("/"));
     assert.equal(effective.account_id, ACCOUNT);
     calls++;
+    assert.equal(args[args.indexOf("--tag") + 1], "retained-version-tag");
     if (args.includes("--dry-run"))
       return { stdout: "bundle validated", stderr: "" };
     assert.ok(checked);
     assert.equal(args[args.indexOf("--message") + 1], RELEASE);
+    assert.equal(args[args.indexOf("--tag") + 1], "retained-version-tag");
     assert.ok(args.includes("--keep-vars"));
     assert.equal(options.env.HTTPS_PROXY, "http://proxy.invalid");
     await writeFile(
@@ -618,6 +629,7 @@ test("publisher validates private runtime config locally, rechecks immediately b
     async () => {
       checked = true;
     },
+    "retained-version-tag",
   );
   assert.equal(version, VERSION);
   assert.equal(calls, 2);
@@ -634,4 +646,84 @@ test("publisher validates private runtime config locally, rechecks immediately b
     /cannot preserve/,
   );
   assert.equal(rejectedCalls, 1);
+});
+
+test("version annotations do not masquerade as runtime changes; all actual settings and tag drift remain protected", () => {
+  const raw = settings();
+  assert.doesNotThrow(() => runtimeOverlay(raw));
+  assert.ok(!("annotations" in runtimeOverlay(raw)));
+  for (const annotations of [
+    {},
+    undefined,
+    { "workers/message": RELEASE },
+    {
+      "workers/message": RELEASE,
+      "workers/commit_sha": RELEASE,
+      "workers/pull_request_number": "76",
+      "workers/pull_request_title": "Reviewed release",
+      "workers/pull_request_url":
+        "https://github.com/kasstmaster/events/pull/76",
+      "workers/repository_url": "https://github.com/kasstmaster/events",
+    },
+  ])
+    assert.equal(
+      runtimeSettingsFingerprint({ ...raw, annotations }),
+      runtimeSettingsFingerprint(raw),
+    );
+  const tagged = {
+    ...raw,
+    annotations: { "workers/tag": "retained-version-tag" },
+  };
+  assert.notEqual(
+    runtimeSettingsFingerprint(tagged),
+    runtimeSettingsFingerprint(raw),
+  );
+  assert.notEqual(
+    runtimeSettingsFingerprint({ ...raw, placement: { mode: "smart" } }),
+    runtimeSettingsFingerprint(raw),
+  );
+  assert.notEqual(
+    runtimeSettingsFingerprint({ ...raw, unexpected_runtime: true }),
+    runtimeSettingsFingerprint(raw),
+  );
+  assert.notEqual(
+    runtimeSettingsFingerprint({
+      ...raw,
+      bindings: [
+        ...raw.bindings,
+        { type: "plain_text", name: "OTHER", text: "private-value" },
+      ],
+    }),
+    runtimeSettingsFingerprint(raw),
+  );
+  assert.notEqual(
+    runtimeSettingsFingerprint({
+      ...raw,
+      compatibility_flags: ["nodejs_compat"],
+    }),
+    runtimeSettingsFingerprint(raw),
+  );
+});
+test("malformed or unknown annotation metadata stops with no secret-bearing diagnostics", () => {
+  for (const annotations of [
+    null,
+    [],
+    "private-value",
+    { "custom/secret": "private-value" },
+    { "workers/tag": { secret: "private-value" } },
+    { "workers/tag": "x".repeat(101) },
+    { "workers/tag": "é".repeat(51) },
+  ]) {
+    assert.throws(
+      () => versionAnnotations({ annotations }),
+      (e) =>
+        e.stage === "settings-schema" &&
+        !e.message.includes("private-value") &&
+        !e.message.includes("custom/secret"),
+    );
+    assert.throws(
+      () => runtimeOverlay({ ...settings(), annotations }),
+      /Unsupported version annotations/,
+    );
+  }
 });

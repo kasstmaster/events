@@ -49,7 +49,7 @@ A newer owner merge may arrive during an active release. It waits for the same l
 
 ## Production preflight and checkpoint
 
-Two stable read-only snapshots verify the active single 100% version, SQLite migration lineage, exact binding, runtime settings, variable fingerprints, schedules, route/custom-domain inventories, disabled preview URLs and closed setup. The complete settings object is hashed without serializing private values, so otherwise unknown runtime settings are protected too. No provider response bodies, Authorization headers, secret values or raw exception diagnostics are emitted.
+Two stable read-only snapshots verify the active single 100% version, SQLite migration lineage, exact binding, runtime settings, variable fingerprints, schedules, route/custom-domain inventories, disabled preview URLs and closed setup. The complete runtime settings object is hashed without serializing private values, so otherwise unknown runtime settings are protected too. Provider-defined version annotations are validated separately: message/commit/PR/source/alias metadata describe a release and are excluded from runtime-drift comparison; the existing optional version tag remains hashed and is explicitly carried to Wrangler with `--tag`. The new exact merged SHA remains mandatory in `--message` and is independently verified against the active Worker version. Unknown annotation keys or invalid types/lengths stop before publishing. No provider response bodies, Authorization headers, secret values or raw exception diagnostics are emitted.
 
 The timestamp checkpoint identifies the existing SQLite object and recovery version. It is an **approximate SQLite PITR timestamp**, not an exact bookmark or exported database backup, and no restore is performed. Its nominal PITR window is 30 days; the artifact is retained for 29 days.
 
@@ -89,3 +89,27 @@ line. Use that evidence and the provider/Wrangler schema to implement and test a
 explicit preservation mapping before approving another release. Local Cloudflare
 credentials are separate from GitHub credentials; never rotate either to resolve
 an unsupported response schema.
+
+## Resolved annotations compatibility failure
+
+The read-only production inventory returned `annotations:object` alongside the
+existing runtime fields. The previous script rejected that documented field,
+then would have incorrectly compared the old and new deployment messages as a
+runtime change. `versionAnnotations` now validates only Cloudflare's documented
+version annotation keys and byte limits; `runtimeSettingsFingerprint` separates
+that version metadata from runtime settings while preserving the user tag. No
+annotation data is printed, copied to an unsupported Wrangler configuration key,
+or used to bypass exact-commit verification. Unknown annotation fields remain a
+hard stop.
+
+Reference: [Cloudflare version annotation schema](https://github.com/cloudflare/cloudflare-typescript/blob/main/src/resources/workers/scripts/versions.ts),
+`Version.Metadata.Annotations`, and the installed pinned Wrangler 4.156.0 upload
+implementation (`workers/message` / `workers/tag`). The preservation tests cover
+message changes through checkpoint, publish and verification; tag drift; actual
+runtime/binding drift; unknown fields; malformed annotations; and secret-safe
+diagnostics. The local real Wrangler dry run checks the tag/message options
+without publishing. Application files, page styles, Worker configuration,
+Durable Object identity and the separate manual recovery workflow are unchanged.
+
+The fix must be reviewed and merged through its own PR. Rerunning a failed run
+for an older merged SHA executes the older script and cannot apply this fix.
