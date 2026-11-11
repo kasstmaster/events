@@ -232,6 +232,55 @@ export function validateForward(current, release, root = ".") {
 }
 // Wrangler deploy otherwise defaults absent observability to disabled. Preserve
 // existing writable runtime settings explicitly in a private temporary config.
+// Print only fixed vendor field names and primitive type labels. Never reflect
+// arbitrary provider keys, binding names, nested objects or setting values.
+export function runtimeSchemaSummary(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw))
+    return "invalid-object";
+  const vocabulary = new Set([
+    "bindings",
+    "compatibility_date",
+    "compatibility_flags",
+    "migration_tag",
+    "migrations",
+    "usage_model",
+    "tags",
+    "observability",
+    "logpush",
+    "tail_consumers",
+    "limits",
+    "placement",
+    "cache",
+    "streaming_tail_consumers",
+    "assets",
+    "id",
+    "etag",
+    "created_on",
+    "modified_on",
+    "last_deployed_from",
+    "deployment_id",
+    "handlers",
+    "named_handlers",
+    "has_assets",
+    "startup_time_ms",
+  ]);
+  const fields = Object.keys(raw).sort();
+  return (
+    fields
+      .slice(0, 64)
+      .map((key) => {
+        const value = raw[key];
+        const type =
+          value === null
+            ? "null"
+            : Array.isArray(value)
+              ? "array"
+              : typeof value;
+        return `${vocabulary.has(key) ? key : "[unrecognized-field]"}:${type}`;
+      })
+      .join(", ") + (fields.length > 64 ? ", [additional-fields]" : "")
+  );
+}
 export function runtimeOverlay(raw) {
   const passthrough = [
     "observability",
@@ -256,7 +305,7 @@ export function runtimeOverlay(raw) {
       [...passthrough, ...metadata].includes(key),
     ),
     "settings-schema",
-    "Unknown live runtime metadata cannot be safely preserved; stop for infrastructure review.",
+    `Unknown live runtime metadata cannot be safely preserved; stop for infrastructure review. Schema (names/types only): ${runtimeSchemaSummary(raw)}`,
   );
   must(
     !raw.tags ||

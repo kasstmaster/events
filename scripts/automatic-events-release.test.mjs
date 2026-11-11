@@ -556,6 +556,17 @@ test("runtime overlay preserves observability and optional settings but rejects 
     () => runtimeOverlay({ ...raw, unknown_runtime_field: true }),
     /Unknown live/,
   );
+  for (const field of ["assets", "id", "synthetic-secret-field"]) {
+    assert.throws(
+      () => runtimeOverlay({ ...raw, [field]: "synthetic-private-value" }),
+      (error) =>
+        error.stage === "settings-schema" &&
+        error.message.includes("Schema (names/types only)") &&
+        !error.message.includes("synthetic-private-value") &&
+        !error.message.includes("synthetic-secret-field"),
+    );
+  }
+
   assert.throws(
     () =>
       runtimeOverlay({

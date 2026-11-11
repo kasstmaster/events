@@ -72,3 +72,20 @@ The existing manual workflow/helper/tests and their known-good application pin r
 Non-production validation passed: 141 application/API tests, all 11 phone/desktop browser suites, 2 Cloudflare runtime checks, 22 automatic/manual/metadata safety tests, 6 AnyList transport/reconciliation tests, formatting, YAML trigger/dependency/credential checks, and the local events Worker dry run. A second real local bundle validated a private effective config with synthetic observability/placement/limits/cache settings; its production command was intercepted and never executed. Guard tests also verify that unknown runtime fields stop before publishing and that raw output/private temporary files are discarded.
 
 Application files, public assets, dependencies, Worker configurations and the manual release workflow/helper/tests remain byte-for-byte unchanged from merged main. No PR was created, no live release was triggered, and no Cloudflare settings, stored data or credentials were changed to test automation. Live credential permissions, provider metadata shape and production preflight remain unverified by this non-production task; the first owner merge must pass those real gates before Wrangler can publish. A denied/unrecognized inventory is a safe stop requiring review, not evidence to rotate a working credential.
+
+## Settings-schema investigation without production changes
+
+When preflight stops at `settings-schema`, do not relax the allowlist or retry a
+production run to discover the response. The read-only **Check Cloudflare
+authentication (read only)** workflow can run against a pushed diagnostic branch
+using its existing GitHub-held credential. Its settings read reports only fixed
+vendor field names and types. Arbitrary keys, nested settings, bindings and all
+values remain withheld. Unknown fields still stop production; this diagnostic
+adds no accepted settings and no publish operation.
+
+Run it from Actions → Check Cloudflare authentication (read only) → Run workflow,
+select the diagnostic branch, then inspect the `settings-schema (names/types only)`
+line. Use that evidence and the provider/Wrangler schema to implement and test an
+explicit preservation mapping before approving another release. Local Cloudflare
+credentials are separate from GitHub credentials; never rotate either to resolve
+an unsupported response schema.
