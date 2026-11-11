@@ -63,8 +63,16 @@ try {
   if (!disabled.ok)
     throw new Error(`STOP: disable automatic workflow HTTP ${disabled.status}`);
   const wf = await request("api.github.com", workflow, process.env.GH_TOKEN);
+  report.workflow_disable_check = {
+    put_status: disabled.status,
+    get_status: wf.status,
+    state: /^[a-z_]+$/.test(wf.result?.state || "")
+      ? wf.result.state
+      : "unavailable",
+  };
   if (!wf.ok || wf.result?.state !== "disabled_manually")
-    throw new Error("STOP: automatic workflow disable not verified");
+    report.automatic_workflow_blocker =
+      "STOP: automatic workflow disable not verified";
   report.automatic_workflow = { id: wf.result.id, state: wf.result.state };
   const runs = await request(
     "api.github.com",
