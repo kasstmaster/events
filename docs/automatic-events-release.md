@@ -199,3 +199,20 @@ preservation. The real pinned Wrangler dry run must also pass with the normalize
 empty-response configuration; tests never upload or change production settings.
 Run the read-only workflow on this fix branch before owner merge to confirm the
 actual live-settings build now passes.
+
+## Recovery artifact metadata convergence
+
+Run `43119366008` finalized recovery artifact `13899827473` successfully, but
+immediate API verification stopped before Wrangler ran. A later read returned
+the exact recorded ID, expected name and SHA-256 digest. GitHub artifact records
+or their digest can become visible after upload finalization.
+
+Wait for at most nine read-only inventory checks with three-second intervals
+(24 seconds of waiting) when that exact artifact or its digest is absent. Keep
+publishing blocked throughout. Validate the upload receipt before waiting;
+wrong name/digest, expiry, zero size, malformed inventory or denied/API failures
+stop immediately. Never retry uploads or publishing. Missing metadata after
+the bound remains a hard failure. All freshness, latest-main, production-state,
+source, checkpoint and pre-publish checks still apply after the read-only wait.
+Regression tests cover delayed record/digest visibility, a single subsequent
+publish, timeout, metadata mismatches and permission failures.
