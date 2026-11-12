@@ -165,8 +165,9 @@ SMS. No schema/configuration/production migration is needed for these projection
 This section supersedes older selection-toolbar and saved-RSVP uninvite wording.
 Show host contact checkboxes by default; never require Select Contacts. Keep
 Invite/Uninvite in bottom navigation, disabled without a selection. The shared
-top toolbar replaces the Address Book title with a multi-event dropdown while
-an action is active, with Confirm/Cancel next to it. Keep live updates enabled
+top toolbar replaces the Address Book title with a Select an Event button while
+an action is active. It opens a centered shared modal with multi-event checkboxes
+and Confirm/Cancel. Keep live updates enabled
 when no contacts are selected and preserve in-progress editors/drafts.
 
 Hosts and guests share Address Book container/explanation components, while

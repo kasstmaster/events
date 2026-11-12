@@ -224,6 +224,7 @@ export const copyCatalog = [
   "Complete this occurrence",
   "Completion history",
   "Completion responsibility",
+  "Confirm",
   "Confirm host email",
   "Confirm new password",
   "Confirm old administrator email",

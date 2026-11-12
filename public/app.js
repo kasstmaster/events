@@ -1139,12 +1139,13 @@ function render(target = $("#app"), example = false) {
   )
     applyLayoutDOM(event, role, target);
 }
-function modal(title, content, form = "", save = C("Save")) {
+function modal(title, content, form = "", save = C("Save"), popup = false) {
   const dialog = $("#editor");
   const inline =
-    ((state.session?.role === "admin" || state.adminMode) &&
+    !popup &&
+    (((state.session?.role === "admin" || state.adminMode) &&
       form !== "delete-host") ||
-    state.settingsOpen;
+      state.settingsOpen);
   if (inline) state.managementKind = state.nextManagementKind || form;
   state.nextManagementKind = null;
   if (inline && state.view !== "management") {
@@ -1153,6 +1154,7 @@ function modal(title, content, form = "", save = C("Save")) {
     render();
   }
   dialog.classList.toggle("inline-management", !!inline);
+  dialog.classList.toggle("centered-popup", popup);
   dialog.setAttribute("role", inline ? "region" : "dialog");
   dialog.innerHTML = ui`<div class="dialog-head"><h2 id="dialog-title">${escape(title)}</h2>${button("close", "✕", 'aria-label="Close editor"', "quiet")}</div>${form ? ui`<form data-form="${form}">` : ""}<div class="dialog-body">${content}<p class="form-error" role="alert"></p></div>${form && form !== "ui-settings" ? ui`<div class="dialog-foot">${button("close", H("Cancel"))}<button>${save}</button></div>` : ""}${form ? "</form>" : ""}`;
   if (inline) {
@@ -1167,7 +1169,7 @@ const closeModal = () => {
   dialog.close();
   document.body.append(dialog);
   dialog.replaceChildren();
-  dialog.classList.remove("inline-management");
+  dialog.classList.remove("inline-management", "centered-popup");
   state.actionEvent = null;
   if (inline) {
     state.view = state.managementReturn || "home";
@@ -1380,7 +1382,21 @@ function householdNotes(a) {
     : "";
 }
 function contactEventPicker() {
-  return ui`<details class="browse-menu contacts-event-picker"><summary aria-label="${H("Select an Event")}">${C("Select an Event")}</summary><div role="menu" aria-label="${H("Select an Event")}">${state.data.events.map((event) => ui`<label class="check"><input type="checkbox" data-contact-event="${escape(event.id)}" aria-label="${H("Event")} ${escape(event.title)}" ${contactEventSelection.has(event.id) ? "checked" : ""} ${contactInviteSaving ? "disabled" : ""}>${escape(event.title)}</label>`).join("") || ui`<p>${C("Create an event from Home first.")}</p>`}</div></details>`;
+  return button(
+    "contacts-select-event",
+    H("Select an Event"),
+    "",
+    "contacts-event-picker",
+  );
+}
+function openContactEventPicker() {
+  modal(
+    C("Select an Event"),
+    ui`<div class="contact-event-options">${state.data.events.map((event) => ui`<label class="check"><input type="checkbox" data-contact-event="${escape(event.id)}" aria-label="${H("Event")} ${escape(event.title)}" ${contactEventSelection.has(event.id) ? "checked" : ""}>${escape(event.title)}</label>`).join("") || ui`<p>${C("Create an event from Home first.")}</p>`}</div><p role="alert">${escape(contactInviteError)}</p><div class="row">${button("contacts-invite-apply", H("Confirm"), !contactEventSelection.size ? "disabled" : "")}${button("contacts-invite-cancel", H("Cancel"))}</div>`,
+    "",
+    C("Save"),
+    true,
+  );
 }
 function contactsPage() {
   const guests = state.data.guests.filter((g) =>
@@ -1402,7 +1418,7 @@ function contactsPage() {
   const label = (key) =>
     grouped.find((group) => group.key === key)?.label ||
     String(C("No shared address"));
-  return ui`<div class="browse-shell address-book-shell">${topbar({ title: C("Address Book"), titleControl: contactInviteEventsOpen ? contactEventPicker() : "", back: "home", search: "contacts-search", plus: contactInviteEventsOpen ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: [], extra: contactInviteEventsOpen ? tool("contacts-invite-apply", "Confirm", "", "save", !contactEventSelection.size || contactInviteSaving ? "disabled" : "") + tool("contacts-invite-cancel", "Cancel", "", "back", contactInviteSaving ? "disabled" : "") : "" })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search Address Book") : ""}<div class="address-book-content"><section class="panel address-book-panel">${addressBookDescription(true)}${contactsInviteTools()}${!contactInviteMode && state.session.role === "host" ? button("personal-contacts", H("Linked households")) : ""}<ul class="browse-rows" ${contactInviteSaving ? "inert" : ""}>${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
+  return ui`<div class="browse-shell address-book-shell">${topbar({ title: C("Address Book"), titleControl: contactInviteEventsOpen ? contactEventPicker() : "", back: "home", search: "contacts-search", plus: contactInviteEventsOpen ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: [], extra: "" })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search Address Book") : ""}<div class="address-book-content"><section class="panel address-book-panel">${addressBookDescription(true)}${contactsInviteTools()}${!contactInviteMode && state.session.role === "host" ? button("personal-contacts", H("Linked households")) : ""}<ul class="browse-rows" ${contactInviteSaving ? "inert" : ""}>${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
     entries
       .map(
         ([key, rows]) =>
@@ -2433,8 +2449,13 @@ document.addEventListener("click", async (event) => {
       }
       if (contactInviteSaving) return;
       if (action === "contacts-invite-cancel") {
+        closeModal();
         resetContactInvites();
         render();
+        return;
+      }
+      if (action === "contacts-select-event") {
+        if (contactInviteEventsOpen) openContactEventPicker();
         return;
       }
       if (action === "contacts-select") {
@@ -2484,6 +2505,7 @@ document.addEventListener("click", async (event) => {
           )
         )
           return;
+        closeModal();
         contactInviteSaving = true;
         contactInviteError = "";
         render();
@@ -2530,6 +2552,8 @@ document.addEventListener("click", async (event) => {
         } finally {
           contactInviteSaving = false;
           render();
+          if (contactInviteError && contactInviteEventsOpen)
+            openContactEventPicker();
         }
         return;
       }
@@ -3281,7 +3305,7 @@ function measureChrome() {
       Math.max(left, right) + 8 + "px",
     );
     const heading = primary.querySelector(".browse-heading"),
-      title = heading?.querySelector("h1, .contacts-event-picker > summary");
+      title = heading?.querySelector("h1, .contacts-event-picker");
     primary.classList.toggle(
       "crowded-top",
       !!title && rect.width - (Math.max(left, right) + 8) * 2 < 100,
