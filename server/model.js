@@ -663,6 +663,7 @@ export class Store {
       slug: record.slug,
       name: record.name,
       design: record.design,
+      appearanceMode: record.appearanceMode || "",
       logo: record.logo || "",
       ui: record.ui || {},
     };

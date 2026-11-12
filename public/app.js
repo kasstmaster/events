@@ -638,7 +638,7 @@ function eventInformation(
 }
 function eventPage(event) {
   const own = event.response || { version: 0, attendance: {}, claims: {} };
-  const content = ui`<section class="event-hero">${event.icon ? ui`<img class="event-icon" data-event-edit="iconUpload" src="${escape(event.icon)}" alt="Event artwork">` : ""}<h1 data-event-edit="title">${escape(event.title)}</h1><p class="event-details" data-event-edit="description">${escape(event.description)}</p>${eventInformation(event)}</section><div class="row no-print" data-event-actions>${button("rsvp", C("RSVP"), "", "")}${(event.registries || []).length ? ui`<div class="registry-buttons" aria-label="Gift registries">${event.registries.map((r) => ui`<a class="button registry-button" href="${escape(r.url)}" target="_blank" rel="noopener noreferrer">${escape(r.title)}</a>`).join("")}</div>` : ""}${event.uploadURL ? ui`<a class="button secondary" data-event-edit="uploadURL" href="${escape(event.uploadURL)}" target="_blank" rel="noopener noreferrer">Upload Photos & Videos</a>` : ""}</div><div class="grid">${(event.information || []).some((run) => run.text.trim()) ? ui`<section class="panel" data-event-section="additional-information"><h2>Information</h2><div class="event-additional-content" data-event-edit="information" data-host-content>${renderInformation(event.information)}</div></section>` : ""}${event.menu.length ? ui`<section class="panel" data-event-section="menus"><p class="eyebrow">Something to share</p><h2>At the table</h2>${event.menu.length ? event.menu.map((item) => ui`<div class="menu-item" data-event-edit="table" data-menu-item="${escape(item.id)}"><div><strong>${escape(item.name)}</strong><div class="muted small">${item.kind === "drink" ? C("Drinks") : C("Potluck")}</div></div><span class="pill">${Math.max(0, item.quantity - (item.claimed || 0))} needed</span></div>`).join("") : M('<p class="muted">Just bring yourself. Your host hasn’t added any menu items yet.</p>')}</section>` : ""}${
+  const content = ui`<section class="event-hero">${event.icon ? ui`<img class="event-icon" data-event-edit="iconUpload" src="${escape(event.icon)}" alt="Event artwork">` : ""}<h1 data-event-edit="title">${escape(event.title)}</h1><p class="event-details" data-event-edit="description">${escape(event.description)}</p>${eventInformation(event)}</section><div class="row no-print" data-event-actions>${button("rsvp", C("RSVP"), "", "")}${(event.registries || []).length ? ui`<div class="registry-buttons" aria-label="Gift registries">${event.registries.map((r) => ui`<a class="button registry-button" href="${escape(r.url)}" target="_blank" rel="noopener noreferrer">${escape(r.title)}</a>`).join("")}</div>` : ""}${event.uploadURL ? ui`<a class="button" data-event-edit="uploadURL" href="${escape(event.uploadURL)}" target="_blank" rel="noopener noreferrer">Upload Photos & Videos</a>` : ""}${event.viewURL ? ui`<a class="button" data-event-edit="viewURL" href="${escape(event.viewURL)}" target="_blank" rel="noopener noreferrer">View Photos & Videos</a>` : ""}</div><div class="grid">${(event.information || []).some((run) => run.text.trim()) ? ui`<section class="panel" data-event-section="additional-information"><h2>Information</h2><div class="event-additional-content" data-event-edit="information" data-host-content>${renderInformation(event.information)}</div></section>` : ""}${event.menu.length ? ui`<section class="panel" data-event-section="menus"><p class="eyebrow">Something to share</p><h2>At the table</h2>${event.menu.length ? event.menu.map((item) => ui`<div class="menu-item" data-event-edit="table" data-menu-item="${escape(item.id)}"><div><strong>${escape(item.name)}</strong><div class="muted small">${item.kind === "drink" ? C("Drinks") : C("Potluck")}</div></div><span class="pill">${Math.max(0, item.quantity - (item.claimed || 0))} needed</span></div>`).join("") : M('<p class="muted">Just bring yourself. Your host hasn’t added any menu items yet.</p>')}</section>` : ""}${
     own
       ? ui`<section class="panel" data-event-section="personal"><p class="eyebrow">Your plans</p><h2>Your RSVP & items</h2>${
           own.version && !own.uninvited
@@ -941,7 +941,12 @@ function render(target = $("#app"), example = false) {
   const embeddedTop = target.querySelector("#main .app-topbar");
   if (embeddedTop)
     target.querySelector("#top-navigation").replaceChildren(embeddedTop);
-  if (embeddedTop && state.settingsOpen && role === "host")
+  if (
+    embeddedTop &&
+    state.settingsOpen &&
+    role === "host" &&
+    state.view !== "personal-family"
+  )
     embeddedTop
       .querySelector(".browse-top-actions")
       ?.insertAdjacentHTML(
@@ -1097,6 +1102,21 @@ function render(target = $("#app"), example = false) {
           card,
         );
     }
+  if (
+    state.settingsOpen ||
+    state.view === "settings" ||
+    state.view === "personal-family" ||
+    state.view === "personal-account"
+  ) {
+    const household = state.data?.household || state.publicHousehold;
+    const settingsMode =
+      household?.appearanceMode === "light" ? "light" : "dark";
+    const settingsUI = resolveUI(state.platformUI, {
+      design: appearancePreset(settingsMode),
+    });
+    applyDesign(settingsUI.design, designTarget);
+    state.activeUI = settingsUI;
+  }
   applyPersonalLayouts(target, active);
   const layoutEvent = settingsAppearanceEvent();
   if (layoutEvent)
@@ -1139,12 +1159,13 @@ function render(target = $("#app"), example = false) {
   )
     applyLayoutDOM(event, role, target);
 }
-function modal(title, content, form = "", save = C("Save")) {
+function modal(title, content, form = "", save = C("Save"), popup = false) {
   const dialog = $("#editor");
   const inline =
-    ((state.session?.role === "admin" || state.adminMode) &&
+    !popup &&
+    (((state.session?.role === "admin" || state.adminMode) &&
       form !== "delete-host") ||
-    state.settingsOpen;
+      state.settingsOpen);
   if (inline) state.managementKind = state.nextManagementKind || form;
   state.nextManagementKind = null;
   if (inline && state.view !== "management") {
@@ -1153,6 +1174,7 @@ function modal(title, content, form = "", save = C("Save")) {
     render();
   }
   dialog.classList.toggle("inline-management", !!inline);
+  dialog.classList.toggle("centered-popup", popup);
   dialog.setAttribute("role", inline ? "region" : "dialog");
   dialog.innerHTML = ui`<div class="dialog-head"><h2 id="dialog-title">${escape(title)}</h2>${button("close", "✕", 'aria-label="Close editor"', "quiet")}</div>${form ? ui`<form data-form="${form}">` : ""}<div class="dialog-body">${content}<p class="form-error" role="alert"></p></div>${form && form !== "ui-settings" ? ui`<div class="dialog-foot">${button("close", H("Cancel"))}<button>${save}</button></div>` : ""}${form ? "</form>" : ""}`;
   if (inline) {
@@ -1167,7 +1189,7 @@ const closeModal = () => {
   dialog.close();
   document.body.append(dialog);
   dialog.replaceChildren();
-  dialog.classList.remove("inline-management");
+  dialog.classList.remove("inline-management", "centered-popup");
   state.actionEvent = null;
   if (inline) {
     state.view = state.managementReturn || "home";
@@ -1189,7 +1211,7 @@ function familyLogoChoice() {
 }
 function householdDetailsFields() {
   const household = state.data.household;
-  return ui`${field(H("Family household name"), "householdName", household.name, "text", 'readonly maxlength="100"')}<p class="small muted">Only the administrator can change the household name.</p>${household.logo ? ui`<img class="family-logo-preview" src="${escape(household.logo)}" alt="Current family logo">` : ""}${field(H("Family logo / icon"), "familyLogo", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<p>You can ask Kassandra to create a family logo for you. This appears when guests choose an event; event artwork is separate.</p><label class="check"><input type="checkbox" name="removeLogo">Remove family logo</label>${field(H("Household IANA timezone"), "householdTimezone", household.timezone || "UTC")}${personal.familyFields()}`;
+  return ui`${field(H("Family household name"), "householdName", household.name, "text", 'readonly maxlength="100"')}<p class="small muted">Only the administrator can change the household name.</p>${household.logo ? ui`<img class="family-logo-preview" src="${escape(household.logo)}" alt="Current family logo">` : ""}${field(H("Family logo / icon"), "familyLogo", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<p>You can ask Kassandra to create a family logo for you. This appears when guests choose an event; event artwork is separate.</p><label class="check"><input type="checkbox" name="removeLogo">Remove family logo</label>${field(H("Household IANA timezone"), "householdTimezone", household.timezone || "UTC")}`;
 }
 function householdDetails() {
   modal(C("Details"), householdDetailsFields(), "household");
@@ -1380,7 +1402,21 @@ function householdNotes(a) {
     : "";
 }
 function contactEventPicker() {
-  return ui`<details class="browse-menu contacts-event-picker"><summary aria-label="${H("Select an Event")}">${C("Select an Event")}</summary><div role="menu" aria-label="${H("Select an Event")}">${state.data.events.map((event) => ui`<label class="check"><input type="checkbox" data-contact-event="${escape(event.id)}" aria-label="${H("Event")} ${escape(event.title)}" ${contactEventSelection.has(event.id) ? "checked" : ""} ${contactInviteSaving ? "disabled" : ""}>${escape(event.title)}</label>`).join("") || ui`<p>${C("Create an event from Home first.")}</p>`}</div></details>`;
+  return button(
+    "contacts-select-event",
+    H("Select an Event"),
+    "",
+    "contacts-event-picker",
+  );
+}
+function openContactEventPicker() {
+  modal(
+    C("Select an Event"),
+    ui`<div class="contact-event-options">${state.data.events.map((event) => ui`<label class="check"><input type="checkbox" data-contact-event="${escape(event.id)}" aria-label="${H("Event")} ${escape(event.title)}" ${contactEventSelection.has(event.id) ? "checked" : ""}>${escape(event.title)}</label>`).join("") || ui`<p>${C("Create an event from Home first.")}</p>`}</div><p role="alert">${escape(contactInviteError)}</p><div class="row">${button("contacts-invite-apply", H("Confirm"), !contactEventSelection.size ? "disabled" : "")}${button("contacts-invite-cancel", H("Cancel"))}</div>`,
+    "",
+    C("Save"),
+    true,
+  );
 }
 function contactsPage() {
   const guests = state.data.guests.filter((g) =>
@@ -1402,7 +1438,7 @@ function contactsPage() {
   const label = (key) =>
     grouped.find((group) => group.key === key)?.label ||
     String(C("No shared address"));
-  return ui`<div class="browse-shell address-book-shell">${topbar({ title: C("Address Book"), titleControl: contactInviteEventsOpen ? contactEventPicker() : "", back: "home", search: "contacts-search", plus: contactInviteEventsOpen ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: [], extra: contactInviteEventsOpen ? tool("contacts-invite-apply", "Confirm", "", "save", !contactEventSelection.size || contactInviteSaving ? "disabled" : "") + tool("contacts-invite-cancel", "Cancel", "", "back", contactInviteSaving ? "disabled" : "") : "" })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search Address Book") : ""}<div class="address-book-content"><section class="panel address-book-panel">${addressBookDescription(true)}${contactsInviteTools()}${!contactInviteMode && state.session.role === "host" ? button("personal-contacts", H("Linked households")) : ""}<ul class="browse-rows" ${contactInviteSaving ? "inert" : ""}>${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
+  return ui`<div class="browse-shell address-book-shell">${topbar({ title: C("Address Book"), titleControl: contactInviteEventsOpen ? contactEventPicker() : "", back: "home", search: "contacts-search", plus: contactInviteEventsOpen ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: [], extra: "" })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search Address Book") : ""}<div class="address-book-content"><section class="panel address-book-panel">${addressBookDescription(true)}${contactsInviteTools()}${!contactInviteMode && state.session.role === "host" ? button("personal-contacts", H("Linked households")) : ""}<ul class="browse-rows" ${contactInviteSaving ? "inert" : ""}>${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
     entries
       .map(
         ([key, rows]) =>
@@ -1577,7 +1613,7 @@ function informationEditor(value = []) {
     )}</div><div data-information-links hidden><label>${C("Link URL or email")}<input type="text" maxlength="2048" aria-label="${H("Link URL or email")}"></label><div class="row"><button type="button" data-information-action="apply-link">${C("Apply link")}</button><button type="button" data-information-action="cancel-link">${C("Cancel link")}</button></div></div><div data-information-popups hidden><label>${C("Pop-up text")}<textarea maxlength="3000" rows="5" aria-label="${H("Pop-up text")}"></textarea></label><div class="row"><button type="button" data-information-action="apply-popup">${C("Apply pop-up")}</button><button type="button" data-information-action="remove-popup">${C("Remove pop-up")}</button><button type="button" data-information-action="cancel-popup">${C("Cancel pop-up")}</button></div></div><div class="information-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${H("Information text")}" data-information-input data-host-content>${renderInformation(value)}</div><p class="information-error" role="alert" data-information-error></p></fieldset>`;
 }
 function eventDetailsFields(e, existing = true) {
-  return ui`${field(H("Event title"), "title", e.title, "text", 'required maxlength="160" placeholder="Sunday around the table"')}${area(H("Description"), "description", e.description, 'maxlength="5000"')}${informationEditor(e.information)}<div class="form-grid">${field(H("Date"), "date", e.date, "date")}${field(H("Time · numbers or words"), "time", e.time, "text", 'maxlength="100" placeholder="Two O’Clock in the Afternoon"')}${field(H("RSVP deadline"), "deadline", e.deadline, "date")}</div>${area(H("Event address"), "eventAddress", e.address, 'maxlength="500"')}${field(H("Photo / video upload link (optional)"), "uploadURL", e.uploadURL || "", "url", 'maxlength="2048" placeholder="https://…"')}<p class="small muted">Use Dropbox File Requests, Google Drive, OneDrive, or another sharing service. Configure upload permissions at that destination. Clear the link to remove the guest upload button.</p>${field(H("Event artwork / image"), "iconUpload", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input type="checkbox" name="removeIcon">Remove current image</label>${select(H("Invitation template"), "template", [["", C("Simple invitation")], ...state.templates.map((t) => [t.id, t.name])], e.template || "")}<fieldset><legend>Gift registries · optional</legend><p class="small muted">Guest buttons appear directly below RSVP, in this order.</p><div id="registry-rows">${(e.registries || []).map(registryRow).join("")}</div>${button("add-registry", H("＋ Add registry"))}</fieldset><fieldset><legend>Potluck & drinks</legend><label class="check"><input type="checkbox" name="customItemsEnabled" ${e.customItemsEnabled ? "checked" : ""}>Allow guests to enter custom menu items</label><label class="check"><input type="checkbox" name="saveCustomItems" ${e.saveCustomItems ? "checked" : ""}>Save custom items to future menus</label><div class="row">${select(H("Copy menu from"), "copyMenu", [["", C("Choose a past event")], ...state.data.events.filter((p) => p.id !== e.id).map((p) => [p.id, p.title])], "")}${button("copy-menu", H("Copy items"))}</div><fieldset><legend>Table templates</legend>${select(H("Table template"), "tableTemplate", [["", C("New table template")], ...(state.data.tableTemplates || []).map((t) => [t.id, t.name])], "")}${field(H("Table template name"), "tableTemplateName", "", "text", 'maxlength="160"')}<div class="row">${button("table-template-apply", H("Apply Table Template"))}${button("table-template-save", H("Save Table Template"))}${button("table-template-delete", H("Delete Table Template"))}</div><p class="small">Applying a template adds items to this draft. Save the event to keep them. Existing menu items and guest claims stay unchanged.</p></fieldset><div id="menu-rows">${e.menu.map(menuRow).join("")}</div>${button("add-menu", H("＋ Add item"))}</fieldset><fieldset><legend>Guests</legend><div data-invitation-values>${e.invited.map((id) => ui`<input type="hidden" name="invited" value="${id}">`).join("")}</div>${button("invite-guests", H("Invite guests"))}</fieldset>${existing ? ui`<hr>${button("delete-event", H("Delete event"), "", "danger")}` : ""}`;
+  return ui`${field(H("Event title"), "title", e.title, "text", 'required maxlength="160" placeholder="Sunday around the table"')}${area(H("Description"), "description", e.description, 'maxlength="5000"')}${informationEditor(e.information)}<div class="form-grid">${field(H("Date"), "date", e.date, "date")}${field(H("Time · numbers or words"), "time", e.time, "text", 'maxlength="100" placeholder="Two O’Clock in the Afternoon"')}${field(H("RSVP deadline"), "deadline", e.deadline, "date")}</div>${area(H("Event address"), "eventAddress", e.address, 'maxlength="500"')}${field(H("Photo / video upload link (optional)"), "uploadURL", e.uploadURL || "", "url", 'maxlength="2048" placeholder="https://…"')}<p class="small muted">Use Dropbox File Requests, Google Drive, OneDrive, or another sharing service. Configure upload permissions at that destination. Clear the link to remove the guest upload button.</p>${field(H("Photo / video viewing link (optional)"), "viewURL", e.viewURL || "", "url", 'maxlength="2048" placeholder="https://…"')}${field(H("Event artwork / image"), "iconUpload", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input type="checkbox" name="removeIcon">Remove current image</label>${select(H("Invitation template"), "template", [["", C("Simple invitation")], ...state.templates.map((t) => [t.id, t.name])], e.template || "")}<fieldset><legend>Gift registries · optional</legend><p class="small muted">Guest buttons appear directly below RSVP, in this order.</p><div id="registry-rows">${(e.registries || []).map(registryRow).join("")}</div>${button("add-registry", H("＋ Add registry"))}</fieldset><fieldset><legend>Potluck & drinks</legend><label class="check"><input type="checkbox" name="customItemsEnabled" ${e.customItemsEnabled ? "checked" : ""}>Allow guests to enter custom menu items</label><label class="check"><input type="checkbox" name="saveCustomItems" ${e.saveCustomItems ? "checked" : ""}>Save custom items to future menus</label><div class="row">${select(H("Copy menu from"), "copyMenu", [["", C("Choose a past event")], ...state.data.events.filter((p) => p.id !== e.id).map((p) => [p.id, p.title])], "")}${button("copy-menu", H("Copy items"))}</div><fieldset><legend>Table templates</legend>${select(H("Table template"), "tableTemplate", [["", C("New table template")], ...(state.data.tableTemplates || []).map((t) => [t.id, t.name])], "")}${field(H("Table template name"), "tableTemplateName", "", "text", 'maxlength="160"')}<div class="row">${button("table-template-apply", H("Apply Table Template"))}${button("table-template-save", H("Save Table Template"))}${button("table-template-delete", H("Delete Table Template"))}</div><p class="small">Applying a template adds items to this draft. Save the event to keep them. Existing menu items and guest claims stay unchanged.</p></fieldset><div id="menu-rows">${e.menu.map(menuRow).join("")}</div>${button("add-menu", H("＋ Add item"))}</fieldset><fieldset><legend>Guests</legend><div data-invitation-values>${e.invited.map((id) => ui`<input type="hidden" name="invited" value="${id}">`).join("")}</div>${button("invite-guests", H("Invite guests"))}</fieldset>${existing ? ui`<hr>${button("delete-event", H("Delete event"), "", "danger")}` : ""}`;
 }
 function eventEditor(existing, focus = "") {
   state.editingEvent = existing || {
@@ -1898,8 +1934,6 @@ async function submit(form) {
             "",
         timezone: value.householdTimezone,
         design: state.data.household.design,
-        personal: personal.collectFamily(form),
-        personalVersion: Number(form.elements.profileVersion?.value),
       },
     });
     await saved("Details saved.");
@@ -1953,6 +1987,7 @@ async function submit(form) {
         customItemsEnabled: data.has("customItemsEnabled"),
         saveCustomItems: data.has("saveCustomItems"),
         uploadURL: value.uploadURL,
+        viewURL: value.viewURL,
         registries: [...form.querySelectorAll(".registry-row")].map((row) => ({
           id: row.dataset.registryId,
           title: row.querySelector("[name=registryTitle]").value,
@@ -2067,7 +2102,9 @@ document.addEventListener("click", (event) => {
   if (
     state.session?.role === "host" &&
     appearance.active() &&
-    event.target.closest("[data-event-edit=uploadURL]")
+    event.target.closest(
+      "[data-event-edit=uploadURL], [data-event-edit=viewURL]",
+    )
   )
     event.preventDefault();
 });
@@ -2430,8 +2467,13 @@ document.addEventListener("click", async (event) => {
       }
       if (contactInviteSaving) return;
       if (action === "contacts-invite-cancel") {
+        closeModal();
         resetContactInvites();
         render();
+        return;
+      }
+      if (action === "contacts-select-event") {
+        if (contactInviteEventsOpen) openContactEventPicker();
         return;
       }
       if (action === "contacts-select") {
@@ -2481,6 +2523,7 @@ document.addEventListener("click", async (event) => {
           )
         )
           return;
+        closeModal();
         contactInviteSaving = true;
         contactInviteError = "";
         render();
@@ -2527,6 +2570,8 @@ document.addEventListener("click", async (event) => {
         } finally {
           contactInviteSaving = false;
           render();
+          if (contactInviteError && contactInviteEventsOpen)
+            openContactEventPicker();
         }
         return;
       }
@@ -3278,7 +3323,7 @@ function measureChrome() {
       Math.max(left, right) + 8 + "px",
     );
     const heading = primary.querySelector(".browse-heading"),
-      title = heading?.querySelector("h1, .contacts-event-picker > summary");
+      title = heading?.querySelector("h1, .contacts-event-picker");
     primary.classList.toggle(
       "crowded-top",
       !!title && rect.width - (Math.max(left, right) + 8) * 2 < 100,
@@ -3480,6 +3525,12 @@ async function startAppearance(scope, globalOptions) {
 const family = familyTools({
   appearanceSettings: appearanceSettingsMarkup,
   householdDetails: inlineHouseholdDetails,
+  openFamilyProfile: async () => {
+    state.familyData = await api("/api/family");
+    state.data.personal = await api("/api/personal");
+    state.view = "personal-family";
+    render();
+  },
   back: previousPage,
   state,
   api,
@@ -3505,6 +3556,7 @@ const accounts = accountControls({
   load,
 });
 const personal = personalTools({
+  signInControls: () => family.signInControls(),
   state,
   api,
   field,
@@ -3659,6 +3711,11 @@ function applyLayoutDOM(event, role, target = $("#app")) {
         rsvp.before(group);
         group.append(rsvp);
         if (registries) group.append(registries);
+        group.append(
+          ...actions.querySelectorAll(
+            "[data-event-edit=uploadURL], [data-event-edit=viewURL]",
+          ),
+        );
       }
     }
     if (actions) {

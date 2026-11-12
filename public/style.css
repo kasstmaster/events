@@ -678,16 +678,8 @@ dialog::backdrop {
   margin-top: 0;
 }
 .registry-button {
-  background: var(--panel);
-  color: var(--heading);
-  font-family: var(--body-font);
-  font-size: var(--text-size);
-  border-color: currentColor;
-  min-width: min(100%, 260px);
   max-width: 100%;
   overflow-wrap: anywhere;
-  min-height: 48px;
-  text-align: center;
 }
 .registry-row {
   padding: 16px 0;
@@ -911,13 +903,7 @@ dialog:has(.card-workspace) {
 .rsvp-stack .registry-buttons {
   margin: 0;
 }
-.registry-button.button {
-  background: var(--panel);
-  color: var(--heading);
-  font-family: var(--button-font);
-  font-size: var(--button-size);
-  border-color: currentColor;
-}
+
 [data-event-actions] {
   justify-content: center;
   margin-bottom: 24px;
@@ -2157,12 +2143,7 @@ body :is(#app, #editor) .event-overview > p.muted {
 .contacts-invite-status {
   margin: 8px 0 0;
 }
-.contacts-event-picker {
-  max-height: 36dvh;
-  overflow: auto;
-  margin-top: 12px;
-  overscroll-behavior: contain;
-}
+
 body #app .contacts-select-event {
   background: #1f7a3f;
   border-color: #1f7a3f;
@@ -2248,7 +2229,9 @@ body.editing-active
   width: 100%;
   flex-basis: 100%;
 }
-.rsvp-stack > [data-action="rsvp"] {
+.rsvp-stack > .button,
+.rsvp-stack > [data-action="rsvp"],
+.rsvp-stack .registry-button {
   width: 100%;
 }
 .household-private-notes {
@@ -3189,13 +3172,20 @@ body #notice {
   grid-row: 2;
 }
 
-/* The multi-event picker uses the shared fixed menu in the toolbar heading. */
-.contacts-event-picker.browse-menu {
-  margin: 0;
-  max-height: none;
-  overflow: visible;
+/* Keep the shared event-selection dialog centered, including on phones. */
+dialog.centered-popup {
+  width: min(520px, calc(100% - 32px));
+  height: auto;
+  max-height: 85dvh;
+  margin: auto;
+  border-radius: 22px;
 }
-.contacts-event-picker label.check {
+.contact-event-options {
+  max-height: 45dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.contact-event-options label.check {
   padding: 8px;
   overflow-wrap: anywhere;
 }

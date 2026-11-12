@@ -369,6 +369,7 @@ function eventInput(input, store, household, existing) {
       input.customItemsEnabled === true && input.saveCustomItems === true,
     notes: text(input.notes ?? existing?.notes ?? "", 20000),
     uploadURL: webURL(input.uploadURL ?? existing?.uploadURL ?? ""),
+    viewURL: webURL(input.viewURL ?? existing?.viewURL ?? ""),
     ui:
       input.appearanceMode === "inherit"
         ? {

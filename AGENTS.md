@@ -165,8 +165,9 @@ SMS. No schema/configuration/production migration is needed for these projection
 This section supersedes older selection-toolbar and saved-RSVP uninvite wording.
 Show host contact checkboxes by default; never require Select Contacts. Keep
 Invite/Uninvite in bottom navigation, disabled without a selection. The shared
-top toolbar replaces the Address Book title with a multi-event dropdown while
-an action is active, with Confirm/Cancel next to it. Keep live updates enabled
+top toolbar replaces the Address Book title with a Select an Event button while
+an action is active. It opens a centered shared modal with multi-event checkboxes
+and Confirm/Cancel. Keep live updates enabled
 when no contacts are selected and preserve in-progress editors/drafts.
 
 Hosts and guests share Address Book container/explanation components, while
@@ -183,3 +184,22 @@ reinvite. Require current event versions, tenant/role/Origin checks and one atom
 transaction across all chosen events. Keep ordinary editor/response safeguards,
 credentials, contacts, household relationships and other events unchanged. No
 messages, live fixtures, production changes, PR creation or merge by Codex.
+
+Event RSVP, registry and photo/video links share one full-width action stack and
+the shared Buttons appearance role. Event Details stores independent optional
+uploadURL/viewURL links using the same safe URL validation and omitted-field
+preservation. Keep View Photos & Videos after Upload Photos & Videos; omit empty
+actions and preserve external-service permissions and event/household isolation.
+
+Family roster editing belongs in Family Members / Family, never duplicated in
+Details. A roster entry does not require sign-in credentials. Optional assigned
+workspace accounts link explicitly to saved roster member IDs, with current
+profile versions, host/tenant checks, child-role restrictions, duplicate-account
+protection and existing password rules. Keep roster RSVP identities stable when
+adding access; existing unmatched workspace accounts remain visible in Family.
+Archiving a linked person disables their workspace account and revokes sessions,
+while retaining records/response history. Never merge accounts by matching names.
+
+All Settings surfaces use standard Light Mode only when the household explicitly
+uses Light Mode, otherwise standard Dark Mode. Never apply custom page palettes,
+images or typography to Settings or overwrite saved household/event formatting.

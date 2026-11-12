@@ -1,3 +1,7 @@
+import {
+  ensurePersonalProfile,
+  registeredMethod,
+} from "./personal-accounts.js";
 import { effectiveUI } from "./features.js";
 import { Buffer } from "node:buffer";
 import { fail, id, text, hashPassword, checkPassword } from "./model.js";
@@ -66,10 +70,22 @@ export function membersView(store, household) {
       disabled: 0,
       version: 1,
     });
-  return members.map((m) => ({
-    ...m,
-    role: m.id === owner ? "owner" : m.role,
-  }));
+  return members.map((m) => {
+    const link = store.get("family-profile-member", m.id, household);
+    const profile =
+      link && store.get("personal-household", link.profile, "platform");
+    const person = profile?.members.find(
+      (p) => p.id === link.member && !p.archived,
+    );
+    return {
+      ...m,
+      name: person
+        ? [person.first, person.last, person.suffix].filter(Boolean).join(" ")
+        : m.name,
+      role: m.id === owner ? "owner" : m.role,
+      profileMember: link?.member || "",
+    };
+  });
 }
 function calendarDate(value, required = false) {
   const date = text(value || "", 10, required);
@@ -346,6 +362,39 @@ export async function familyAPI(ctx) {
     const password = await hashPassword(input.password),
       key = id();
     store.transaction(() => {
+      let profileMember;
+      if (input.profileMember) {
+        if (session.role !== "host")
+          fail(403, "Only the host manages the family profile.");
+        const { profile } = ensurePersonalProfile(store, session);
+        if (profile.version !== Number(input.profileVersion))
+          fail(409, "Family information changed. Refresh before trying again.");
+        profileMember = profile.members.find(
+          (p) => p.id === input.profileMember && !p.archived,
+        );
+        if (!profileMember || profile.sourceHousehold !== household)
+          fail(400, "Choose a member of your family.");
+        if (registeredMethod(store, profileMember.identity))
+          fail(403, "This person already has a registered sign-in.");
+        if (!!profileMember.parent !== (role === "kid"))
+          fail(
+            400,
+            "Children require child access; adults require adult access.",
+          );
+        if (
+          store
+            .list("family-profile-member", household)
+            .some(
+              (link) =>
+                link.profile === profile.id && link.member === profileMember.id,
+            )
+        )
+          fail(409, "This person already has family sign-in access.");
+        store.put("family-profile-member", key, household, {
+          profile: profile.id,
+          member: profileMember.id,
+        });
+      }
       if (
         store.one(
           "SELECT id FROM family_members WHERE household=? AND login=?",
@@ -359,7 +408,11 @@ export async function familyAPI(ctx) {
         key,
         household,
         login,
-        text(input.name, 100, true),
+        profileMember
+          ? [profileMember.first, profileMember.last, profileMember.suffix]
+              .filter(Boolean)
+              .join(" ")
+          : text(input.name, 100, true),
         password,
         role,
       );

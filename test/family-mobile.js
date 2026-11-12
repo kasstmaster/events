@@ -107,9 +107,67 @@ try {
     .waitFor();
   assert.equal(store.list("family-record", host.household).length, 0);
   await click(owner.page, "Settings");
+  assert.equal(
+    await owner.page.locator("[data-personal-members]").count(),
+    0,
+    "Details does not duplicate the family roster",
+  );
+  for (const [mode, expected] of [
+    ["custom", "rgb(21, 23, 25)"],
+    ["light", "rgb(243, 238, 232)"],
+    ["dark", "rgb(21, 23, 25)"],
+  ]) {
+    const household = store.household(host.household);
+    store.put(
+      "household",
+      household.id,
+      household.id,
+      {
+        ...household,
+        appearanceMode: mode,
+        design: {
+          ...household.design,
+          background: "#ff00ff",
+          container: "#ff00ff",
+        },
+      },
+      household.version,
+    );
+    await owner.page.reload();
+    await click(owner.page, "Settings");
+    const background = await owner.page.evaluate(
+      () => getComputedStyle(document.body).backgroundColor,
+    );
+    assert.equal(background, expected);
+    assert.notEqual(
+      background,
+      "rgb(255, 0, 255)",
+      "Settings ignores custom household colors",
+    );
+  }
   await click(owner.page, "Family Members");
-  await click(owner.page, "Create family member");
-  await owner.page.getByLabel("Name", { exact: true }).fill("Child");
+  await owner.page
+    .getByRole("heading", { name: "Family", exact: true })
+    .waitFor();
+  await click(owner.page, "Add child");
+  const rosterForm = owner.page.locator('form[data-form="personal-family"]');
+  await rosterForm.locator('[name="profileFirst"]').last().fill("Child");
+  await rosterForm.getByRole("button", { name: "Save", exact: true }).click();
+  await owner.page
+    .getByText("Household information saved.", { exact: true })
+    .waitFor();
+  assert.equal(
+    store.one(
+      "SELECT id FROM family_members WHERE household=? AND name='Child'",
+      host.household,
+    ),
+    undefined,
+  );
+  await click(owner.page, "Create sign-in account");
+  assert.equal(
+    await owner.page.getByLabel("Name", { exact: true }).inputValue(),
+    "Child",
+  );
   await owner.page
     .getByLabel("Username · no email required", { exact: true })
     .fill("child");

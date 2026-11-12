@@ -173,12 +173,27 @@ try {
       0,
     );
     assert.ok(await p.getByLabel("Select Riley", { exact: true }).isChecked());
-    await p.locator(".contacts-event-picker > summary").click();
+    await p.locator("button.contacts-event-picker").click();
+    await p
+      .getByRole("dialog", { name: "Select an Event", exact: true })
+      .waitFor();
+    const box = await p.locator("#editor").boundingBox();
+    assert.ok(Math.abs(box.x + box.width / 2 - width / 2) < 2);
+    assert.ok(Math.abs(box.y + box.height / 2 - 450) < 2);
     for (const name of ["First Gathering", "Second Gathering"])
       await p.getByLabel("Event " + name, { exact: true }).check();
     const confirm = p
-      .locator("#top-navigation")
+      .locator("#editor")
       .getByRole("button", { name: "Confirm", exact: true });
+    assert.ok(await confirm.isEnabled());
+    await p.keyboard.press("Escape");
+    await p.locator("#editor").waitFor({ state: "hidden" });
+    await p
+      .getByRole("button", { name: "Select an Event", exact: true })
+      .click();
+    assert.ok(
+      await p.getByLabel("Event First Gathering", { exact: true }).isChecked(),
+    );
     assert.ok(await confirm.isEnabled());
     p.once("dialog", (d) => d.dismiss());
     await confirm.click();
@@ -199,7 +214,7 @@ try {
       p.once("dialog", (d) => d.accept());
       await confirm.click();
       await p
-        .getByRole("alert")
+        .locator("#editor [role=alert]")
         .getByText("Event changed.", { exact: false })
         .waitFor();
       assert.ok(
@@ -211,7 +226,7 @@ try {
         store.get("response", `${events[0].id}:${adult.id}`, host.household),
       );
       assert.ok(
-        await p.getByLabel("Select Casey Example", { exact: true }).isChecked(),
+        await p.locator('[aria-label="Select Casey Example"]').isChecked(),
       );
     }
     p.once("dialog", (d) => d.accept());
@@ -239,11 +254,11 @@ try {
       .locator(".toolbar")
       .getByRole("button", { name: "Invite", exact: true })
       .click();
-    await p.locator(".contacts-event-picker > summary").click();
+    await p.locator("button.contacts-event-picker").click();
     for (const name of ["First Gathering", "Second Gathering"])
       await p.getByLabel("Event " + name, { exact: true }).check();
     await p
-      .locator("#top-navigation")
+      .locator("#editor")
       .getByRole("button", { name: "Confirm", exact: true })
       .click();
     await p
