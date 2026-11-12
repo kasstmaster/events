@@ -74,6 +74,7 @@ jobs:
           node test/household-ui-mobile.js
           node test/information-popups-mobile.js
           node test/rsvp-page-mobile.js
+          node test/address-book-mobile.js
       - name: Cards, private accounts and mocked e-vites
         if: matrix.group == 'accounts'
         run: |

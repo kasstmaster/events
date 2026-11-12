@@ -1,5 +1,10 @@
 import { ui, C, H } from "./ui-runtime.js";
-import { topbar, tool } from "./browse-ui.js";
+import {
+  topbar,
+  tool,
+  addressBookHome,
+  addressBookDescription,
+} from "./browse-ui.js";
 export function personalTools({
   state,
   api,
@@ -46,14 +51,14 @@ export function personalTools({
       .join(
         "",
       )}</div><div class="row">${button("personal-add-adult", H("Add adult"))}${button("personal-add-child", H("Add child"))}</div></fieldset><fieldset data-layout-item="sharing"><legend>Share updated information</legend>${select(
-      H("Who receives updates"),
+      H("Who receives my updated information automatically"),
       "profileSharing",
       [
         ["everyone", C("Everyone who has me as a contact")],
         ["selected", C("Selected contacts")],
       ],
       p.sharing,
-    )}<div data-share-recipients>${data.contacts.map((c) => ui`<label class="check"><input type="checkbox" name="profileRecipient" value="${c.id}" ${c.selected ? "checked" : ""} ${c.blocked ? "disabled" : ""}>${esc(c.name)}${c.blocked ? C(" · blocked") : ""}</label>`).join("") || ui`<p>${C("Contacts appear here when someone adds your household.")}</p>`}</div></fieldset></div>`;
+    )}<div data-share-recipients>${data.contacts.map((c) => ui`<label class="check"><input type="checkbox" name="profileRecipient" value="${c.id}" ${c.selected ? "checked" : ""} ${c.blocked ? "disabled" : ""}>${esc(c.name)}${c.blocked ? C(" · blocked") : ""}</label>`).join("") || ui`<p>${C("Contacts appear here when someone adds your household as a contact.")}</p>`}</div></fieldset></div>`;
   }
   function collectFamily(form) {
     const fd = new FormData(form),
@@ -94,13 +99,13 @@ export function personalTools({
   }
   function contactsPage() {
     const data = current();
-    return ui`${topbar({ title: C("Address Book"), back: "page-back" })}<section class="panel" data-layout="personalContacts"><form data-form="personal-add-contact" data-layout-item="add">${field(H("Household name"), "name", "", "text", 'required maxlength="100"')}${field(H("Household ID"), "householdId", "", "text", 'required inputmode="numeric" pattern="[0-9]{4}" maxlength="4"')}<p class="form-error" role="alert"></p><button>${C("Add contact")}</button></form><ul class="browse-rows" data-layout-item="contacts">${data.contacts.map((c) => ui`<li class="browse-row"><div class="grow"><strong>${esc(c.name)}</strong>${c.address ? ui`<p class="contact-mailing-address">${esc(c.address)}</p>` : ""}${c.members ? ui`<ul>${c.members.map((p) => ui`<li>${esc([p.first, p.last, p.suffix].filter(Boolean).join(" "))}${p.child ? C(" · child") : p.phone ? " · " + esc(p.phone) : ""}</li>`).join("")}</ul>` : ""}</div><div class="row">${button("personal-block", H(c.blocked ? "Unblock" : "Block"), `data-id="${c.id}" data-blocked="${c.blocked}"`)}${button("personal-remove-contact", H("Remove"), `data-id="${c.id}"`)}</div></li>`).join("")}</ul></section>`;
+    return ui`${topbar({ title: C("Address Book"), back: "page-back" })}<section class="panel" data-layout="personalContacts">${addressBookDescription()}<form data-form="personal-add-contact" data-layout-item="add">${field(H("Household name"), "name", "", "text", 'required maxlength="100"')}${field(H("Household ID"), "householdId", "", "text", 'required inputmode="numeric" pattern="[0-9]{4}" maxlength="4"')}<p class="form-error" role="alert"></p><button>${C("Add contact")}</button></form><ul class="browse-rows" data-layout-item="contacts">${data.contacts.map((c) => ui`<li class="browse-row"><div class="grow"><strong>${esc(c.name)}</strong>${c.address ? ui`<p class="contact-mailing-address">${esc(c.address)}</p>` : ""}${c.members ? ui`<ul>${c.members.map((p) => ui`<li>${esc([p.first, p.last, p.suffix].filter(Boolean).join(" "))}${p.child ? C(" · child") : p.phone ? " · " + esc(p.phone) : ""}</li>`).join("")}</ul>` : ""}</div><div class="row">${button("personal-block", H(c.blocked ? "Unblock" : "Block"), `data-id="${c.id}" data-blocked="${c.blocked}"`)}${button("personal-remove-contact", H("Remove"), `data-id="${c.id}"`)}</div></li>`).join("")}</ul></section>`;
   }
   function recoveryPage() {
     return ui`<section class="auth"><h1>Recover username</h1><form data-form="username-recovery">${field(H("Recovery phone number"), "phone", "", "tel", 'required maxlength="30"')}<p>We’ll text your recovery number. Reply YES to receive your username or NO to cancel.</p><p class="form-error" role="alert"></p><button>${C("Request reminder")}</button></form>${button("host-login", H("Back"))}</section>`;
   }
   function homeActions() {
-    return ui`<section class="panel guest-account-actions">${button("personal-family", H("Family information"))}${button("personal-contacts", H("Address Book"))}${button("personal-account", H("Private sign-in"))}</section>`;
+    return ui`<div class="guest-account-actions"><section class="panel">${button("personal-family", H("Family information"))}${button("personal-account", H("Private sign-in"))}</section>${addressBookHome(button, "personal-contacts")}</div>`;
   }
   return {
     leave(action, target) {

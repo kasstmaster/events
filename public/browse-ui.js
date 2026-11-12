@@ -33,6 +33,7 @@ export function sorting(prefix, mode = "manual") {
 }
 export function topbar({
   title,
+  titleControl = "",
   subtitle = "",
   back,
   search,
@@ -42,7 +43,7 @@ export function topbar({
 }) {
   const create =
     plus.find((item) => item.action !== "family-new-folder") || plus[0];
-  return ui`<div class="app-topbar no-print">${back ? tool("page-back", "Back", "", "back") : ""}<div class="browse-heading">${title ? ui`<h1>${title}</h1>` : ""}${subtitle ? ui`<p>${subtitle}</p>` : ""}</div><div class="browse-top-actions">${search ? tool(search, "Search", "", "search") : ""}${create ? tool(create.action, "Create", create.id || "", "plus") : ""}${sort.length ? menu("Sorting and options", "more", sort) : ""}${extra}</div></div>`;
+  return ui`<div class="app-topbar no-print">${back ? tool("page-back", "Back", "", "back") : ""}<div class="browse-heading">${titleControl || (title ? ui`<h1>${title}</h1>` : "")}${subtitle ? ui`<p>${subtitle}</p>` : ""}</div><div class="browse-top-actions">${search ? tool(search, "Search", "", "search") : ""}${create ? tool(create.action, "Create", create.id || "", "plus") : ""}${sort.length ? menu("Sorting and options", "more", sort) : ""}${extra}</div></div>`;
 }
 export function bottom(items, label = "Main navigation") {
   return ui`<nav class="toolbar no-print" aria-label="${H(label)}">${items.map((i) => tool(i.action, i.label, i.id || "", i.icon || i.action, i.current ? 'aria-current="page"' : "")).join("")}</nav>`;
@@ -143,4 +144,11 @@ export function editorToolbar({
   contentActions = "",
 }) {
   return ui`<div class="appearance-categories" role="toolbar" aria-label="${H(categoryLabel)}">${categories}</div>${contentActions}${actions ? ui`<div class="appearance-actions" role="toolbar" aria-label="${H(actionLabel)}">${actions}</div>` : ""}${controls ? ui`<div class="appearance-controls" role="group" aria-label="${H(controlLabel)}">${controls}</div>` : ""}`;
+}
+
+export function addressBookDescription(canInvite = false) {
+  return ui`<p class="small" data-address-book-description>${C("Your Address Book contains contacts and household information shared with you.")} ${canInvite ? C("Select contacts to invite or uninvite them from your events.") : C("Shared information updates according to each household’s sharing choices.")}</p>`;
+}
+export function addressBookHome(button, action, canInvite = false) {
+  return ui`<section class="panel" data-home-card="contacts" aria-label="${H("Address Book")}">${addressBookDescription(canInvite)}${button(action, H("Address Book"))}</section>`;
 }

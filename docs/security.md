@@ -80,7 +80,7 @@ Host guest previews are scoped to the authenticated household. Identifiers canno
 
 The home-card/options-menu follow-up removes all dedicated notes entry/display surfaces without deleting legacy private notes or weakening payload privacy. Event/contact requests omit removed note fields so existing server fallback preserves them; family record drafts retain unexposed note/history values. Shared navigation adds no access: only hosts receive Contacts/Family Home cards and edit/share options; other roles keep their authorized menu actions. Account recovery, administrator tools, preview restrictions and confirmation dialogs remain unchanged.
 
-Host bulk uninviting uses the same invitation/RSVP validator as event editing. It requires the authenticated household and exact current event version, validates selected contact ownership, and atomically removes only the chosen contacts from that event. Saved adult or child attendance answers reject removal of the whole batch. No responses, claims, contact IDs, address codes or other events are changed, and no messaging is queued. Confirmation is a user safeguard; server authorization and version/RSVP validation apply even when the endpoint is invoked directly.
+Host bulk invitation/uninviting is host-only, session/tenant scoped and exact-origin protected. Single-event routes and the multi-event `POST /api/host/events/invitations` share validation. Every selected event requires its current version; the outer transaction covers all event changes, response archival and claim releases. Invalid ownership, targets, child/adult relationships or versions roll back the whole batch. Explicit confirmed Uninvite may remove people with any prior RSVP answer; ordinary event-editor saves retain their existing recorded-response protections. Before removing or trimming active responses, keep private event-scoped copies in `response-history`. Clear a removed adult's active party response and claims while retaining a hidden, versioned `uninvited` marker; for a removed child, trim only that child's attendance and increment the retained adult response version. Invalidate stale RSVP writes through current invitation/party/version checks. Reinviting does not resurrect old responses. Active dashboards, counts and menu availability use only currently invited guest response parties plus the existing separate host-family response. Accounts, contact credentials, sharing relationships, central information, unrelated responses/events and disabled SMS are unchanged. No notification is dispatched by invitation changes.
 
 ## Host-entered RSVPs and address notes
 
@@ -139,3 +139,10 @@ return to the correct event; validation/conflict failures retain the draft.
 Administrator example/preview submissions remain read-only. Tests use isolated
 synthetic accounts, browser sessions and databases; no production RSVP or SMS
 operation is part of validation.
+
+Hidden uninvited response markers are excluded from all active RSVP/dashboard/menu
+projections. They retain monotonically increasing response versions across
+uninvite/reinvite, so pre-removal forms cannot overwrite later answers. They
+contain no attendance, claims or custom items; full prior data stays only in the
+private response history. Reinviting exposes a blank response with the current
+version, not the old answer or a saved-RSVP indicator.

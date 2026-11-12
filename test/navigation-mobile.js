@@ -841,7 +841,10 @@ try {
     .locator(".browse-row-icon path")
     .getAttribute("d");
   assert.notEqual(childIcon, adultIcon);
-  assert.equal(await p.locator("[data-contact-invite]").count(), 0);
+  assert.equal(
+    await p.locator("[data-contact-invite]").count(),
+    store.list("guest", host.household).length,
+  );
   assert.equal(
     await p
       .locator(
@@ -850,11 +853,10 @@ try {
       .count(),
     0,
   );
-  await click(p, "Select Contacts");
   assert.equal(
     await p
       .locator(
-        '#top-navigation [data-action="contacts-invite"],#top-navigation [data-action="contacts-uninvite"]',
+        '.toolbar [data-action="contacts-invite"],.toolbar [data-action="contacts-uninvite"]',
       )
       .count(),
     2,
@@ -916,7 +918,7 @@ try {
     );
     assert.ok(
       await p
-        .locator('#top-navigation [data-action="contacts-invite"]')
+        .locator('.toolbar [data-action="contacts-invite"]')
         .evaluate((el) => {
           const r = el.getBoundingClientRect();
           return r.top >= 0 && r.bottom <= innerHeight;
@@ -933,10 +935,9 @@ try {
     });
   }
   await p.locator(".contacts-event-picker").waitFor();
-  await p
-    .locator(".contacts-event-picker")
-    .getByRole("button", { name: "Dinner Two", exact: true })
-    .click();
+  await p.getByLabel("Select an Event", { exact: true }).first().click();
+  await p.getByLabel("Event Dinner Two", { exact: true }).check();
+  await p.getByRole("button", { name: "Confirm", exact: true }).click();
   await p
     .getByText("Guests invited. No messages were sent.", { exact: true })
     .waitFor();
@@ -951,7 +952,6 @@ try {
     false,
   );
   stage("confirmed uninviting from one chosen event");
-  await click(p, "Select Contacts");
   await p.getByLabel("Select Jordan New", { exact: true }).check();
   assert.equal(
     await p.getByLabel("Select Riley", { exact: true }).isChecked(),
@@ -964,17 +964,13 @@ try {
     true,
   );
   const beforeUninvite = store.get("event", e2.id, host.household);
+  await p.getByLabel("Select an Event", { exact: true }).first().click();
+  await p.getByLabel("Event Dinner Two", { exact: true }).check();
   p.once("dialog", (dialog) => dialog.dismiss());
-  await p
-    .locator(".contacts-event-picker")
-    .getByRole("button", { name: "Dinner Two", exact: true })
-    .click();
+  await p.getByRole("button", { name: "Confirm", exact: true }).click();
   assert.deepEqual(store.get("event", e2.id, host.household), beforeUninvite);
   p.once("dialog", (dialog) => dialog.accept());
-  await p
-    .locator(".contacts-event-picker")
-    .getByRole("button", { name: "Dinner Two", exact: true })
-    .click();
+  await p.getByRole("button", { name: "Confirm", exact: true }).click();
   await p
     .getByText("Guests uninvited. No messages were sent.", { exact: true })
     .waitFor();
@@ -986,10 +982,10 @@ try {
   assert.ok(store.get("guest", inviteAdult.id, host.household));
   assert.ok(store.get("guest", inviteChild.id, host.household));
   const unchanged = store.get("event", e2.id, host.household).version;
-  await click(p, "Select Contacts");
   await p.getByLabel("Select Casey Example", { exact: true }).check();
+  await click(p, "Invite");
   await p
-    .locator(".toolbar")
+    .locator("#top-navigation")
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
   assert.equal(store.get("event", e2.id, host.household).version, unchanged);

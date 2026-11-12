@@ -207,7 +207,13 @@ function guestInput(input, store, household, existing) {
     address,
   };
 }
-function eventInvitations(invited, store, household, existing) {
+function eventInvitations(
+  invited,
+  store,
+  household,
+  existing,
+  { allowRecordedRemovals = false } = {},
+) {
   if (
     !Array.isArray(invited) ||
     invited.length > 10000 ||
@@ -221,7 +227,7 @@ function eventInvitations(invited, store, household, existing) {
     if (!guest || (guest.parent && !invited.includes(guest.parent)))
       fail(400, "Invite each child with their designated adult.");
   }
-  if (existing) {
+  if (existing && !allowRecordedRemovals) {
     for (const response of store
       .list("response", household)
       .filter((r) => r.event === existing.id && !r.hostFamily))
@@ -1416,9 +1422,7 @@ export function createHandler({
               addresses: store
                 .list("address", household)
                 .filter((a) => addresses.has(a.id)),
-              responses: store
-                .list("response", household)
-                .filter((r) => r.event === key),
+              responses: store.eventResponses(existing, household),
               menu: store.menuView(existing, household),
             });
             return;

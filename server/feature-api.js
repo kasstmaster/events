@@ -10,6 +10,100 @@ import {
 import { resolveUI, layouts } from "../public/ui-system.js";
 import { reminderRecipients, reminderInput } from "./reminders.js";
 import { deletionSummary, requestDeletion } from "./account-deletion.js";
+function invitationTargets(input) {
+  if (
+    !input ||
+    !Array.isArray(input.guestIds) ||
+    !input.guestIds.length ||
+    input.guestIds.length > 10000 ||
+    new Set(input.guestIds).size !== input.guestIds.length
+  )
+    fail(400, "Choose one or more contacts.");
+}
+function changeEventInvitations(
+  store,
+  household,
+  event,
+  guestIds,
+  expected,
+  uninvite,
+  validateInvited,
+) {
+  if (event.version !== expected)
+    fail(
+      409,
+      "Event changed. Review the event list before changing invitations.",
+    );
+  const available = new Set(store.list("guest", household).map((g) => g.id));
+  if (guestIds.some((key) => !available.has(key)))
+    fail(400, "Choose contacts in your household.");
+  const selected = new Set(guestIds);
+  const invited = uninvite
+    ? event.invited.filter((key) => !selected.has(key))
+    : [...new Set([...event.invited, ...guestIds])];
+  validateInvited(invited, store, household, event, {
+    allowRecordedRemovals: uninvite,
+  });
+  const retained = new Set(invited);
+  const removed = new Set(event.invited.filter((key) => !retained.has(key)));
+  if (removed.size)
+    for (const response of store
+      .list("response", household)
+      .filter((r) => r.event === event.id && !r.hostFamily)) {
+      const affected =
+        removed.has(response.guest) ||
+        Object.keys(response.attendance).some((key) => removed.has(key));
+      if (!affected) continue;
+      store.put("response-history", id(), household, {
+        event: event.id,
+        guest: response.guest,
+        response,
+        removed: [...removed],
+        reason: "uninvited",
+        archivedAt: new Date().toISOString(),
+      });
+      if (removed.has(response.guest))
+        store.put(
+          "response",
+          response.id,
+          household,
+          {
+            event: event.id,
+            guest: response.guest,
+            attendance: {},
+            claims: {},
+            customItems: [],
+            uninvited: true,
+            updated: new Date().toISOString(),
+          },
+          response.version,
+        );
+      else
+        store.put(
+          "response",
+          response.id,
+          household,
+          {
+            ...response,
+            attendance: Object.fromEntries(
+              Object.entries(response.attendance).filter(
+                ([key]) => !removed.has(key),
+              ),
+            ),
+          },
+          response.version,
+        );
+    }
+  const changed = Math.abs(invited.length - event.invited.length);
+  const saved = changed
+    ? store.put("event", event.id, household, { ...event, invited }, expected)
+    : event;
+  return {
+    id: saved.id,
+    version: saved.version,
+    [uninvite ? "removed" : "added"]: changed,
+  };
+}
 export async function featureAPI({
   path,
   method,
@@ -76,6 +170,45 @@ export async function featureAPI({
     }
     fail(405, "Method not allowed.");
   }
+  if (path === "/api/host/events/invitations" && method === "POST") {
+    requireRole("host");
+    const input = await body(req);
+    invitationTargets(input);
+    if (
+      !["invite", "uninvite"].includes(input.action) ||
+      !Array.isArray(input.events) ||
+      !input.events.length ||
+      input.events.length > 100 ||
+      new Set(input.events.map((e) => e?.id)).size !== input.events.length ||
+      input.events.some(
+        (e) =>
+          !e ||
+          typeof e.id !== "string" ||
+          !Number.isSafeInteger(e.version) ||
+          e.version < 1,
+      )
+    )
+      fail(400, "Choose events with their current versions.");
+    const results = store.transaction(() =>
+      input.events.map((event) =>
+        changeEventInvitations(
+          store,
+          session.household,
+          owned("event", event.id),
+          input.guestIds,
+          event.version,
+          input.action === "uninvite",
+          validateInvited,
+        ),
+      ),
+    );
+    json(res, {
+      events: results,
+      added: results.reduce((n, e) => n + (e.added || 0), 0),
+      removed: results.reduce((n, e) => n + (e.removed || 0), 0),
+    });
+    return true;
+  }
   const inviteMatch = path.match(
     /^\/api\/host\/events\/([^/]+)\/(invite|uninvite)-guests$/,
   );
@@ -83,47 +216,18 @@ export async function featureAPI({
     requireRole("host");
     const input = await body(req),
       expected = version(req);
-    if (
-      !Array.isArray(input.guestIds) ||
-      !input.guestIds.length ||
-      input.guestIds.length > 10000 ||
-      new Set(input.guestIds).size !== input.guestIds.length
-    )
-      fail(400, "Choose one or more contacts.");
-    const result = store.transaction(() => {
-      const event = owned("event", inviteMatch[1]);
-      if (event.version !== expected)
-        fail(
-          409,
-          "Event changed. Review the event list before changing invitations.",
-        );
-      const available = new Set(
-        store.list("guest", session.household).map((g) => g.id),
-      );
-      if (input.guestIds.some((key) => !available.has(key)))
-        fail(400, "Choose contacts in your household.");
-      const uninvite = inviteMatch[2] === "uninvite";
-      const selected = new Set(input.guestIds);
-      const invited = uninvite
-        ? event.invited.filter((key) => !selected.has(key))
-        : [...new Set([...event.invited, ...input.guestIds])];
-      validateInvited(invited, store, session.household, event);
-      const changed = Math.abs(invited.length - event.invited.length);
-      const saved = changed
-        ? store.put(
-            "event",
-            event.id,
-            session.household,
-            { ...event, invited },
-            expected,
-          )
-        : event;
-      return {
-        id: saved.id,
-        version: saved.version,
-        [uninvite ? "removed" : "added"]: changed,
-      };
-    });
+    invitationTargets(input);
+    const result = store.transaction(() =>
+      changeEventInvitations(
+        store,
+        session.household,
+        owned("event", inviteMatch[1]),
+        input.guestIds,
+        expected,
+        inviteMatch[2] === "uninvite",
+        validateInvited,
+      ),
+    );
     json(res, result);
     return true;
   }

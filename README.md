@@ -130,7 +130,7 @@ Administrator three-dot menus include **Preview guest experience**, scoped and r
 
 Host Home introduces **Address Book** in a container above **Family Workspace**, with an Open button for each, followed by invitations. Those destinations are no longer in the toolbar. **Share Invitation** and **Settings** are in host bottom navigation; appearance modes and inline Details are inside Settings; host bottom navigation is Home. Guests/family members and legacy administrators also open Settings from their three-dot menu. Existing role restrictions, Home-only promoted-administrator tools and guest invitation ordering stay intact. All dedicated notes fields/sections and maintenance-note text are removed from the interface; saved legacy notes remain stored and are preserved by normal edits.
 
-In Address Book, **Select Contacts** enables multi-selection and becomes **Invite**, **Uninvite** and **Cancel**. Invite or Uninvite then opens the event choice; uninviting requires confirmation. Selecting an adult includes their children; a child can be selected on their own. Only the chosen event's invitations change. Saved RSVPs block removal, and contact records, address codes, content and other events remain unchanged. No messages are sent. Cancel makes no changes.
+In Address Book, contact checkboxes are always visible. **Invite** and **Uninvite** in the bottom toolbar open a top-toolbar multi-event choice with **Confirm** and **Cancel**. Uninviting requires confirmation and removes selected people's saved RSVP entries from those events, retaining private response history. Selecting an adult includes their children; a child can be selected on their own. Contact records, address codes, content and other events remain unchanged. No messages are sent. Cancel makes no changes.
 
 Private household notes belong to saved contact addresses and appear in tiny text only in the owning host’s Address Book and RSVP dashboard. Edit notes uses a versioned address save; guest/public/preview/card/family payloads exclude them. AnyList category titles supply the household name and mailing address (`Title - Street / PO Box, City ST ZIP`), including structured city/state/ZIP without an extra comma. Sync preserves notes, address Guest IDs, person associations and saved responses.
 
@@ -150,9 +150,9 @@ All host pages using household formatting offer Light Mode, Dark Mode and Custom
 
 Settings opened from an event replaces household Details with Event Details, using the same versioned editor fields and confirmations. Default/Custom event modes remain scoped to that event. Unchanged background polls retain existing controls, active clicks and saves defer background adoption, and independent initial reads run concurrently to reduce page-change delay.
 
-Address Book sorts household groups by name and retains insertion order among adults and among children, with children below adults. Invite, Uninvite and authorized AnyList Sync appear in the top toolbar; contact sorting/manual movement controls are omitted. Family Workspace puts My Tasks and a dedicated Sort menu in the top toolbar and updates live without a manual Refresh button. Shared button groups use equal horizontal/vertical gaps.
+Address Book sorts household groups by name and retains insertion order among adults and among children, with children below adults. Invite and Uninvite appear in the bottom toolbar; authorized AnyList Sync remains in the top toolbar. Contact sorting/manual movement controls are omitted. Family Workspace puts My Tasks and a dedicated Sort menu in the top toolbar and updates live without a manual Refresh button. Shared button groups use equal horizontal/vertical gaps.
 
-Address Book has one Select Contacts entry point; checkboxes appear only in selection mode. Invite and Uninvite require a selection and then an event choice. Cancel clears selection without saving. Required adult/child additions depend on the chosen operation and do not contaminate explicit selection when switching operations.
+Address Book always shows contact checkboxes. Invite and Uninvite require a selection and then one or more event choices. Cancel clears selection without saving. Required adult/child additions depend on the chosen operation and do not contaminate explicit selection when switching operations.
 
 Create/Sort labels inherit the same toolbar color, font, size and style as other bottom actions. Container images use the page background color as their backing, so image opacity never reveals the separate container fill (including nested surfaces). Choosing a container background color removes the image in that draft; Save/Cancel and inheritance retain their existing scope.
 
@@ -174,7 +174,7 @@ Home event cards show the inviting household’s uploaded icon. No generic house
 
 The Home Address Book, Cards & Invites and Family Workspace containers omit visible headings while retaining their descriptions, labeled Open buttons and accessible section names.
 
-Current shared navigation puts Search, Create, Sort, My Tasks, scoped Sync, Invite and Uninvite at the far right of the top toolbar on their existing pages. Preserve labels, icons, roles and selection guards: Invite/Uninvite exist only after Select Contacts; Cancel and Select Contacts remain below. Create opens the primary creation form directly, without a selection menu. Family creation exposes the existing types, including Folder, inside the form and preserves drafts when switching types. Address Book and its Home Open button are named Address Book. Home workspace descriptions share one formatting rule. Event cards collapse to one column below 760px and retain normal typography; View Event fills the width when its actions stack. Use uploaded household icons, never generic house substitutes or event artwork.
+Current shared navigation puts Search, Create, Sort, My Tasks and scoped Sync at the far right of the top toolbar on their existing pages. Address Book Invite/Uninvite remain in bottom navigation and require a selection; Confirm/Cancel accompany the active multi-event dropdown above. Preserve labels, icons and roles. Create opens the primary creation form directly, without a selection menu. Family creation exposes the existing types, including Folder, inside the form and preserves drafts when switching types. Address Book and its Home Open button are named Address Book. Home workspace descriptions share one formatting rule. Event cards collapse to one column below 760px and retain normal typography; View Event fills the width when its actions stack. Use uploaded household icons, never generic house substitutes or event artwork.
 
 Settings modes reuse the shared browse-row renderer, with icons outside their text buttons and the same button typography as other Settings actions. No forced bold or special mobile font size applies.
 
@@ -206,3 +206,28 @@ attendance; they never increase invited, declined or unanswered totals. Their
 responses are event-scoped, versioned and use the same transactional RSVP/menu
 checks as guest responses. No guest contacts, sign-in credentials or invitations
 are created for this purpose. See [RSVP security](docs/security.md#host-family-rsvps).
+
+### Address Book selection and multiple-event invitations
+
+Host Address Books always show contact checkboxes. Invite and Uninvite remain in
+the bottom toolbar and are disabled when nothing is selected. Choose an action,
+then use the top **Select an Event** dropdown to check one or more owned events.
+**Confirm** and **Cancel** stay in the top toolbar. All chosen events are checked
+and changed in one transaction; a stale event or invalid selection changes none.
+No messages are sent by these actions.
+
+Explicit Uninvite removes selected people from the selected events' RSVP lists,
+regardless of attending, declined or skipped answers. Their active attendance and
+party menu claims are removed/released for those events. Historical response
+copies remain private; hidden version markers prevent old forms overwriting new
+answers after reinviting. Reinviting starts without restoring old answers. Removing
+only a child keeps the invited adult's own answers and shared party claims.
+Contacts, household relationships, account credentials, and other events remain
+unchanged. Ordinary event-editor saves retain their existing RSVP protections;
+use the confirmed Uninvite action for these intentional removals.
+
+Hosts and guests use the same Address Book container/description components.
+Guests retain their existing shared-contact Remove/Block permissions; host
+invitation controls do not grant them event-management access. The home-page
+Review shared guest links option is removed; existing matching, approval and
+shared-information update APIs remain unchanged.
