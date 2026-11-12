@@ -231,3 +231,8 @@ Guests retain their existing shared-contact Remove/Block permissions; host
 invitation controls do not grant them event-management access. The home-page
 Review shared guest links option is removed; existing matching, approval and
 shared-information update APIs remain unchanged.
+
+Event Details supports separate optional photo/video upload and viewing URLs.
+When configured, Upload Photos & Videos and View Photos & Videos appear below
+RSVP and registries, with the same full-width button formatting. Clearing either
+URL hides only that action. Sharing permissions remain controlled by the linked service.

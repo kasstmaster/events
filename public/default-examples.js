@@ -63,6 +63,7 @@ export function exampleState(view, ui) {
       },
     ],
     uploadURL: "https://example.invalid/photos",
+    viewURL: "https://example.invalid/gallery",
     totals: { attending: 8, invited: 12 },
     design: ui.design,
     ui,

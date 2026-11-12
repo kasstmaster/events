@@ -491,6 +491,9 @@ try {
   await h.page
     .getByLabel("Photo / video upload link (optional)", { exact: true })
     .fill("https://example.test/upload");
+  await h.page
+    .getByLabel("Photo / video viewing link (optional)", { exact: true })
+    .fill("https://example.test/gallery");
   assert.equal(
     await h.page.getByLabel("Private event notes", { exact: true }).count(),
     0,
@@ -631,6 +634,31 @@ try {
       .getAttribute("href"),
     "https://example.test/upload",
   );
+  assert.equal(
+    await guest.page
+      .getByRole("link", { name: "View Photos & Videos", exact: true })
+      .getAttribute("href"),
+    "https://example.test/gallery",
+  );
+  for (const width of [390, 768, 1440]) {
+    await guest.page.setViewportSize({ width, height: 900 });
+    const styles = await guest.page.locator(".rsvp-stack").evaluate((stack) =>
+      [...stack.querySelectorAll("button, a.button")].map((el) => {
+        const s = getComputedStyle(el);
+        return {
+          width: el.getBoundingClientRect().width,
+          height: el.getBoundingClientRect().height,
+          color: s.color,
+          background: s.backgroundColor,
+          font: s.font,
+          padding: s.padding,
+          border: s.border,
+        };
+      }),
+    );
+    assert.ok(styles.length >= 3);
+    for (const style of styles.slice(1)) assert.deepEqual(style, styles[0]);
+  }
   assert.equal(
     await guest.page.locator("h1").evaluate((el) => getComputedStyle(el).color),
     "rgb(119, 51, 34)",

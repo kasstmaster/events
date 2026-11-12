@@ -324,6 +324,7 @@ test("private notes, consent/phones and external upload links stay in their auth
   let e = await f.event(h, [g], {
     notes: "Private event plans",
     uploadURL: "https://example.test/upload",
+    viewURL: "https://example.test/gallery",
   });
   assert.equal(
     (
@@ -339,6 +340,18 @@ test("private notes, consent/phones and external upload links stay in their auth
   const guestCookie = await f.guestLogin(h, g),
     view = (await f.request("/api/guest", { cookie: guestCookie })).body;
   assert.equal(view.events[0].uploadURL, "https://example.test/upload");
+  assert.equal(view.events[0].viewURL, "https://example.test/gallery");
+  assert.equal(
+    (
+      await f.request("/api/host/events/" + e.id, {
+        method: "PUT",
+        cookie: h.cookie,
+        version: e.version,
+        data: { ...e, viewURL: "javascript:alert(1)" },
+      })
+    ).status,
+    400,
+  );
   assert.doesNotMatch(
     JSON.stringify({ ...view, personal: undefined }),
     /Private event plans|Private household plans|15551234567|smsConsent/,
@@ -367,6 +380,7 @@ test("private notes, consent/phones and external upload links stay in their auth
     })
   ).body;
   assert.equal(e.uploadURL, "");
+  assert.equal(e.viewURL, "https://example.test/gallery");
   const preview = (
     await f.request("/api/admin/preview", {
       method: "POST",

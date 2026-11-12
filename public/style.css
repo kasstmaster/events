@@ -678,16 +678,8 @@ dialog::backdrop {
   margin-top: 0;
 }
 .registry-button {
-  background: var(--panel);
-  color: var(--heading);
-  font-family: var(--body-font);
-  font-size: var(--text-size);
-  border-color: currentColor;
-  min-width: min(100%, 260px);
   max-width: 100%;
   overflow-wrap: anywhere;
-  min-height: 48px;
-  text-align: center;
 }
 .registry-row {
   padding: 16px 0;
@@ -911,13 +903,7 @@ dialog:has(.card-workspace) {
 .rsvp-stack .registry-buttons {
   margin: 0;
 }
-.registry-button.button {
-  background: var(--panel);
-  color: var(--heading);
-  font-family: var(--button-font);
-  font-size: var(--button-size);
-  border-color: currentColor;
-}
+
 [data-event-actions] {
   justify-content: center;
   margin-bottom: 24px;
@@ -2248,7 +2234,9 @@ body.editing-active
   width: 100%;
   flex-basis: 100%;
 }
-.rsvp-stack > [data-action="rsvp"] {
+.rsvp-stack > .button,
+.rsvp-stack > [data-action="rsvp"],
+.rsvp-stack .registry-button {
   width: 100%;
 }
 .household-private-notes {

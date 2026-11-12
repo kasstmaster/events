@@ -183,3 +183,9 @@ reinvite. Require current event versions, tenant/role/Origin checks and one atom
 transaction across all chosen events. Keep ordinary editor/response safeguards,
 credentials, contacts, household relationships and other events unchanged. No
 messages, live fixtures, production changes, PR creation or merge by Codex.
+
+Event RSVP, registry and photo/video links share one full-width action stack and
+the shared Buttons appearance role. Event Details stores independent optional
+uploadURL/viewURL links using the same safe URL validation and omitted-field
+preservation. Keep View Photos & Videos after Upload Photos & Videos; omit empty
+actions and preserve external-service permissions and event/household isolation.
