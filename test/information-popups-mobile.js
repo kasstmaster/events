@@ -121,12 +121,46 @@ try {
       errors = [];
     p.on("pageerror", (e) => errors.push(e.message));
     await p.getByRole("button", { name: "View Event", exact: true }).click();
+    // Keep the first Settings read pending to exercise slow CI/network timing.
+    let releaseSettings;
+    const settingsGate = new Promise((resolve) => {
+      releaseSettings = resolve;
+    });
+    await p.route(
+      origin + "/api/family",
+      async (route) => {
+        await settingsGate;
+        await route.continue();
+      },
+      { times: 1 },
+    );
+    const settingsRequest = p.waitForRequest(origin + "/api/family");
     await p.locator('.toolbar [data-action="settings"]').click();
     const tools = p.getByRole("toolbar", {
       name: "Information formatting",
       exact: true,
     });
+    try {
+      await settingsRequest;
+      assert.equal(
+        await tools.count(),
+        0,
+        "Settings remains pending until its data arrives",
+      );
+    } finally {
+      releaseSettings();
+    }
+    // allTextContents() takes an immediate snapshot; unlike click(), it does
+    // not wait for an asynchronously rendered toolbar or its buttons.
+    await tools
+      .getByRole("button", { name: "Pop-up text", exact: true })
+      .waitFor({ state: "visible" });
+    await tools
+      .getByRole("button", { name: "Add link", exact: true })
+      .waitFor({ state: "visible" });
     const actions = await tools.locator("button").allTextContents();
+    assert.ok(actions.includes("Pop-up text"), "Pop-up text action exists");
+    assert.ok(actions.includes("Add link"), "Add link action exists");
     assert.equal(
       actions.indexOf("Pop-up text") + 1,
       actions.indexOf("Add link"),
