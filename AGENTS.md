@@ -159,3 +159,27 @@ host-only and tenant-scoped; use the same transaction engine as guests. Guest
 toolbars may show attending/invited aggregates but never family roster/details.
 Preserve existing records, invitation rules, notes, response history and disabled
 SMS. No schema/configuration/production migration is needed for these projections.
+
+## Address Book persistent selection and explicit Uninvite
+
+This section supersedes older selection-toolbar and saved-RSVP uninvite wording.
+Show host contact checkboxes by default; never require Select Contacts. Keep
+Invite/Uninvite in bottom navigation, disabled without a selection. The shared
+top toolbar replaces the Address Book title with a multi-event dropdown while
+an action is active, with Confirm/Cancel next to it. Keep live updates enabled
+when no contacts are selected and preserve in-progress editors/drafts.
+
+Hosts and guests share Address Book container/explanation components, while
+local host contacts and central shared contacts retain their separate ownership
+and existing permissions. Never expose Address Book or invitation management to
+children or grant guests host event authority. Preserve matching, approvals,
+Remove/Block and automatic approved information updates.
+
+Explicit Uninvite is authorized to remove saved yes/no/skipped RSVP entries for
+selected people in selected events. Archive affected responses privately before
+removing/trimming active data; release removed adult-party menu claims, retain
+unaffected adult/child data, and never restore old answers automatically on
+reinvite. Require current event versions, tenant/role/Origin checks and one atomic
+transaction across all chosen events. Keep ordinary editor/response safeguards,
+credentials, contacts, household relationships and other events unchanged. No
+messages, live fixtures, production changes, PR creation or merge by Codex.

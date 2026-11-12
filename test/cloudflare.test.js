@@ -534,6 +534,67 @@ test(
     const familyGuestView = (await request("/api/guest", { cookie: guests[0] }))
       .body;
     assert.equal(familyGuestView.events[0].totals.invited, 3);
+    const invitationEvents = [];
+    for (const title of [
+      "Invitation transaction first",
+      "Invitation transaction second",
+    ]) {
+      const created = await request("/api/host/events", {
+        method: "POST",
+        cookie: host.cookie,
+        data: { title, invited: [first.id], menu: [], registries: [] },
+      });
+      assert.equal(created.status, 201);
+      invitationEvents.push(created.body);
+    }
+    const recorded = await request(
+      `/api/host/events/${invitationEvents[0].id}/rsvp/${first.id}`,
+      {
+        method: "PUT",
+        cookie: host.cookie,
+        data: { version: 0, attendance: { [first.id]: "yes" }, claims: {} },
+      },
+    );
+    assert.equal(recorded.status, 200);
+    const batch = (events) =>
+      request("/api/host/events/invitations", {
+        method: "POST",
+        cookie: host.cookie,
+        data: { action: "uninvite", guestIds: [first.id], events },
+      });
+    const conflict = await batch(
+      invitationEvents.map(({ id, version }, index) => ({
+        id,
+        version: version + (index === 1 ? 1 : 0),
+      })),
+    );
+    assert.equal(conflict.status, 409);
+    const intact = (
+      await request(`/api/host/events/${invitationEvents[0].id}/dashboard`, {
+        cookie: host.cookie,
+      })
+    ).body;
+    assert.deepEqual(intact.event.invited, [first.id]);
+    assert.equal(intact.responses.length, 1);
+    assert.equal(
+      (
+        await batch(
+          invitationEvents.map(({ id, version }) => ({ id, version })),
+        )
+      ).status,
+      200,
+    );
+    for (const item of invitationEvents) {
+      const cleared = (
+        await request(`/api/host/events/${item.id}/dashboard`, {
+          cookie: host.cookie,
+        })
+      ).body;
+      assert.deepEqual(cleared.guests, []);
+      assert.deepEqual(cleared.responses, []);
+      assert.equal(cleared.totals.attending, 0);
+    }
+
     assert.ok(
       !JSON.stringify(familyGuestView).includes("family-" + kid.body.id),
     );

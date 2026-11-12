@@ -3188,3 +3188,27 @@ body #notice {
   grid-column: 1 / -1;
   grid-row: 2;
 }
+
+/* The multi-event picker uses the shared fixed menu in the toolbar heading. */
+.contacts-event-picker.browse-menu {
+  margin: 0;
+  max-height: none;
+  overflow: visible;
+}
+.contacts-event-picker label.check {
+  padding: 8px;
+  overflow-wrap: anywhere;
+}
+.guest-account-actions {
+  display: grid;
+  gap: var(--action-gap);
+}
+
+.top-shell .browse-heading .contacts-event-picker {
+  pointer-events: auto;
+}
+
+/* Keep the distinct Address Book panel inside page padding on tablets too. */
+.browse-shell.address-book-shell {
+  margin: 0;
+}

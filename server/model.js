@@ -867,11 +867,18 @@ export class Store {
       return account;
     });
   }
+  eventResponses(event, household) {
+    const invited = new Set(event.invited);
+    return this.list("response", household).filter(
+      (response) =>
+        response.event === event.id &&
+        !response.uninvited &&
+        (response.hostFamily || invited.has(response.guest)),
+    );
+  }
   totals(event, household) {
     const invited = new Set(event.invited);
-    const answers = this.list("response", household).filter(
-      (r) => r.event === event.id,
-    );
+    const answers = this.eventResponses(event, household);
     const attendance = Object.assign({}, ...answers.map((r) => r.attendance));
     const familyResponse = this.get(
       "response",
@@ -890,9 +897,7 @@ export class Store {
     };
   }
   menuView(event, household) {
-    const answers = this.list("response", household).filter(
-      (r) => r.event === event.id,
-    );
+    const answers = this.eventResponses(event, household);
     return event.menu.map((item) => ({
       ...item,
       claimed: answers.reduce((sum, r) => sum + (r.claims[item.id] || 0), 0),

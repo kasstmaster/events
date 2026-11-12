@@ -191,7 +191,9 @@ try {
     await example.locator("main").waitFor();
     if (view === "personalFamily") {
       await example
-        .getByLabel("Who receives updates", { exact: true })
+        .getByLabel("Who receives my updated information automatically", {
+          exact: true,
+        })
         .waitFor();
       assert.equal(
         await example
