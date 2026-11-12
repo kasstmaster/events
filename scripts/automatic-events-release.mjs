@@ -421,6 +421,54 @@ export function runtimeOverlay(raw) {
     overlay.cache = { enabled: overlay.cache };
   return overlay;
 }
+// GitHub can finalize an upload before the list API exposes its record/digest.
+// Wait only for absent metadata. A mismatch or API failure is never retried.
+export async function verifyCheckpointArtifact({
+  env,
+  readArtifacts,
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+}) {
+  must(
+    /^\d+$/.test(env.CHECKPOINT_ARTIFACT_ID || "") &&
+      /^sha256:[0-9a-f]{64}$/.test(env.CHECKPOINT_ARTIFACT_DIGEST || ""),
+    "checkpoint-upload",
+    "Checkpoint upload receipt is missing or malformed.",
+  );
+  for (let attempt = 0; attempt < 9; attempt++) {
+    const response = await readArtifacts();
+    must(
+      Array.isArray(response?.artifacts),
+      "checkpoint-upload",
+      "Checkpoint artifact inventory was not returned.",
+    );
+    const artifact = response.artifacts.find(
+      (a) => String(a.id) === env.CHECKPOINT_ARTIFACT_ID,
+    );
+    if (artifact) {
+      must(
+        artifact.expired === false &&
+          artifact.size_in_bytes > 0 &&
+          artifact.name ===
+            `events-recovery-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}`,
+        "checkpoint-upload",
+        "Checkpoint artifact identity, expiry or size differs from its upload receipt.",
+      );
+      if (artifact.digest !== undefined && artifact.digest !== null) {
+        must(
+          artifact.digest === env.CHECKPOINT_ARTIFACT_DIGEST,
+          "checkpoint-upload",
+          "Checkpoint artifact digest differs from its upload receipt.",
+        );
+        return artifact;
+      }
+    }
+    if (attempt < 8) await wait(3000);
+  }
+  throw new ReleaseError(
+    "checkpoint-upload",
+    "Successful checkpoint artifact upload was not verified after bounded read-only metadata checks. No publishing was attempted.",
+  );
+}
 export async function run(mode, options = {}) {
   const env = options.env || process.env,
     root = options.root || ".",
@@ -748,24 +796,15 @@ export async function run(mode, options = {}) {
       "checkpoint",
       "Checkpoint changed after upload or is stale.",
     );
-    const artifacts = await gh(
-      `/actions/runs/${env.GITHUB_RUN_ID}/artifacts?per_page=100`,
-      "checkpoint-upload",
-    );
-    const artifact = artifacts.artifacts?.find(
-      (a) => String(a.id) === env.CHECKPOINT_ARTIFACT_ID,
-    );
-    must(
-      artifact &&
-        /^sha256:[0-9a-f]{64}$/.test(env.CHECKPOINT_ARTIFACT_DIGEST || "") &&
-        !artifact.expired &&
-        artifact.size_in_bytes > 0 &&
-        artifact.name ===
-          `events-recovery-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}` &&
-        artifact.digest === env.CHECKPOINT_ARTIFACT_DIGEST,
-      "checkpoint-upload",
-      "Successful checkpoint artifact upload was not verified.",
-    );
+    await verifyCheckpointArtifact({
+      env,
+      readArtifacts: () =>
+        gh(
+          `/actions/runs/${env.GITHUB_RUN_ID}/artifacts?per_page=100`,
+          "checkpoint-upload",
+        ),
+      wait: options.wait,
+    });
     must(
       fingerprint(await snapshot()) === fingerprint(checkpoint.before),
       "preflight",

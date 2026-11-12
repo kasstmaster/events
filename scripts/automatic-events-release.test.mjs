@@ -15,6 +15,7 @@ import {
   runtimeOverlay,
   runtimeSettingsFingerprint,
   normalizedPlacement,
+  verifyCheckpointArtifact,
   versionAnnotations,
   annotationSchemaSummary,
   publishExact,
@@ -315,7 +316,12 @@ async function fixture(fn) {
             actor: { login: state.ownerLabelActor ? "kasstmaster" : "other" },
           },
         ]);
-      if (u.pathname.endsWith("/artifacts"))
+      if (u.pathname.endsWith("/artifacts")) {
+        state.artifactReads = (state.artifactReads || 0) + 1;
+        if (state.artifactDelay > 0) {
+          state.artifactDelay--;
+          return Response.json({ artifacts: [] });
+        }
         return Response.json({
           artifacts: state.artifact
             ? [
@@ -329,6 +335,7 @@ async function fixture(fn) {
               ]
             : [],
         });
+      }
       assert.fail("Unexpected GitHub route");
     }
     if (u.hostname === "api.cloudflare.com") {
@@ -918,4 +925,111 @@ test("only Cloudflare's empty disabled placement is converted to explicit Wrangl
     }),
     runtimeSettingsFingerprint(raw),
   );
+});
+
+test("delayed recovery artifact visibility waits read-only before exactly one publish", () =>
+  fixture(async ({ state, options, preflight }) => {
+    await preflight();
+    state.artifactDelay = 2;
+    let waits = 0;
+    options.wait = async (ms) => {
+      assert.equal(ms, 3000);
+      assert.equal(state.publishes, 0);
+      waits++;
+    };
+    await run("publish", options);
+    assert.equal(waits, 2);
+    assert.equal(state.artifactReads, 3);
+    assert.equal(state.publishes, 1);
+  }));
+test("artifact digest visibility may converge but mismatches, expiry and read failures stop immediately", async () => {
+  const env = {
+    CHECKPOINT_ARTIFACT_ID: "123",
+    CHECKPOINT_ARTIFACT_DIGEST: "sha256:" + "f".repeat(64),
+    GITHUB_RUN_ID: "99",
+    GITHUB_RUN_ATTEMPT: "1",
+  };
+  const good = {
+    id: 123,
+    name: "events-recovery-99-1",
+    digest: env.CHECKPOINT_ARTIFACT_DIGEST,
+    expired: false,
+    size_in_bytes: 20,
+  };
+  let reads = 0,
+    waits = 0;
+  await verifyCheckpointArtifact({
+    env,
+    readArtifacts: async () => ({
+      artifacts: [{ ...good, digest: ++reads < 3 ? null : good.digest }],
+    }),
+    wait: async () => {
+      waits++;
+    },
+  });
+  assert.equal(reads, 3);
+  assert.equal(waits, 2);
+  for (const change of [
+    { digest: "sha256:" + "a".repeat(64) },
+    { expired: true },
+    { expired: undefined },
+    { size_in_bytes: 0 },
+    { name: "wrong" },
+  ]) {
+    await assert.rejects(
+      verifyCheckpointArtifact({
+        env,
+        readArtifacts: async () => ({ artifacts: [{ ...good, ...change }] }),
+        wait: () => assert.fail("must not retry a mismatch"),
+      }),
+      (e) => e.stage === "checkpoint-upload",
+    );
+  }
+  await assert.rejects(
+    verifyCheckpointArtifact({
+      env,
+      readArtifacts: async () => {
+        throw new ReleaseError("checkpoint-upload", "HTTP 403");
+      },
+      wait: () => assert.fail("must not retry permission failures"),
+    }),
+    /403/,
+  );
+  let exhausted = 0;
+  await assert.rejects(
+    verifyCheckpointArtifact({
+      env,
+      readArtifacts: async () => {
+        exhausted++;
+        return { artifacts: [] };
+      },
+      wait: async () => {},
+    }),
+    /No publishing was attempted/,
+  );
+  assert.equal(exhausted, 9);
+});
+
+test("artifact visibility waits cannot bypass changed production or a newer main commit", async () => {
+  for (const mutate of [
+    (state) => {
+      state.drift = true;
+    },
+    (state) => {
+      state.latest = "a".repeat(40);
+    },
+  ]) {
+    await fixture(async ({ state, options, preflight }) => {
+      await preflight();
+      state.artifactDelay = 1;
+      options.wait = async () => {
+        mutate(state);
+      };
+      await assert.rejects(
+        run("publish", options),
+        /changed after checkpoint|latest main/,
+      );
+      assert.equal(state.publishes, 0);
+    });
+  }
 });
