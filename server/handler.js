@@ -1,3 +1,4 @@
+import { hostFamilyMembers } from "./host-family.js";
 import { guestAuthAPI } from "./guest-auth.js";
 import {
   accountManagementAPI,
@@ -223,7 +224,7 @@ function eventInvitations(invited, store, household, existing) {
   if (existing) {
     for (const response of store
       .list("response", household)
-      .filter((r) => r.event === existing.id))
+      .filter((r) => r.event === existing.id && !r.hostFamily))
       if (
         Object.keys(response.attendance).some((key) => !invited.includes(key))
       )
@@ -1250,16 +1251,22 @@ export function createHandler({
             guests: store
               .list("guest", household)
               .map((g) => guestContact(store, g, household)),
+            hostFamily: hostFamilyMembers(store, household),
             integrations: integrationCapabilities(store, env, household),
             savedMenu: store.list("menu-saved", household),
             tableTemplates: store.list("table-template", household),
             addresses: store.list("address", household),
-            events: store.list("event", household).map((e) => ({
-              ...e,
-              menu: store.menuView(e, household),
-              totals: store.totals(e, household),
-              ui: effectiveUI(store, store.household(household), e),
-            })),
+            events: store.list("event", household).map((e) => {
+              const family = store.hostFamilyEvent(e, household);
+              return {
+                ...e,
+                members: family.members,
+                response: family.response,
+                menu: family.menu,
+                totals: family.totals,
+                ui: effectiveUI(store, store.household(household), e),
+              };
+            }),
             templates: store.list("template", "platform"),
             defaults: effectiveUI(store).design,
             ui: effectiveUI(store, store.household(household)),
@@ -1338,6 +1345,24 @@ export function createHandler({
           );
           return;
         }
+        const ownFamilyRSVP = path.match(
+          /^\/api\/host\/events\/([a-zA-Z0-9-]+)\/family-rsvp$/,
+        );
+        if (ownFamilyRSVP && ["GET", "PUT"].includes(method)) {
+          const event = owned("event", ownFamilyRSVP[1]);
+          json(
+            res,
+            method === "GET"
+              ? store.hostFamilyEvent(event, household)
+              : store.saveResponse(
+                  event,
+                  { household, guest: "host-family" },
+                  await body(req),
+                  { hostFamily: true, partial: true, allowClosed: true },
+                ),
+          );
+          return;
+        }
         const manualRSVP = path.match(
           /^\/api\/host\/events\/([a-zA-Z0-9-]+)\/rsvp\/([a-zA-Z0-9-]+)$/,
         );
@@ -1387,6 +1412,7 @@ export function createHandler({
               event: existing,
               totals: store.totals(existing, household),
               guests,
+              hostFamily: hostFamilyMembers(store, household),
               addresses: store
                 .list("address", household)
                 .filter((a) => addresses.has(a.id)),

@@ -144,3 +144,18 @@ Treat registered personal information/authentication as central account data, se
 Only the Gather platform/system administrator may inspect/manage accounts across households. Every sensitive query/update/recovery/disclosure requires a current-password check, current system authorization, session validity, rate limits and version checks. Phone enrollment requires independently verified ownership/authorization, updates central verification, cancels stale challenges/messages, revokes existing guest sessions and preserves identities, codes, invitations, responses and relationships. Private URL reset replaces the encrypted random ID/hash, invalidates old links/challenges and revokes authorized sessions without deleting accounts. Restrict audit reads and never store/log URL tokens, OTPs, passwords or message bodies in audits/ordinary logs.
 
 Use existing account/guest/shared profile modules and existing page styling. Do not redesign Address Book. A host can request direct link delivery to the existing verified central phone but cannot see/reset the URL or redirect it through local contact data. Missing encryption/provider configuration fails closed; preserve existing sessions until legitimate security changes or private sign-in activation, and never enable SMS or create live fixtures for tests. See `docs/account-permissions.md` for configuration and administrator controls. Commit/push the tested branch for owner review; no PR creation, merge or deployment by Codex.
+
+## Full-page RSVP and host-family totals
+
+Use the shared full-page RSVP form for guest, host-family and host-entered guest
+responses. Return to the same event only after a successful save; preserve drafts
+on errors and keep guest deadline/party/version/menu-capacity restrictions.
+Project the host's current family from existing scoped family/account records;
+never manufacture contacts, invitations or authentication accounts. Put Your
+family first in RSVP selection/dashboard. Host-family responses are optional,
+event-specific and versioned: count only their yes answers toward attending and
+never toward invited, declined or no-response totals. Keep host-family endpoints
+host-only and tenant-scoped; use the same transaction engine as guests. Guest
+toolbars may show attending/invited aggregates but never family roster/details.
+Preserve existing records, invitation rules, notes, response history and disabled
+SMS. No schema/configuration/production migration is needed for these projections.

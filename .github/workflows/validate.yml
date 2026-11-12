@@ -60,6 +60,9 @@ jobs:
         if: matrix.group == 'navigation'
         timeout-minutes: 3
         run: node test/navigation-mobile.js
+      - name: Full-page RSVP and host-family attendance
+        if: matrix.group == 'editors'
+        run: node test/rsvp-page-mobile.js
       - name: Fixed toolbar and inline appearance browser checks
         if: matrix.group == 'editors'
         timeout-minutes: 3

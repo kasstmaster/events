@@ -99,7 +99,8 @@ const { existsSync, mkdirSync } = require("node:fs");
       .fill(password);
     await click(page, "Sign in");
   }
-  const dialog = (page) => page.locator("#editor[open], form[data-form=guest]");
+  const dialog = (page) =>
+    page.locator("#editor[open], form[data-form=guest], form[data-form=rsvp]");
   const { setAppearance, saveAppearance } =
     await import("./helpers/appearance.js");
   const noOverflow = async (page) =>

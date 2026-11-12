@@ -476,10 +476,10 @@ test(
         .selectOption("yes");
       await page.getByLabel("Quantity for Juice").fill("0");
       await page
-        .getByRole("dialog")
+        .locator("form[data-form=rsvp]")
         .getByRole("button", { name: "RSVP", exact: true })
         .click();
-      await page.getByRole("dialog").waitFor({ state: "hidden" });
+      await page.locator("form[data-form=rsvp]").waitFor({ state: "hidden" });
       await page.getByText("Robin: Attending", { exact: true }).waitFor();
       assert.ok(
         await page.evaluate(
@@ -497,6 +497,47 @@ test(
       data: { name: "Family child", login: "child", role: "kid", password },
     });
     assert.equal(kid.status, 201);
+    const familyBefore = await request(
+      `/api/host/events/${event.id}/family-rsvp`,
+      { cookie: host.cookie },
+    );
+    assert.equal(familyBefore.status, 200);
+    assert.ok(
+      familyBefore.body.members.some(
+        (member) => member.id === "family-" + kid.body.id,
+      ),
+    );
+    const familySaved = await request(
+      `/api/host/events/${event.id}/family-rsvp`,
+      {
+        method: "PUT",
+        cookie: host.cookie,
+        data: {
+          version: 0,
+          attendance: Object.fromEntries(
+            familyBefore.body.members.map((member) => [member.id, "yes"]),
+          ),
+          claims: {},
+        },
+      },
+    );
+    assert.equal(familySaved.status, 200);
+    assert.equal(
+      familySaved.body.totals.attending,
+      familyBefore.body.totals.attending + familyBefore.body.members.length,
+    );
+    for (const field of ["invited", "declined", "noResponse"])
+      assert.equal(
+        familySaved.body.totals[field],
+        familyBefore.body.totals[field],
+      );
+    const familyGuestView = (await request("/api/guest", { cookie: guests[0] }))
+      .body;
+    assert.equal(familyGuestView.events[0].totals.invited, 3);
+    assert.ok(
+      !JSON.stringify(familyGuestView).includes("family-" + kid.body.id),
+    );
+
     const kidLogin = await request(
       `/api/public/households/${host.household.slug}/members/login`,
       { method: "POST", data: { login: "child", password } },

@@ -1437,7 +1437,7 @@ try {
     "Host cannot edit shared interface wording",
   );
   await footer(g, ["Home", "Print", "Settings"]);
-  assert.equal(await g.locator(".event-summary").count(), 0);
+  assert.equal(await g.locator(".event-summary").count(), 1);
   assert.equal(
     await g.getByRole("button", { name: "Edit Event", exact: true }).count(),
     0,
@@ -1447,19 +1447,23 @@ try {
     .getByRole("button", { name: "View Event", exact: true })
     .click();
   await g.locator(".event-summary").waitFor();
+  assert.match(
+    await g.locator(".event-summary").innerText(),
+    /Attending[\s\S]*Invited/,
+  );
   assert.doesNotMatch(
     await g.locator(".event-summary").innerText(),
-    /Invited|No response/,
+    /Not attending|No response/,
   );
   await g.getByText("Where", { exact: true }).waitFor();
   await g.locator("main [data-action=rsvp]").click();
   await g.getByLabel("Casey Example", { exact: true }).selectOption("yes");
   await g.getByLabel("Quantity for Salad").fill("1");
   await g
-    .getByRole("dialog")
+    .locator("form[data-form=rsvp]")
     .getByRole("button", { name: "RSVP", exact: true })
     .click();
-  await g.getByRole("dialog").waitFor({ state: "hidden" });
+  await g.locator("form[data-form=rsvp]").waitFor({ state: "hidden" });
   await g.getByText("Salad × 1", { exact: true }).waitFor();
   for (const [name, page, width] of [
     ["owner", p, 1440],
@@ -1535,10 +1539,10 @@ try {
     .waitFor();
   await p.getByLabel("Casey Example", { exact: true }).selectOption("yes");
   await p
-    .getByRole("dialog")
+    .locator("form[data-form=rsvp]")
     .getByRole("button", { name: "RSVP", exact: true })
     .click();
-  await p.getByRole("dialog").waitFor({ state: "hidden" });
+  await p.locator("form[data-form=rsvp]").waitFor({ state: "hidden" });
   assert.equal(
     store.list("response", host.household).find((r) => r.event === e2.id)
       .attendance[guest.id],

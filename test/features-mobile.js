@@ -85,7 +85,8 @@ async function device(width) {
   return { context, page };
 }
 const click = clickNavigation;
-const dialog = (page) => page.locator("#editor[open], form[data-form=guest]");
+const dialog = (page) =>
+  page.locator("#editor[open], form[data-form=guest], form[data-form=rsvp]");
 async function login(page, email) {
   await page.goto(origin);
   await page.getByLabel("Name, email or username", { exact: true }).fill(email);
