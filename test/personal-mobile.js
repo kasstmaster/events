@@ -225,7 +225,7 @@ try {
     .click();
   await click(p, "RSVP");
   assert.equal(await p.getByLabel("Riley · child", { exact: true }).count(), 0);
-  await click(p, "Close editor");
+  await click(p, "Cancel");
   await click(p, "Home");
   await click(p, "Family information");
   await form.locator('[name="profilePhone"]').first().fill("+15005550125");

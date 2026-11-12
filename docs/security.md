@@ -68,7 +68,7 @@ See [Meyer AnyList](meyer-anylist.md). Enable the integration by a private opera
 
 The contact form no longer asks a host to assert SMS consent. Only a successful explicit attendance answer for the signed-in adult records phone-scoped RSVP enrollment and a single event confirmation; another resident's or child's answer cannot enroll that person. Enrollment is a separate private record so it does not invalidate an unsaved host contact editor. Enforce STOP globally, current phone/adult/invitation/response and nondeleted household immediately before the one-shot send. Expire queued confirmations after 24 hours. Provider-disabled submissions remain disabled permanently; uncertain attempts are never retried. Notifications use the same existing private delivery table and shared transport as reminders, with fixed errors and no raw provider response logging. Enabling provider credentials/SMS remains a separate operator action; this change sends no live messages and introduces no new cron or binding.
 
-Host and guest event bodies share one renderer without host instructions or private notes. The host RSVP control opens a read-only explanation and has no guest submission path. Double-click editing binds only to host-owned values; shared wording/layout remain platform-admin-only. Table templates are scoped to the authenticated host household, validate with the shared event-menu schema, require versions for updates/deletions and snapshot only menu fields. Applying them appends fresh item IDs to a browser draft; saving templates cannot update existing events or claims. Guest/family/admin sessions cannot use template endpoints. Existing RSVP/claim checks remain authoritative when an event draft is eventually saved.
+Host and guest event bodies share one renderer without host instructions or private notes. The host RSVP control offers its own family and authorized invited guests; host-only response endpoints remain scoped to the current household. Double-click editing binds only to host-owned values; shared wording/layout remain platform-admin-only. Table templates are scoped to the authenticated host household, validate with the shared event-menu schema, require versions for updates/deletions and snapshot only menu fields. Applying them appends fresh item IDs to a browser draft; saving templates cannot update existing events or claims. Guest/family/admin sessions cannot use template endpoints. Existing RSVP/claim checks remain authoritative when an event draft is eventually saved.
 
 ## Host accounts with platform administrator tools
 
@@ -105,3 +105,37 @@ Saved card formatting edits retain independently stored event/recipient snapshot
 ## Central account administration
 
 See [Account permissions](account-permissions.md). Cross-household central account changes and private-URL disclosure/reset require a system administrator's current password and server-side authorization. Host contact writes cannot change central credentials or verified contacts. Registered adults control their own central information. Verified-phone changes and URL resets revoke existing guest sessions/challenges without changing identity/history, and audit records contain no secrets. Private-link activation uses a single-use SMS proof; missing key/provider/contact configuration fails closed and SMS remains disabled in this task.
+
+## Host-family RSVPs
+
+`server/host-family.js` projects only the owning host's existing enabled family
+accounts and central family profile (verified source household). It exposes no
+password, login, phone, address, identity credential or device information. The
+same owner is deduplicated by the explicit host-person identity link; unrelated
+people are never merged by name. No guest/contact/account rows are fabricated.
+Family participant IDs have separate prefixes from real guest IDs.
+
+Only a current host session can GET/PUT its owned event's `family-rsvp` endpoint;
+ordinary family accounts, guests and other hosts cannot use it. The shared
+`saveResponse` transaction validates the current roster, response version,
+attendance values and menu capacity, and requires an accompanying adult for
+attending children. Host entry retains the existing manual-host deadline
+privilege; guest edits still close at the original UTC deadline. Missing/blank
+answers preserve previous answers. Family responses do not enroll or dispatch SMS.
+
+Responses remain in the existing event-scoped response store, tagged as
+host-family. Only current family attendees count as attending; invited,
+declined and unanswered counts continue to use real guest invitations only.
+Inactive/removed family members no longer count, while saved response history is
+retained. Event invitation validation excludes only tagged host-family responses;
+actual guest response/removal and claimed-item protection are unchanged.
+Guest payloads expose only aggregate attending and invited counts, never the
+host-family roster or its responses. Host dashboards retain adult/child totals,
+private notes and separate family participation. No schema migration or live
+record rewrite is required.
+
+The full-page form pauses background adoption while editing. Successful saves
+return to the correct event; validation/conflict failures retain the draft.
+Administrator example/preview submissions remain read-only. Tests use isolated
+synthetic accounts, browser sessions and databases; no production RSVP or SMS
+operation is part of validation.

@@ -256,6 +256,7 @@ const isEditing = () =>
   ["account-management", "private-guest-sign-in", "own-account"].includes(
     state.view,
   ) ||
+  state.view === "rsvp-page" ||
   !!state.eventLayoutDraft ||
   !!state.eventInviteDraft ||
   pointerInteraction ||
@@ -528,7 +529,6 @@ function settingsPage() {
 }
 function eventSummary(event) {
   const host = state.session.role === "host" && !event.invitingHousehold;
-  if (!host && !event.menu.some((i) => i.kind === "potluck")) return "";
   const items = host
     ? [
         [event.totals.attending, "Attending"],
@@ -537,20 +537,27 @@ function eventSummary(event) {
         [event.totals.noResponse || 0, "No response"],
       ]
     : [
-        [
-          event.menu.reduce(
-            (n, i) => n + Math.max(0, i.quantity - (i.claimed || 0)),
-            0,
-          ),
-          "Items needed",
-        ],
-        [
-          Object.values(event.response?.claims || {}).reduce(
-            (a, b) => a + b,
-            0,
-          ),
-          "Your items",
-        ],
+        [event.totals.attending, "Attending"],
+        [event.totals.invited, "Invited"],
+        ...(event.menu.some((item) => item.kind === "potluck")
+          ? [
+              [
+                event.menu.reduce(
+                  (n, item) =>
+                    n + Math.max(0, item.quantity - (item.claimed || 0)),
+                  0,
+                ),
+                "Items needed",
+              ],
+              [
+                Object.values(event.response?.claims || {}).reduce(
+                  (a, b) => a + b,
+                  0,
+                ),
+                "Your items",
+              ],
+            ]
+          : []),
       ];
   return `<div class="event-summary no-print" role="group" tabindex="0" aria-label="${H("Event summary")}"><div class="totals" style="--summary-items:${items.length}">${items.map(([value, label]) => `<div><strong>${value}</strong><span>${H(label)}</span></div>`).join("")}</div></div>`;
 }
@@ -674,6 +681,9 @@ function rememberPage() {
     state.cardsPageMarkup = "";
     state.settingsEvent = null;
     state.settingsOpen = false;
+    state.rsvpMarkup = "";
+    state.manualRSVP = null;
+    state.editingResponse = null;
     pageIdentity = identity;
   }
   if (
@@ -836,6 +846,8 @@ function render(target = $("#app"), example = false) {
     state.view === "username-recovery"
   )
     content = personal.page();
+  else if (role && state.view === "rsvp-page")
+    content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C(state.manualRSVP?.hostFamily ? "RSVP for your family" : state.manualRSVP ? "Record guest RSVP" : "Will you join us?")}</h1><form data-form="rsvp">${state.rsvpMarkup}<p class="form-error" role="alert"></p><div class="row"><button>${C("RSVP")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
   else if (state.view === "evites") content = tools.evitesPage();
   else if (state.view === "cards-page") content = tools.cardsPage();
   else if (state.view === "card-preview") content = tools.cardPreviewPage();
@@ -1120,6 +1132,7 @@ function render(target = $("#app"), example = false) {
       "management",
       "cards-page",
       "card-preview",
+      "rsvp-page",
       "settings",
       "admin-hosts",
       "admin-approvals",
@@ -1590,33 +1603,37 @@ function rsvp(event = selectedEvent(), manual = false) {
     return;
   }
   state.editingResponse = structuredClone(event.response);
-  modal(
-    C(manual ? "Record guest RSVP" : "Will you join us?"),
-    ui`<p>${escape(event.title)}</p>${manual ? "" : M('<p class="small">An RSVP confirmation may be texted to the phone number your host has on file. Reply STOP to opt out.</p>')}${event.deadline && !manual ? ui`<p class="muted small">RSVP by ${escape(dateLabel(event.deadline))}. Responses close after this date.</p>` : ""}<fieldset><legend>Your invited party</legend>${event.members
-      .map((m) =>
-        select(
-          escape(fullName(m)) + (m.parent ? C(" · child") : ""),
-          "attendance:" + m.id,
-          [
-            ["", C("Skip · keep existing response")],
-            ["yes", C("Attending")],
-            ["no", C("Not attending")],
-          ],
-          (event.partyAttendance || event.response.attendance)[m.id] || "",
-          "",
-        ),
-      )
-      .join("")}</fieldset><fieldset><legend>Something to bring</legend>${
-      event.menu
-        .map((item) => {
-          const mine = event.response.claims[item.id] || 0;
-          return ui`<div class="menu-item"><label class="grow">${escape(item.name)}<small>${item.kind === "drink" ? C("Drinks") : C("Potluck")} · ${Math.max(0, item.quantity - item.claimed)} remaining</small></label>${field(M('<span class="sr-only">Quantity for ') + escape(item.name) + "</span>", "claim:" + item.id, mine, "number", `min="0" max="${Math.max(mine, item.quantity - item.claimed + mine)}" required`)}</div>`;
-        })
-        .join("") || M("<p>No menu items yet.</p>")
-    }</fieldset>${event.customItemsEnabled ? area(H("Custom items · one per line"), "customItems", (event.response.customItems || []).map((i) => i.name).join("\n"), 'maxlength="5000"') : ""}`,
-    "rsvp",
-    "RSVP",
-  );
+  state.rsvpMarkup = ui`<p>${escape(event.title)}</p>${manual ? "" : M('<p class="small">An RSVP confirmation may be texted to the phone number your host has on file. Reply STOP to opt out.</p>')}${event.deadline && !manual ? ui`<p class="muted small">RSVP by ${escape(dateLabel(event.deadline))}. Responses close after this date.</p>` : ""}<fieldset><legend>${event.hostFamily ? C("Your family") : C("Your invited party")}</legend>${event.members
+    .map((m) =>
+      select(
+        escape(fullName(m)) + (m.parent ? C(" · child") : ""),
+        "attendance:" + m.id,
+        [
+          ["", C("Skip · keep existing response")],
+          ["yes", C("Attending")],
+          ["no", C("Not attending")],
+        ],
+        (event.partyAttendance || event.response.attendance)[m.id] || "",
+        "",
+      ),
+    )
+    .join("")}</fieldset><fieldset><legend>Something to bring</legend>${
+    event.menu
+      .map((item) => {
+        const mine = event.response.claims[item.id] || 0;
+        return ui`<div class="menu-item"><label class="grow">${escape(item.name)}<small>${item.kind === "drink" ? C("Drinks") : C("Potluck")} · ${Math.max(0, item.quantity - item.claimed)} remaining</small></label>${field(M('<span class="sr-only">Quantity for ') + escape(item.name) + "</span>", "claim:" + item.id, mine, "number", `min="0" max="${Math.max(mine, item.quantity - item.claimed + mine)}" required`)}</div>`;
+      })
+      .join("") || M("<p>No menu items yet.</p>")
+  }</fieldset>${event.customItemsEnabled ? area(H("Custom items · one per line"), "customItems", (event.response.customItems || []).map((i) => i.name).join("\n"), 'maxlength="5000"') : ""}`;
+  const source = selectedEvent() || event;
+  state.event = source.invitationKey || source.id;
+  closeModal();
+  state.view = "rsvp-page";
+  render();
+  window.scrollTo(0, 0);
+}
+function hostFamilyList(people, attendance = {}) {
+  return ui`<section class="rsvp-household host-family"><h3>${C("Your family")}</h3>${people.map((person) => ui`<div class="rsvp-person"><span>${escape(fullName(person))}<small>${attendance[person.id] === "yes" ? C("Attending") : attendance[person.id] === "no" ? C("Not attending") : C("Not recorded")}</small></span></div>`).join("")}${button("host-family-rsvp", H("RSVP for your family"))}</section>`;
 }
 async function dashboard() {
   const e = selectedEvent(),
@@ -1631,24 +1648,27 @@ async function dashboard() {
       ["", "No Responses"],
     ]
       .map(([status, label]) => {
-        const people = d.guests.filter(
-          (g) => status === null || (attendance[g.id] || "") === status,
-        );
+        const people = [
+          ...d.guests,
+          ...(status === "yes" ? d.hostFamily || [] : []),
+        ].filter((g) => status === null || (attendance[g.id] || "") === status);
         return ui`<div><strong>${people.filter((g) => !g.parent).length} ${C("Adults")} &amp; ${people.filter((g) => !!g.parent).length} ${C("Children")}</strong><span>${C(label)}</span></div>`;
       })
-      .join("")}</div><ul class="browse-rows rsvp-households">${
+      .join(
+        "",
+      )}</div>${hostFamilyList(d.hostFamily || [], attendance)}<ul class="browse-rows rsvp-households">${
       householdGroups(d.guests, d.addresses)
         .map(
           (group) =>
             ui`<li class="rsvp-household"><h3>${escape(group.label)}</h3>${group.people.map((g) => ui`<div class="rsvp-person"><span>${escape(fullName(g))}<small>${(attendance[g.id] || "") === "yes" ? C("Attending") : attendance[g.id] === "no" ? C("Not attending") : C("No response")}</small></span>${button("manual-rsvp", H("RSVP"), `data-id="${g.id}"`)}</div>`).join("")}</li>`,
         )
         .join("") || M("<li>No invited guests.</li>")
-    }</ul><h3>Potluck & drinks</h3>${d.menu.map((item) => ui`<div class="menu-item"><strong>${escape(item.name)}</strong><span>${item.claimed} / ${item.quantity} · ${Math.max(0, item.quantity - item.claimed)} remaining</span></div>`).join("")}<h3>Custom menu items</h3><ul>${d.responses.flatMap((r) => (r.customItems || []).map((i) => ui`<li>${escape(fullName(d.guests.find((g) => g.id === r.guest)))}: ${escape(i.name)} × ${i.quantity}</li>`)).join("") || "<li>No custom items.</li>"}</ul><h3>Who’s bringing what</h3><ul>${
+    }</ul><h3>Potluck & drinks</h3>${d.menu.map((item) => ui`<div class="menu-item"><strong>${escape(item.name)}</strong><span>${item.claimed} / ${item.quantity} · ${Math.max(0, item.quantity - item.claimed)} remaining</span></div>`).join("")}<h3>Custom menu items</h3><ul>${d.responses.flatMap((r) => (r.customItems || []).map((i) => ui`<li>${escape(r.hostFamily ? C("Your family") : fullName(d.guests.find((g) => g.id === r.guest)))}: ${escape(i.name)} × ${i.quantity}</li>`)).join("") || "<li>No custom items.</li>"}</ul><h3>Who’s bringing what</h3><ul>${
       d.responses
         .filter((r) => Object.keys(r.claims).length)
         .map(
           (r) =>
-            ui`<li>${escape(fullName(d.guests.find((g) => g.id === r.guest)))}: ${Object.entries(
+            ui`<li>${escape(r.hostFamily ? C("Your family") : fullName(d.guests.find((g) => g.id === r.guest)))}: ${Object.entries(
               r.claims,
             )
               .map(
@@ -1945,6 +1965,7 @@ async function submit(form) {
   }
   if (kind === "rsvp") {
     const e = state.manualRSVP || selectedEvent(),
+      returnEvent = state.event,
       attendance = {},
       claims = {};
     for (const [key, val] of data) {
@@ -1953,7 +1974,9 @@ async function submit(form) {
     }
     await api(
       state.manualRSVP
-        ? `/api/host/events/${e.id}/rsvp/${state.manualRSVPGuest}`
+        ? e.hostFamily
+          ? `/api/host/events/${e.id}/family-rsvp`
+          : `/api/host/events/${e.id}/rsvp/${state.manualRSVPGuest}`
         : `/api/${state.session.role === "host" ? "personal" : "guest"}/events/${e.id}/rsvp`,
       {
         method: "PUT",
@@ -1978,7 +2001,19 @@ async function submit(form) {
         },
       },
     );
-    await saved("Your RSVP is saved. Thank you!");
+    state.view = "home";
+    state.event = returnEvent;
+    state.actionEvent = null;
+    state.manualRSVP = null;
+    state.rsvpMarkup = "";
+    if (pageTrail.at(-1)?.event === state.event) pageTrail.pop();
+    returningToPage = true;
+    try {
+      await load();
+    } finally {
+      returningToPage = false;
+    }
+    notify(C("Your RSVP is saved. Thank you!"));
   }
 }
 document.addEventListener("submit", async (event) => {
@@ -2911,6 +2946,19 @@ document.addEventListener("click", async (event) => {
       );
       return;
     }
+    if (action === "rsvp-cancel") {
+      state.rsvpMarkup = "";
+      state.manualRSVP = null;
+      await previousPage();
+      return;
+    }
+    if (action === "host-family-rsvp") {
+      const projection = await api(
+        `/api/host/events/${selectedEvent().id}/family-rsvp`,
+      );
+      rsvp(projection, true);
+      return;
+    }
     if (action === "manual-rsvp") {
       state.manualRSVPGuest = target.dataset.id;
       const projection = await api(
@@ -2965,15 +3013,16 @@ document.addEventListener("click", async (event) => {
         const e = selectedEvent();
         modal(
           C("Choose an invited guest"),
-          householdGroups(
-            state.data.guests.filter((g) => e.invited.includes(g.id)),
-            state.data.addresses,
-          )
-            .map(
-              (group) =>
-                ui`<section class="rsvp-household"><h3>${escape(group.label)}</h3><ul class="browse-rows">${group.people.map((g) => row({ title: escape(fullName(g)), symbol: g.parent ? "child" : "contacts", action: "manual-rsvp", id: g.id })).join("")}</ul></section>`,
+          hostFamilyList(state.data.hostFamily || []) +
+            householdGroups(
+              state.data.guests.filter((g) => e.invited.includes(g.id)),
+              state.data.addresses,
             )
-            .join("") || M("<p>No invited guests.</p>"),
+              .map(
+                (group) =>
+                  ui`<section class="rsvp-household"><h3>${escape(group.label)}</h3><ul class="browse-rows">${group.people.map((g) => row({ title: escape(fullName(g)), symbol: g.parent ? "child" : "contacts", action: "manual-rsvp", id: g.id })).join("")}</ul></section>`,
+              )
+              .join("") || M("<p>No invited guests.</p>"),
         );
         return;
       }
@@ -3164,7 +3213,7 @@ function measureChrome() {
     "editing-active",
     appearance.active() ||
       !!document.querySelector(
-        "#editor[open] form, form[data-form=guest], .card-editor-page, .inline-household-details, .inline-event-details",
+        "#editor[open] form, form[data-form=guest], form[data-form=rsvp], .card-editor-page, .inline-household-details, .inline-event-details",
       ),
   );
   const top = document.querySelector(".top-shell"),

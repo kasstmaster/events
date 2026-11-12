@@ -1,3 +1,4 @@
+import { hostFamilyMembers } from "./host-family.js";
 import {
   roleDefaults,
   resolveUI,
@@ -872,9 +873,18 @@ export class Store {
       (r) => r.event === event.id,
     );
     const attendance = Object.assign({}, ...answers.map((r) => r.attendance));
+    const familyResponse = this.get(
+      "response",
+      `${event.id}:host-family`,
+      household,
+    );
     return {
       invited: invited.size,
-      attending: [...invited].filter((key) => attendance[key] === "yes").length,
+      attending:
+        [...invited].filter((key) => attendance[key] === "yes").length +
+        hostFamilyMembers(this, household).filter(
+          (member) => familyResponse?.attendance[member.id] === "yes",
+        ).length,
       declined: [...invited].filter((key) => attendance[key] === "no").length,
       noResponse: [...invited].filter((key) => !attendance[key]).length,
     };
@@ -899,9 +909,13 @@ export class Store {
       session.household,
     );
     const { invited, notes, reminders, ...safe } = event;
+    const totals = this.totals(event, session.household);
     return {
       ...safe,
-      totals: { attending: this.totals(event, session.household).attending },
+      totals: {
+        attending: totals.attending,
+        invited: totals.invited,
+      },
       menu: this.menuView(event, session.household),
       members: [guest, ...children].map(
         ({ id, first, last, suffix, parent }) => ({
@@ -915,17 +929,32 @@ export class Store {
       response: response || { version: 0, attendance: {}, claims: {} },
     };
   }
+  hostFamilyEvent(event, household) {
+    const { invited, notes, reminders, ...safe } = event;
+    return {
+      ...safe,
+      hostFamily: true,
+      members: hostFamilyMembers(this, household),
+      totals: this.totals(event, household),
+      menu: this.menuView(event, household),
+      response: this.get("response", `${event.id}:host-family`, household) || {
+        version: 0,
+        attendance: {},
+        claims: {},
+      },
+    };
+  }
   saveResponse(
     event,
     session,
     input,
-    { partial = false, allowClosed = false } = {},
+    { partial = false, allowClosed = false, hostFamily = false } = {},
   ) {
     return this.transaction(() => {
       const current = this.get("event", event.id, session.household);
-      if (!current?.invited.includes(session.guest))
+      if (!current || (!hostFamily && !current.invited.includes(session.guest)))
         fail(404, "Event not found.");
-      const key = `${event.id}:${session.guest}`,
+      const key = `${event.id}:${hostFamily ? "host-family" : session.guest}`,
         previous = this.get("response", key, session.household);
       if ((previous?.version || 0) !== input.version)
         fail(409, "Your RSVP changed on another device. Reload before saving.");
@@ -935,7 +964,9 @@ export class Store {
         current.deadline < new Date().toISOString().slice(0, 10)
       )
         fail(409, "The RSVP deadline has passed. Responses are closed.");
-      const members = this.guestEvent(current, session).members,
+      const members = hostFamily
+          ? hostFamilyMembers(this, session.household)
+          : this.guestEvent(current, session).members,
         allowed = new Set(members.map((m) => m.id));
       if (
         !input.attendance ||
@@ -958,7 +989,9 @@ export class Store {
         attendance[member.id] = choice;
       }
       if (
-        attendance[session.guest] !== "yes" &&
+        (hostFamily
+          ? !members.some((m) => !m.parent && attendance[m.id] === "yes")
+          : attendance[session.guest] !== "yes") &&
         members.some((m) => m.parent && attendance[m.id] === "yes")
       )
         fail(400, "Children must attend with their designated adult.");
@@ -1031,7 +1064,8 @@ export class Store {
         session.household,
         {
           event: event.id,
-          guest: session.guest,
+          guest: hostFamily ? "host-family" : session.guest,
+          ...(hostFamily ? { hostFamily: true } : {}),
           attendance,
           claims,
           customItems: custom,
@@ -1039,7 +1073,9 @@ export class Store {
         },
         previous?.version,
       );
-      return this.guestEvent(current, session);
+      return hostFamily
+        ? this.hostFamilyEvent(current, session.household)
+        : this.guestEvent(current, session);
     });
   }
 }

@@ -137,10 +137,18 @@ try {
     await page.locator('.toolbar [data-action="home"]').click();
     await page.getByRole("button", { name: "RSVPs", exact: true }).click();
     await page.locator(".rsvp-totals").waitFor();
-    assert.equal(await page.locator(".rsvp-household").count(), 1);
-    assert.equal(await page.locator(".rsvp-household .rsvp-person").count(), 2);
+    assert.equal(
+      await page.locator(".rsvp-households .rsvp-household").count(),
+      1,
+    );
+    assert.equal(
+      await page
+        .locator(".rsvp-households .rsvp-household .rsvp-person")
+        .count(),
+      2,
+    );
     assert.match(
-      await page.locator(".rsvp-household").innerText(),
+      await page.locator(".rsvp-households .rsvp-household").innerText(),
       /Casey Example[\s\S]*Attending[\s\S]*Riley[\s\S]*Not attending/,
     );
     assert.match(
@@ -148,7 +156,10 @@ try {
       /1 Adults & 1 Children\s+Invited/,
     );
     assert.equal(
-      await page.locator(".rsvp-person button").first().innerText(),
+      await page
+        .locator(".rsvp-households .rsvp-person button")
+        .first()
+        .innerText(),
       "RSVP",
     );
     await page.screenshot({

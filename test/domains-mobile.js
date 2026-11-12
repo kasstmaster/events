@@ -175,7 +175,7 @@ try {
         .locator("#main")
         .getByRole("button", { name: "RSVP", exact: true })
         .click();
-      const dialog = page.getByRole("dialog");
+      const dialog = page.locator("form[data-form=rsvp]");
       await dialog
         .getByLabel("Casey Synthetic", { exact: true })
         .selectOption("yes");

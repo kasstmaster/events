@@ -68,7 +68,7 @@ async function device(width = 390) {
   page.on("pageerror", (e) => errors.push(e.message));
   return { context, page };
 }
-const dialog = (page) => page.locator("#editor[open]");
+const dialog = (page) => page.locator("#editor[open], form[data-form=rsvp]");
 const click = clickNavigation;
 async function save(page) {
   await click(page, "Save");

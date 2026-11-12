@@ -189,3 +189,20 @@ In Event Details → Information, highlight words and choose Pop-up text (before
 Guest Home uses Dark Mode and displays the guest's full name. Each invitation card retains its inviting household's appearance; opening an event retains that event's appearance and access rules. Household invitation pages show the host name above “INVITED YOU TO A NEW EVENT.” Family sign-in fields and validation messages use “Username.” Notifications and validation messages use readable page text with transparent backgrounds.
 
 Account information ownership, restricted administrator recovery controls, private guest links and the disabled-SMS rollout boundary are documented in [Account permissions](docs/account-permissions.md). Central registered information and verified contacts are separate from hosts' local Address Book entries and private notes.
+
+### Full-page RSVPs and host-family participation
+
+RSVP opens as a dedicated page using the shared form and event appearance.
+Successful guest or host submissions return to that event; failed/stale writes
+keep the form available. Guest event toolbars show aggregate attending and
+invited counts without revealing other families' details. Existing guest
+invitations, UTC deadline checks, skipped responses and menu reservations remain
+unchanged.
+
+Every hosted event's RSVP chooser/dashboard starts with **Your family**, using
+existing enabled family accounts and the host's own central family profile.
+Participation is optional. Only attending host-family members contribute to
+attendance; they never increase invited, declined or unanswered totals. Their
+responses are event-scoped, versioned and use the same transactional RSVP/menu
+checks as guest responses. No guest contacts, sign-in credentials or invitations
+are created for this purpose. See [RSVP security](docs/security.md#host-family-rsvps).

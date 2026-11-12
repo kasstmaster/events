@@ -112,7 +112,7 @@
     "public/account-controls.js": "f33e08073aa828dcca25b15d2ffa9f86c2e288447b4fadedb431ab77163baf32",
     "public/address-picker.js": "5ba784a86da007428e23ba0b513b97eb472a3bdecdab06f673d99c975493dafa",
     "public/address-system.js": "103209806c9b577541d3793f11fb79837bcc333a24f865d36661ac0fa7c26cf4",
-    "public/app.js": "118f875562b78dbec9437d9815e01b74ef710e44c135c8294e5caa54ae0a7282",
+    "public/app.js": "a10dba7a0e71b1185e260214bb9f77b2fa213f2b656e414c6882abca4da39526",
     "public/appearance-editor.js": "25b5adac65b6a433366c15adf700cdf94ed51896ef75881870f90cf36fa1d2fa",
     "public/browse-ui.js": "dda408ac43b4dda9d4ca3603faac836991de5fec8b8a18f21235cc5e7e4e76ea",
     "public/card-qr-example.svg": "d96007428e2ab80ab691cb6b4c39d967489ee4264737fdd108b97a425e5667ba",
@@ -127,7 +127,7 @@
     "public/personal-ui.js": "7a1c449486d5d8e1db8131cf0451a3106951c4418f06046b01737ba7b8b60148",
     "public/reminder-time.js": "0a745e87162a5bf3fb1d630c19868bb7cd38788639ac18324a6515571ac1b765",
     "public/style.css": "c9d1b005b8a1dbe108c9ebc20a90fba345cbd68aee1e1e52f6e8ad5151639584",
-    "public/ui-copy.js": "d34786a272c42276d151f1b9744ea108b9863530629c5a45105d1094baaaa495",
+    "public/ui-copy.js": "69dda88ea71dfb4a3a4e2d1f111ec0212704782f9193997297d633034813f592",
     "public/ui-runtime.js": "cc628662ca9da3c3e475d483e3337f7522647eb8f9441280968eef97edb7455b",
     "public/ui-system.js": "70eaf605e98ac8efda59d5555a2517f60b7da15070bbdf7bd1b28d9595cd2008"
   },
