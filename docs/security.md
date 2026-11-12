@@ -146,3 +146,16 @@ uninvite/reinvite, so pre-removal forms cannot overwrite later answers. They
 contain no attendance, claims or custom items; full prior data stays only in the
 private response history. Reinviting exposes a blank response with the current
 version, not the old answer or a saved-RSVP indicator.
+
+### Optional family workspace access
+
+Family profile entries are roster data, not sign-in accounts. Hosts explicitly
+provision workspace access for a saved profile member using the current profile
+version. The server validates household ownership, prevents duplicate mappings
+and creating a second sign-in for a centrally registered person, and requires
+child access for children. Provisioning cannot rename the central person or add a
+duplicate RSVP identity. Existing assigned accounts remain distinct unless an
+explicit link was established; never merge by matching a display name. Archiving
+a linked roster person disables their workspace account and revokes sessions
+transactionally, retaining all identities, records and RSVP history. Family
+administrators do not gain central account editing permissions.

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { application } from "./helpers/application.js";
+import { application, password } from "./helpers/application.js";
 import { ensurePersonalProfile } from "../server/personal-accounts.js";
 const path = (event) => `/api/host/events/${event.id}/family-rsvp`;
 const save = (f, host, event, version, attendance, claims = {}) =>
@@ -314,4 +314,134 @@ test("central host-family names and dependents are projected without guest creat
     before,
   );
   assert.equal(f.store.list("guest", host.household.id).length, 0);
+});
+
+test("roster-only family members can receive optional sign-ins without duplicate RSVP people or lost history", async (t) => {
+  const f = await application(t),
+    host = await f.host("Roster"),
+    other = await f.host("Other");
+  await f.request("/api/family", { cookie: host.cookie });
+  const original = (await f.request("/api/personal", { cookie: host.cookie }))
+    .body;
+  const before = f.store.all(
+    "SELECT id FROM family_members WHERE household=?",
+    host.household.id,
+  ).length;
+  const saved = await f.request("/api/personal/family", {
+    method: "PUT",
+    cookie: host.cookie,
+    version: original.profile.version,
+    data: {
+      ...original.profile,
+      members: [
+        ...original.profile.members,
+        {
+          first: "Child",
+          last: "",
+          phone: "",
+          suffix: "",
+          parent: original.self,
+        },
+      ],
+    },
+  });
+  assert.equal(saved.status, 200);
+  const person = saved.body.profile.members.find((p) => p.first === "Child");
+  assert.equal(
+    f.store.all(
+      "SELECT id FROM family_members WHERE household=?",
+      host.household.id,
+    ).length,
+    before,
+  );
+  const event = await f.event(host, []);
+  const roster = (await f.request(path(event), { cookie: host.cookie })).body;
+  assert.equal(roster.members.length, 2);
+  const participant = roster.members.find((p) => p.first === "Child");
+  assert.equal(
+    (
+      await save(f, host, event, 0, {
+        [participant.id]: "yes",
+        [roster.members.find((p) => !p.parent).id]: "yes",
+      })
+    ).status,
+    200,
+  );
+  const payload = {
+    name: "Spoofed",
+    login: "child.access",
+    password,
+    role: "kid",
+    profileMember: person.id,
+    profileVersion: saved.body.profile.version,
+  };
+  assert.equal(
+    (
+      await f.request("/api/family/members", {
+        method: "POST",
+        cookie: host.cookie,
+        data: { ...payload, role: "administrator" },
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await f.request("/api/family/members", {
+        method: "POST",
+        cookie: other.cookie,
+        data: {
+          ...payload,
+          profileVersion: (
+            await f.request("/api/personal", { cookie: other.cookie })
+          ).body.profile.version,
+        },
+      })
+    ).status,
+    400,
+  );
+  const created = await f.request("/api/family/members", {
+    method: "POST",
+    cookie: host.cookie,
+    data: payload,
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.name, "Child");
+  assert.equal(created.body.profileMember, person.id);
+  assert.equal(
+    (
+      await f.request("/api/family/members", {
+        method: "POST",
+        cookie: host.cookie,
+        data: { ...payload, login: "duplicate" },
+      })
+    ).status,
+    409,
+  );
+  const after = (await f.request(path(event), { cookie: host.cookie })).body;
+  assert.deepEqual(after.members, roster.members);
+  assert.equal(after.totals.attending, 2);
+  const login = await f.request(
+    `/api/public/households/${host.household.slug}/members/login`,
+    { method: "POST", data: { login: payload.login, password } },
+  );
+  assert.equal(login.status, 200);
+  const archived = await f.request("/api/personal/family", {
+    method: "PUT",
+    cookie: host.cookie,
+    version: saved.body.profile.version,
+    data: {
+      ...saved.body.profile,
+      members: saved.body.profile.members.filter((p) => p.id !== person.id),
+    },
+  });
+  assert.equal(archived.status, 200);
+  assert.equal(
+    (await f.request("/api/family", { cookie: login.cookie })).status,
+    403,
+  );
+  const final = (await f.request(path(event), { cookie: host.cookie })).body;
+  assert.equal(final.members.length, 1);
+  assert.equal(final.totals.attending, 1);
+  assert.equal(final.response.attendance[participant.id], "yes");
 });

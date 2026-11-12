@@ -190,3 +190,16 @@ the shared Buttons appearance role. Event Details stores independent optional
 uploadURL/viewURL links using the same safe URL validation and omitted-field
 preservation. Keep View Photos & Videos after Upload Photos & Videos; omit empty
 actions and preserve external-service permissions and event/household isolation.
+
+Family roster editing belongs in Family Members / Family, never duplicated in
+Details. A roster entry does not require sign-in credentials. Optional assigned
+workspace accounts link explicitly to saved roster member IDs, with current
+profile versions, host/tenant checks, child-role restrictions, duplicate-account
+protection and existing password rules. Keep roster RSVP identities stable when
+adding access; existing unmatched workspace accounts remain visible in Family.
+Archiving a linked person disables their workspace account and revokes sessions,
+while retaining records/response history. Never merge accounts by matching names.
+
+All Settings surfaces use standard Light Mode only when the household explicitly
+uses Light Mode, otherwise standard Dark Mode. Never apply custom page palettes,
+images or typography to Settings or overwrite saved household/event formatting.

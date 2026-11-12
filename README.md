@@ -236,3 +236,16 @@ Event Details supports separate optional photo/video upload and viewing URLs.
 When configured, Upload Photos & Videos and View Photos & Videos appear below
 RSVP and registries, with the same full-width button formatting. Clearing either
 URL hides only that action. Sharing permissions remain controlled by the linked service.
+
+Family Members opens the single Family roster editor, including saved adults and
+children without sign-in accounts. Details no longer repeats this roster. A host
+may explicitly create an optional sign-in for a saved family member; this links
+to their existing roster identity without adding a duplicate RSVP participant or
+changing saved attendance. Existing workspace accounts and histories remain
+available in Family. Removing a roster member archives their information and
+revokes their linked workspace access without deleting RSVP history.
+
+Settings always uses the standard light palette when the household explicitly
+uses Light Mode, and the standard dark palette otherwise. Custom household/event
+colors and images do not style Settings. This is a display rule only: saved page
+formatting and event overrides remain unchanged.

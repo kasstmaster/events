@@ -14,6 +14,7 @@ export function personalTools({
   notify,
   render,
   load,
+  signInControls,
 }) {
   const current = () => state.data?.personal;
   const esc = (value) =>
@@ -95,7 +96,7 @@ export function personalTools({
     return ui`${topbar({ title: C(a.needsUsername ? "Create private sign-in" : "Private sign-in"), back: a.needsUsername ? "" : "page-back", extra: tool("personal-save", "Save", "", "save") })}<section class="panel" data-layout="personalAccount"><p data-layout-item="description">Your username is private. It is never shown to family, friends or hosts.</p><form data-form="personal-account" data-layout-item="credentials" data-version="${a.version}">${field(H("Username"), "username", a.username, "text", 'required minlength="3" maxlength="80" autocomplete="username"')}${field(H("Recovery phone number"), "recoveryPhone", a.recoveryPhone, "tel", 'required maxlength="30" autocomplete="tel"')}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form><div data-layout-item="verification">${a.recoveryPhone ? ui`<p>${a.recoveryVerified ? C("Recovery phone verified.") : C("Verify your recovery phone to enable username reminders.")}</p>${a.recoveryVerified ? "" : ui`${button("personal-verify-start", H("Send verification code"))}<form data-form="personal-verify">${field(H("Verification code"), "code", "", "text", 'required inputmode="numeric" maxlength="6"')}<p class="form-error" role="alert"></p><button>${C("Verify")}</button></form>`}` : ""}</div></section>`;
   }
   function familyPage() {
-    return ui`${topbar({ title: C("Family information"), back: "page-back", extra: tool("personal-save", "Save", "", "save") })}<section class="panel"><form data-form="personal-family">${familyFields()}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form></section>`;
+    return ui`${topbar({ title: C("Family"), back: "page-back", extra: tool("personal-save", "Save", "", "save") })}<section class="panel"><form data-form="personal-family">${familyFields()}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form>${state.session.role === "host" ? signInControls?.() || "" : ""}</section>`;
   }
   function contactsPage() {
     const data = current();
@@ -257,6 +258,8 @@ export function personalTools({
       const completing =
         kind === "personal-account" && current()?.account.needsUsername;
       if (data) state.data.personal = data;
+      if (kind === "personal-family" && state.session.role === "host")
+        state.familyData = await api("/api/family");
       if (completing && !data.account.needsUsername) state.view = "home";
       delete form.dataset.dirty;
       await load();

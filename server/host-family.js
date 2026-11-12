@@ -21,6 +21,8 @@ export function hostFamilyMembers(store, household) {
     { id: host.id, name: store.household(household).name, role: "member" },
     ...assigned,
   ]) {
+    const rosterLink = store.get("family-profile-member", member.id, household);
+    if (rosterLink && profile && rosterLink.profile === profile.id) continue;
     if (member.disabled) {
       people.delete(member.id);
       continue;
@@ -44,6 +46,7 @@ export function hostFamilyMembers(store, household) {
       ]),
     );
     for (const member of profile.members) {
+      if (member.archived) continue;
       const person = {
         id: keys.get(member.id),
         first: member.first,

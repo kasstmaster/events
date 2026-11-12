@@ -811,6 +811,27 @@ export function savePersonalProfile(store, session, input, expected) {
       },
       profile.version,
     );
+    if (session.role === "host")
+      for (const link of store.list(
+        "family-profile-member",
+        session.household,
+      )) {
+        if (
+          link.profile !== next.id ||
+          next.members.some((m) => m.id === link.member && !m.archived)
+        )
+          continue;
+        store.run(
+          "UPDATE family_members SET disabled=1,version=version+1 WHERE id=? AND household=?",
+          link.id,
+          session.household,
+        );
+        store.run(
+          "DELETE FROM sessions WHERE user=? AND household=?",
+          link.id,
+          session.household,
+        );
+      }
     propagatePersonalProfile(store, next);
     return accountProjection(store, session);
   });

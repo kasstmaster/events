@@ -527,7 +527,7 @@ export function familyTools(ctx) {
     memberEditing = member;
     modal(
       member.id ? C("Manage family member") : C("Create family member"),
-      ui`${field(H("Name"), "name", member.name || "", "text", "required")}${member.id ? "" : field(H("Username · no email required"), "login", "", "text", "required")}<p>Share the username and password privately. No account email is sent. The system administrator handles registered-account password recovery.</p>${select(H("Household role"), "role", [...(data().member.role === "owner" ? [["administrator", C("Household administrator")]] : []), ["member", C("Regular member")], ["kid", C("Kid account")]], member.role || "member")}${member.id ? "" : field(H("Password · at least 12 characters"), "password", "", "password", 'required minlength="12"')}<label class="check"><input type="checkbox" name="disabled" ${member.disabled ? "checked" : ""}>Disable sign-in and revoke sessions</label>${member.id ? action("family-member-remove", "Remove member", member.id, "danger") : ""}`,
+      ui`${member.profileMember && !member.id ? ui`<input type="hidden" name="profileMember" value="${escape(member.profileMember)}"><input type="hidden" name="profileVersion" value="${state.data.personal.profile.version}">` : ""}${field(H("Name"), "name", member.name || "", "text", member.profileMember ? "readonly required" : "required")}${member.id ? "" : field(H("Username · no email required"), "login", "", "text", "required")}<p>Share the username and password privately. No account email is sent. The system administrator handles registered-account password recovery.</p>${select(H("Household role"), "role", [...(data().member.role === "owner" ? [["administrator", C("Household administrator")]] : []), ["member", C("Regular member")], ["kid", C("Kid account")]], member.role || "member")}${member.id ? "" : field(H("Password · at least 12 characters"), "password", "", "password", 'required minlength="12"')}<label class="check"><input type="checkbox" name="disabled" ${member.disabled ? "checked" : ""}>Disable sign-in and revoke sessions</label>${member.id ? action("family-member-remove", "Remove member", member.id, "danger") : ""}`,
       "family-member",
     );
   }
@@ -617,6 +617,23 @@ export function familyTools(ctx) {
     render();
   }
   return {
+    signInControls() {
+      const profile = state.data.personal;
+      const members = data()?.members || [];
+      return ui`<h2>Optional sign-in accounts</h2><p>Family members do not need a sign-in account to appear in RSVP. Create access only for people who need to sign in.</p><ul>${profile.profile.members
+        .filter((p) => !p.archived && p.id !== profile.self)
+        .map((p) => {
+          const account = members.find((m) => m.profileMember === p.id);
+          return ui`<li>${escape([p.first, p.last, p.suffix].filter(Boolean).join(" "))}${account ? action("family-member-edit", "Manage sign-in", account.id) : action("family-profile-account", "Create sign-in account", p.id)}</li>`;
+        })
+        .join("")}</ul><h3>Existing accounts</h3><ul>${members
+        .filter((m) => !m.profileMember)
+        .map(
+          (m) =>
+            ui`<li>${escape(m.name)} · ${escape(m.role)}${m.disabled ? C(" · disabled") : ""}${m.role !== "owner" && m.id !== data().member.id && (data().member.role === "owner" || m.role !== "administrator") ? action("family-member-edit", "Manage", m.id) : ""}</li>`,
+        )
+        .join("")}</ul>`;
+    },
     navigation: () => ({ selected, section, search, showSearch }),
     async restoreNavigation(page) {
       await refresh();
@@ -867,7 +884,21 @@ export function familyTools(ctx) {
           data().items.find((i) => i.id === key),
           actionName === "family-item-up" ? -1 : 1,
         );
-      else if (actionName === "family-members")
+      else if (actionName === "family-members" && state.session.role === "host")
+        await ctx.openFamilyProfile();
+      else if (actionName === "family-profile-account") {
+        const person = state.data.personal?.profile.members.find(
+          (p) => p.id === key && !p.archived,
+        );
+        if (person)
+          memberEditor({
+            profileMember: person.id,
+            name: [person.first, person.last, person.suffix]
+              .filter(Boolean)
+              .join(" "),
+            role: person.parent ? "kid" : "member",
+          });
+      } else if (actionName === "family-members")
         modal(
           C("Family members"),
           ui`<p>Each person uses their own sign-in. Platform administration is never granted here.</p>${action("family-member-new", "Create family member")}<ul>${data()

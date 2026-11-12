@@ -941,7 +941,12 @@ function render(target = $("#app"), example = false) {
   const embeddedTop = target.querySelector("#main .app-topbar");
   if (embeddedTop)
     target.querySelector("#top-navigation").replaceChildren(embeddedTop);
-  if (embeddedTop && state.settingsOpen && role === "host")
+  if (
+    embeddedTop &&
+    state.settingsOpen &&
+    role === "host" &&
+    state.view !== "personal-family"
+  )
     embeddedTop
       .querySelector(".browse-top-actions")
       ?.insertAdjacentHTML(
@@ -1097,6 +1102,21 @@ function render(target = $("#app"), example = false) {
           card,
         );
     }
+  if (
+    state.settingsOpen ||
+    state.view === "settings" ||
+    state.view === "personal-family" ||
+    state.view === "personal-account"
+  ) {
+    const household = state.data?.household || state.publicHousehold;
+    const settingsMode =
+      household?.appearanceMode === "light" ? "light" : "dark";
+    const settingsUI = resolveUI(state.platformUI, {
+      design: appearancePreset(settingsMode),
+    });
+    applyDesign(settingsUI.design, designTarget);
+    state.activeUI = settingsUI;
+  }
   applyPersonalLayouts(target, active);
   const layoutEvent = settingsAppearanceEvent();
   if (layoutEvent)
@@ -1191,7 +1211,7 @@ function familyLogoChoice() {
 }
 function householdDetailsFields() {
   const household = state.data.household;
-  return ui`${field(H("Family household name"), "householdName", household.name, "text", 'readonly maxlength="100"')}<p class="small muted">Only the administrator can change the household name.</p>${household.logo ? ui`<img class="family-logo-preview" src="${escape(household.logo)}" alt="Current family logo">` : ""}${field(H("Family logo / icon"), "familyLogo", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<p>You can ask Kassandra to create a family logo for you. This appears when guests choose an event; event artwork is separate.</p><label class="check"><input type="checkbox" name="removeLogo">Remove family logo</label>${field(H("Household IANA timezone"), "householdTimezone", household.timezone || "UTC")}${personal.familyFields()}`;
+  return ui`${field(H("Family household name"), "householdName", household.name, "text", 'readonly maxlength="100"')}<p class="small muted">Only the administrator can change the household name.</p>${household.logo ? ui`<img class="family-logo-preview" src="${escape(household.logo)}" alt="Current family logo">` : ""}${field(H("Family logo / icon"), "familyLogo", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<p>You can ask Kassandra to create a family logo for you. This appears when guests choose an event; event artwork is separate.</p><label class="check"><input type="checkbox" name="removeLogo">Remove family logo</label>${field(H("Household IANA timezone"), "householdTimezone", household.timezone || "UTC")}`;
 }
 function householdDetails() {
   modal(C("Details"), householdDetailsFields(), "household");
@@ -1914,8 +1934,6 @@ async function submit(form) {
             "",
         timezone: value.householdTimezone,
         design: state.data.household.design,
-        personal: personal.collectFamily(form),
-        personalVersion: Number(form.elements.profileVersion?.value),
       },
     });
     await saved("Details saved.");
@@ -3507,6 +3525,12 @@ async function startAppearance(scope, globalOptions) {
 const family = familyTools({
   appearanceSettings: appearanceSettingsMarkup,
   householdDetails: inlineHouseholdDetails,
+  openFamilyProfile: async () => {
+    state.familyData = await api("/api/family");
+    state.data.personal = await api("/api/personal");
+    state.view = "personal-family";
+    render();
+  },
   back: previousPage,
   state,
   api,
@@ -3532,6 +3556,7 @@ const accounts = accountControls({
   load,
 });
 const personal = personalTools({
+  signInControls: () => family.signInControls(),
   state,
   api,
   field,
