@@ -1,3 +1,4 @@
+import { revokeUserSessions } from "./device-sessions.js";
 import { accessFor } from "./guest-access.js";
 import { fail, text, id, hashPassword, checkPassword } from "./model.js";
 import {
@@ -277,7 +278,7 @@ export async function featureAPI({
         password,
         session.user,
       );
-      store.run("DELETE FROM sessions WHERE user=?", session.user);
+      revokeUserSessions(store, session.user);
     });
     json(res, { ok: true, signInAgain: true });
     return true;

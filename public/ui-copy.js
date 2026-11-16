@@ -904,6 +904,7 @@ export const copyCatalog = [
   "Sign Out",
   "Sign in",
   "Sign out",
+  "Sign out all devices",
   "Sign out other devices",
   "Sign-in details",
   "Sign-in form",

@@ -153,7 +153,7 @@ export function passwordlessUI({
       return ui`<section class="auth"><p class="eyebrow">${state.publicHousehold ? escape(state.publicHousehold.name) : C("Welcome to Gather")}</p><h1>Sign in</h1><form data-form="passwordless-login">${field(H("First Name"), "first", "", "text", 'required maxlength="80" autocomplete="given-name"')}${field(H("Last Name"), "last", "", "text", 'maxlength="80" autocomplete="family-name"')}${field(H("Phone Number"), "phone", "", "tel", 'required maxlength="30" autocomplete="tel"')}<p class="form-error" role="alert"></p><button>Send Sign-In Link</button></form><p role="status">${message ? C(message) : ""}</p><p class="small">Open the link in the browser where you requested it. Installed apps may need their own sign-in.</p>${button("passwordless-legacy", H("Administrator / account recovery"))}</section>`;
     },
     securityPage() {
-      return ui`<section class="auth panel"><h1>Signed in</h1><p>Administrator tools require a separate password confirmation.</p><form data-form="passwordless-step-up">${field(H("System administrator password"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Open administrator tools</button></form>${button("passwordless-revoke", H("Sign out other devices"))}${button("logout", H("Sign Out"))}</section>`;
+      return ui`<section class="auth panel"><h1>Signed in</h1><p>Administrator tools require a separate password confirmation.</p><form data-form="passwordless-step-up">${field(H("System administrator password"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Open administrator tools</button></form>${button("passwordless-revoke", H("Sign out other devices"))}${button("passwordless-revoke-all", H("Sign out all devices"))}${button("logout", H("Sign Out"))}</section>`;
     },
     async stepUp(form) {
       await api("/api/passwordless/admin/step-up", {
@@ -186,6 +186,18 @@ export function passwordlessUI({
       if (action === "passwordless-legacy") {
         state.passwordlessLegacy = true;
         render();
+        return true;
+      }
+      if (action === "passwordless-revoke-all") {
+        if (!confirm(String(C("Sign out on all devices?")))) return true;
+        await api("/api/passwordless/sessions/revoke-all", {
+          method: "POST",
+          data: {},
+        });
+        state.view = "home";
+        state.event = null;
+        await load();
+        notify(C("All devices signed out."));
         return true;
       }
       if (action === "passwordless-revoke") {

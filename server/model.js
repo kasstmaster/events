@@ -1,3 +1,8 @@
+import {
+  DEVICE_COOKIE_SECONDS,
+  DEVICE_SESSION_EXPIRY,
+  rotatedSessionHash,
+} from "./device-sessions.js";
 import { centralMemberForActor } from "./central-membership.js";
 import { hostFamilyMembers } from "./host-family.js";
 import {
@@ -681,9 +686,15 @@ export class Store {
   }
   session(raw, origin, allowLegacy = true) {
     if (!raw) return null;
+    const tokenHash = createHash("sha256").update(raw).digest("hex");
+    const direct = this.one(
+      "SELECT token FROM sessions WHERE token=? AND expires>?",
+      tokenHash,
+      Date.now(),
+    );
     const session = this.one(
       "SELECT * FROM sessions WHERE token=? AND expires>?",
-      createHash("sha256").update(raw).digest("hex"),
+      direct ? tokenHash : rotatedSessionHash(this, raw, origin) || tokenHash,
       Date.now(),
     );
     if (!session) return null;
@@ -740,11 +751,16 @@ export class Store {
       role,
       identity = null,
       entryHousehold = household,
+      passwordless = false,
     },
     origin,
   ) {
     const token = randomBytes(32).toString("base64url");
-    const seconds = role === "guest" ? 7 * 86400 : 8 * 3600;
+    const seconds = passwordless
+      ? DEVICE_COOKIE_SECONDS
+      : role === "guest"
+        ? 7 * 86400
+        : 8 * 3600;
     this.run("DELETE FROM sessions WHERE expires<?", Date.now());
     this.run(
       "DELETE FROM guest_identity_sessions WHERE token NOT IN (SELECT token FROM sessions)",
@@ -759,7 +775,7 @@ export class Store {
       household,
       guest,
       role,
-      Date.now() + seconds * 1000,
+      passwordless ? DEVICE_SESSION_EXPIRY : Date.now() + seconds * 1000,
     );
     if (origin)
       this.run(
@@ -774,7 +790,7 @@ export class Store {
         identity,
         entryHousehold,
       );
-    return { token, seconds };
+    return { token, seconds, ...(passwordless ? { persistent: true } : {}) };
   }
   limit(key, max = 15, window = 15 * 60_000) {
     this.run("DELETE FROM limits WHERE expires<?", Date.now());

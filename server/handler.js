@@ -1,4 +1,10 @@
 import {
+  revokeUserSessions,
+  refreshDeviceSession,
+  revokeCurrentDevice,
+  adminSessionRestricted,
+} from "./device-sessions.js";
+import {
   centralMembershipAPI,
   centralMemberForActor,
 } from "./central-membership.js";
@@ -428,7 +434,7 @@ export function createHandler({
   const cookie = (res, session) =>
     res.setHeader(
       "Set-Cookie",
-      `${householdHostname || origin === "https://gather.ilymmd.com" ? "__Host-events_session" : "events_session"}=${session?.token || ""}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${session?.seconds || 0}${secureCookies ? "; Secure" : ""}`,
+      `${householdHostname || origin === "https://gather.ilymmd.com" ? "__Host-events_session" : "events_session"}=${session?.token || ""}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${session?.seconds || 0}${secureCookies ? "; Secure" : ""}${session?.persistent ? "; Expires=" + new Date(Date.now() + session.seconds * 1000).toUTCString() : !session ? "; Expires=Thu, 01 Jan 1970 00:00:00 GMT" : ""}`,
     );
   const json = (res, data, status = 200) => {
     res.writeHead(status, {
@@ -601,6 +607,11 @@ export function createHandler({
             : session.household !== selected.id))
       )
         fail(403, "This account is not available at this household address.");
+      const renewed = refreshDeviceSession(store, session, raw, origin);
+      if (renewed) {
+        session = renewed.session;
+        cookie(res, renewed.auth);
+      }
       const newSession = (account) => {
         if (
           !account.passwordless &&
@@ -764,6 +775,7 @@ export function createHandler({
         return;
       if (
         await passwordlessAPI({
+          raw,
           path,
           method,
           req,
@@ -1054,7 +1066,7 @@ export function createHandler({
             password,
             owner,
           );
-          store.run("DELETE FROM sessions WHERE user=?", owner);
+          revokeUserSessions(store, owner);
         });
         json(res, { ok: true });
         return;
@@ -1083,8 +1095,7 @@ export function createHandler({
           session
             ? {
                 adminStepUpAvailable:
-                  !!store.get("passwordless-session", session.token, "platform")
-                    ?.adminRestricted &&
+                  adminSessionRestricted(store, session) &&
                   platformAdministrator(store, {
                     ...session,
                     token: undefined,
@@ -1096,8 +1107,7 @@ export function createHandler({
                 ),
                 role:
                   session.role === "admin" &&
-                  store.get("passwordless-session", session.token, "platform")
-                    ?.adminRestricted
+                  adminSessionRestricted(store, session)
                     ? "admin-pending"
                     : ["host", "family"].includes(session.role)
                       ? manager(familyMember(store, session))
@@ -1174,8 +1184,7 @@ export function createHandler({
         return;
       }
       if (path === "/api/logout" && method === "POST") {
-        if (session)
-          store.run("DELETE FROM sessions WHERE token=?", session.token);
+        revokeCurrentDevice(store, session);
         cookie(res, null);
         json(res, { ok: true });
         return;

@@ -239,6 +239,15 @@ test("children default off; guardian-mediated login requires enrolled browser an
     (await f.request("/api/personal", { cookie: signed.cookie })).status,
     403,
   );
+  // Enrollment expires for new authentication, not an already authorized device.
+  for (const record of f.store.list("child-device", "platform"))
+    f.store.put(
+      "child-device",
+      record.id,
+      "platform",
+      { ...record, at: Date.now() - 31 * 86400000 },
+      record.version,
+    );
   const workspace = await f.request("/api/family", { cookie: signed.cookie });
   assert.equal(workspace.status, 200, JSON.stringify(workspace.body));
   assert.equal(workspace.body.records.length, 0);
