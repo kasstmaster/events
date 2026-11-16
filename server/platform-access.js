@@ -1,12 +1,10 @@
+import {
+  adminSessionRestricted,
+  revokeUserSessions,
+} from "./device-sessions.js";
 import { fail, checkPassword, text } from "./model.js";
 export function platformAdministrator(store, session) {
-  if (
-    !session ||
-    (session.token &&
-      store.get("passwordless-session", session.token, "platform")
-        ?.adminRestricted)
-  )
-    return false;
+  if (!session || adminSessionRestricted(store, session)) return false;
   if (session.role === "admin") return true;
   if (!["host", "family"].includes(session.role)) return false;
   const user = store.one(
@@ -98,7 +96,7 @@ export async function retireLegacyAdministrator(store, session, input) {
       "DELETE FROM session_origins WHERE token IN (SELECT token FROM sessions WHERE user=?)",
       user.id,
     );
-    store.run("DELETE FROM sessions WHERE user=?", user.id);
+    revokeUserSessions(store, user.id);
     store.run("DELETE FROM users WHERE id=? AND role='admin'", user.id);
     return { ok: true };
   });

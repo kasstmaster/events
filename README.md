@@ -265,3 +265,10 @@ membership uses reviewed central identities; child sign-in is off by default and
 requires approved verified delivery. Reviewed release/adulthood transitions retain
 identity and history. Duplicate approved household names receive permanently
 reserved numbered hostnames. These source changes do not activate SMS or DNS.
+
+Ticket 01 SMS-authenticated devices are remembered across ordinary browser/app
+restarts without inactivity sign-out. Device credentials remain revocable and
+rotate during use; current household permissions are checked on every request.
+Browser/OS storage restrictions still apply. See
+[Persistent sign-in](docs/passwordless-gather.md#ticket-01--persistent-sign-in-remember-users).
+SMS activation and live delivery remain separately gated.

@@ -70,3 +70,39 @@ A reviewed adult release preserves central identity and unrelated invitations/RS
 New approved host registrations with duplicate display names atomically claim the first never-used label (`dubois`, `dubois2`, `dubois3`). Display names stay unchanged. Retired labels remain reserved; reserved platform names cannot be bypassed with numbering. Existing household labels/aliases are not renamed. Branded Gather entry paths and QR routing use these authoritative active labels through the same shared routing checks. Allocation does not activate DNS or provision another application.
 
 The central membership regression suite covers approved adult access, tenant restrictions, child opt-in/out and both delivery paths, device enrollment/replay, reviewed adulthood, independent release and preserved identity/response data. Domain tests cover concurrent duplicate-name allocation and retired-label reservations. Browser coverage checks the actual read-only Family renderer and explicit Edit/Cancel on phone, tablet and desktop.
+
+## Ticket 01 — Persistent sign-in: remember users
+
+After successful Twilio SMS link redemption, hosts, guests and approved family
+members receive an independent, persistent device session. There is no inactivity
+timeout: closing the browser/PWA, restarting the device or returning months later
+does not normally require another SMS. Valid sessions bypass SMS authentication.
+Existing, still-valid SMS sessions upgrade on their next use; expired credentials
+are never revived. Legacy password authentication is unchanged.
+
+Credentials remain host-only Secure, HttpOnly, SameSite=Strict cookies, with a
+400-day browser lifetime refreshed during use. Server records have no ordinary
+expiry. Active credentials rotate after one day; a bounded 60-second encrypted
+receipt handles concurrent requests without storing the replacement in plaintext.
+Strong administrator elevation remains separately limited to eight hours and
+requires password confirmation, never another SMS solely because elevation expired.
+No authentication credential is placed in localStorage or the service-worker cache.
+
+Sign out revokes the current device, including its authorized cross-origin
+handoff sessions. Settings also provides other-device and all-device revocation.
+Administrator revocation, account recovery and security changes invalidate affected
+sessions immediately. Current identity, verified contact, household membership,
+child approval and per-request permissions remain authoritative; remembered access
+never freezes authorization. Expiry of a child's enrollment proof prevents a new
+sign-in but does not expire an already approved session; withdrawal of approval
+still revokes access immediately.
+
+Persistence is subject to browser/OS restrictions, cookie clearing and storage
+removal. Separate browser/PWA storage profiles can require separate authentication.
+Do not promise permanence beyond those platform controls. Local regression coverage
+uses real Chromium profile restarts and simulated elapsed months; native iOS/Android
+PWA persistence and live Twilio delivery still require separately authorized testing.
+
+SMS configuration/activation remains disabled and no provider is purchased or
+activated. Preserve the existing sign-in fields and Ticket 01 SMS design; optional
+passkeys require a separate decision. This feature does not authorize deployment.

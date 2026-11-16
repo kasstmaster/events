@@ -1,3 +1,4 @@
+import { persistentProof } from "./device-sessions.js";
 import { validChildDeviceRecord } from "./passwordless.js";
 import { randomBytes } from "node:crypto";
 import { fail } from "./model.js";
@@ -125,6 +126,7 @@ export async function handoffAPI(ctx) {
           contactStamp: record.contactStamp,
           childDeviceHash: record.childDeviceHash || "",
           sourceSession: session.token,
+          deviceId: record.deviceId,
         },
         row.version,
       );
@@ -150,7 +152,9 @@ export async function handoffAPI(ctx) {
         !valid(input.token) ||
         row.tokenHash !== authHash(input.token) ||
         !verified ||
-        !validChildDeviceRecord(store, subject, row.childDeviceHash) ||
+        !validChildDeviceRecord(store, subject, row.childDeviceHash, {
+          allowExpired: true,
+        }) ||
         verified.stamp !== row.contactStamp ||
         !store.one(
           "SELECT token FROM sessions WHERE token=? AND expires>?",
@@ -168,14 +172,20 @@ export async function handoffAPI(ctx) {
         row.version,
       );
       const auth = newSession({ ...account, passwordless: true });
-      store.put("passwordless-session", authHash(auth.token), P, {
-        subject: subject.key,
-        identity: subject.identity,
-        contactStamp: verified.stamp,
-        childDeviceHash: row.childDeviceHash || "",
-        adminRestricted: true,
-        at: Date.now(),
-      });
+      store.put(
+        "passwordless-session",
+        authHash(auth.token),
+        P,
+        persistentProof({
+          subject: subject.key,
+          identity: subject.identity,
+          contactStamp: verified.stamp,
+          childDeviceHash: row.childDeviceHash || "",
+          adminRestricted: true,
+          deviceId: row.deviceId,
+          at: Date.now(),
+        }),
+      );
       return { auth, invitation: row.invitation };
     });
     cookie(res, result.auth);

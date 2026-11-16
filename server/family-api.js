@@ -1,3 +1,7 @@
+import {
+  revokeUserSessions,
+  revokeHouseholdSessions,
+} from "./device-sessions.js";
 import { centralWorkspaceMembers } from "./central-membership.js";
 import {
   ensurePersonalProfile,
@@ -491,11 +495,7 @@ export async function familyAPI(ctx) {
           password,
           current.id,
         );
-      store.run(
-        "DELETE FROM sessions WHERE user=? AND household=?",
-        current.id,
-        household,
-      );
+      revokeUserSessions(store, current.id);
     });
     json(res, { ok: true });
     return true;
@@ -520,7 +520,7 @@ export async function familyAPI(ctx) {
         member.id,
         household,
       );
-      store.run("DELETE FROM sessions WHERE user=?", member.id);
+      revokeUserSessions(store, member.id);
     });
     json(res, { ok: true, signInAgain: true });
     return true;
@@ -550,7 +550,7 @@ export async function familyAPI(ctx) {
         household,
         target.id,
       );
-      store.run("DELETE FROM sessions WHERE household=?", household);
+      revokeHouseholdSessions(store, household);
     });
     json(res, { ok: true, signInAgain: true });
     return true;

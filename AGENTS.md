@@ -242,3 +242,15 @@ Children require Allow Sign-In off by default, explicit guardian/owner opt-in an
 Adult release preserves central identity, unrelated invitations/responses/personal data and permanently reserves an independent guest household ID. Sever former household sessions and workspace authority; keep shared household data private. Block original-owner release until reviewed ownership transfer and require dependent guardian reassignment. All sensitive reviews use current system-administrator password, versions and restricted non-secret audits.
 
 New approved registrations sharing a display name allocate first never-used numbered hostnames atomically through the shared domain allocator. Preserve display names and existing labels/aliases; never reuse retired claims or bypass reserved platform labels. No live routing activation, credential change or production migration is authorized by these source changes. See docs/passwordless-gather.md for review and staged activation.
+
+## Remembered SMS devices
+
+Ticket 01 SMS authentication creates persistent, revocable device sessions without
+an idle timeout for hosts, guests and approved family members. Preserve secure
+host-only HttpOnly cookies, credential rotation, immediate account/membership and
+security-change revocation, same-device cross-origin sign-out, and other/all-device
+controls. Administrator elevation remains separately short-lived with strong
+password step-up. Never substitute permanent administrator elevation or weaken
+current authorization. Platform storage deletion can require fresh authentication.
+Keep legacy authentication compatible and SMS activation disabled. See
+`docs/passwordless-gather.md` for the implementation and device-test limitations.

@@ -1119,7 +1119,7 @@ function render(target = $("#app"), example = false) {
   }
   if (
     role &&
-    state.passwordless?.enabled &&
+    (state.passwordless?.enabled || state.session?.passwordless) &&
     (state.settingsOpen || state.view === "settings")
   ) {
     const list = target.querySelector("#main .browse-rows");
@@ -1132,12 +1132,22 @@ function render(target = $("#app"), example = false) {
           action: "passwordless-revoke",
         }),
       );
+    if (list)
+      list.insertAdjacentHTML(
+        "beforeend",
+        row({
+          title: C("Sign out all devices"),
+          symbol: "logout",
+          action: "passwordless-revoke-all",
+        }),
+      );
     if (!list)
       target
         .querySelector("#main .panel")
         ?.insertAdjacentHTML(
           "beforeend",
-          button("passwordless-revoke", H("Sign out other devices")),
+          button("passwordless-revoke", H("Sign out other devices")) +
+            button("passwordless-revoke-all", H("Sign out all devices")),
         );
     if (list && state.session.adminStepUpAvailable)
       list.insertAdjacentHTML(

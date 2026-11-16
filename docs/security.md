@@ -185,3 +185,39 @@ and workspace authority. Sensitive membership review and device enrollment
 issuance require current system-administrator authentication, versions and
 restricted non-secret audits. See the rollout guide for safe release/ownership
 and guardian reassignment boundaries.
+
+## Ticket 01 — Persistent sign-in: remember users
+
+After successful Twilio SMS link redemption, hosts, guests and approved family
+members receive an independent, persistent device session. There is no inactivity
+timeout: closing the browser/PWA, restarting the device or returning months later
+does not normally require another SMS. Valid sessions bypass SMS authentication.
+Existing, still-valid SMS sessions upgrade on their next use; expired credentials
+are never revived. Legacy password authentication is unchanged.
+
+Credentials remain host-only Secure, HttpOnly, SameSite=Strict cookies, with a
+400-day browser lifetime refreshed during use. Server records have no ordinary
+expiry. Active credentials rotate after one day; a bounded 60-second encrypted
+receipt handles concurrent requests without storing the replacement in plaintext.
+Strong administrator elevation remains separately limited to eight hours and
+requires password confirmation, never another SMS solely because elevation expired.
+No authentication credential is placed in localStorage or the service-worker cache.
+
+Sign out revokes the current device, including its authorized cross-origin
+handoff sessions. Settings also provides other-device and all-device revocation.
+Administrator revocation, account recovery and security changes invalidate affected
+sessions immediately. Current identity, verified contact, household membership,
+child approval and per-request permissions remain authoritative; remembered access
+never freezes authorization. Expiry of a child's enrollment proof prevents a new
+sign-in but does not expire an already approved session; withdrawal of approval
+still revokes access immediately.
+
+Persistence is subject to browser/OS restrictions, cookie clearing and storage
+removal. Separate browser/PWA storage profiles can require separate authentication.
+Do not promise permanence beyond those platform controls. Local regression coverage
+uses real Chromium profile restarts and simulated elapsed months; native iOS/Android
+PWA persistence and live Twilio delivery still require separately authorized testing.
+
+SMS configuration/activation remains disabled and no provider is purchased or
+activated. Preserve the existing sign-in fields and Ticket 01 SMS design; optional
+passkeys require a separate decision. This feature does not authorize deployment.

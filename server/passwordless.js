@@ -1,4 +1,9 @@
 import {
+  persistentProof,
+  refreshDeviceSession,
+  deleteDeviceSessions,
+} from "./device-sessions.js";
+import {
   membership,
   workspaceId,
   centralPerson,
@@ -227,14 +232,19 @@ export function accountForOrigin(store, subject, selected) {
     entryHousehold: selected.id,
   };
 }
-export function validChildDeviceRecord(store, subject, hash) {
+export function validChildDeviceRecord(
+  store,
+  subject,
+  hash,
+  { allowExpired = false } = {},
+) {
   if (!subject?.guardianMediated) return true;
   const device = hash && store.get("child-device", hash, P);
   return (
     !!device &&
     device.identity === subject.identity &&
     device.membershipVersion === subject.membershipVersion &&
-    device.at + 2592000000 > Date.now()
+    (allowExpired || device.at + 2592000000 > Date.now())
   );
 }
 function childDevice(store, subject, cookies = "") {
@@ -438,7 +448,9 @@ export function validPasswordlessSession(store, session) {
   return (
     !!verified &&
     verified.stamp === record.contactStamp &&
-    validChildDeviceRecord(store, subject, record.childDeviceHash)
+    validChildDeviceRecord(store, subject, record.childDeviceHash, {
+      allowExpired: true,
+    })
   );
 }
 export function completePasswordless(
@@ -488,14 +500,22 @@ export function completePasswordless(
         old?.version,
       );
     }
-    store.put("passwordless-session", authHash(session.token), P, {
-      subject: subject.key,
-      identity: subject.identity,
-      adminRestricted: true,
-      contactStamp: verified.stamp,
-      childDeviceHash: row.childDeviceHash || "",
-      at: now(),
-    });
+    store.put(
+      "passwordless-session",
+      authHash(session.token),
+      P,
+      persistentProof(
+        {
+          subject: subject.key,
+          identity: subject.identity,
+          adminRestricted: true,
+          contactStamp: verified.stamp,
+          childDeviceHash: row.childDeviceHash || "",
+          at: now(),
+        },
+        now(),
+      ),
+    );
     return { session, entry: row.entry, invitation: row.invitation };
   });
 }
@@ -531,7 +551,21 @@ export async function passwordlessAPI(ctx) {
     });
     return true;
   }
-  if (!passwordlessEnabled(env) && path !== "/api/admin/passwordless/enroll")
+  const existingDevice =
+    session && store.get("passwordless-session", session.token, P);
+  const existingDeviceControl =
+    existingDevice &&
+    [
+      "/api/passwordless/security",
+      "/api/passwordless/admin/step-up",
+      "/api/passwordless/sessions/revoke",
+      "/api/passwordless/sessions/revoke-all",
+    ].includes(path);
+  if (
+    !passwordlessEnabled(env) &&
+    path !== "/api/admin/passwordless/enroll" &&
+    !existingDeviceControl
+  )
     fail(404, "Page not found.");
   const bindingName = origin.startsWith("https:")
     ? "__Host-gather_login"
@@ -582,17 +616,17 @@ export async function passwordlessAPI(ctx) {
       !(await checkPassword(input.password, account.password))
     )
       fail(403, "Confirm your system administrator password.");
-    const upgraded = store.transaction(() => {
-      const auth = newSession({
-        role: account.role,
-        user: account.id,
-        household: account.household,
-        passwordless: true,
-      });
-      store.run("DELETE FROM sessions WHERE token=?", session.token);
-      return auth;
+    const upgraded = refreshDeviceSession(store, session, ctx.raw, origin, {
+      force: true,
+      grace: false,
+      proofChanges: {
+        adminRestricted: false,
+        adminUntil: Date.now() + 8 * 3600000,
+      },
     });
-    cookie(res, upgraded);
+    if (!upgraded)
+      fail(401, "Sign in again before administrator confirmation.");
+    cookie(res, upgraded.auth);
     json(res, { ok: true });
     return true;
   }
@@ -651,12 +685,21 @@ export async function passwordlessAPI(ctx) {
     });
     return true;
   }
-  if (path === "/api/passwordless/sessions/revoke" && method === "POST") {
+  if (
+    [
+      "/api/passwordless/sessions/revoke",
+      "/api/passwordless/sessions/revoke-all",
+    ].includes(path) &&
+    method === "POST"
+  ) {
     if (!session) fail(401, "Please sign in.");
     store.transaction(() => {
-      const identity = ["host", "guest"].includes(session.role)
-        ? privateIdentity(store, session)
-        : null;
+      const currentProof = store.get("passwordless-session", session.token, P);
+      const identity =
+        currentProof?.identity ||
+        (["host", "guest"].includes(session.role)
+          ? privateIdentity(store, session)
+          : null);
       const primaryUser =
         session.user ||
         (identity && personalAccount(store, identity)?.hostUser);
@@ -673,13 +716,16 @@ export async function passwordlessAPI(ctx) {
           tokens.add(row.token);
       for (const row of store.list("passwordless-session", P))
         if (row.identity && row.identity === identity) tokens.add(row.id);
-      tokens.delete(session.token);
-      for (const token of tokens) {
-        store.run("DELETE FROM sessions WHERE token=?", token);
-        store.run("DELETE FROM session_origins WHERE token=?", token);
-        store.run("DELETE FROM guest_identity_sessions WHERE token=?", token);
+      if (path.endsWith("/revoke-all")) tokens.add(session.token);
+      else {
+        tokens.delete(session.token);
+        if (currentProof?.deviceId)
+          for (const row of store.list("passwordless-session", P))
+            if (row.deviceId === currentProof.deviceId) tokens.delete(row.id);
       }
+      deleteDeviceSessions(store, tokens);
     });
+    if (path.endsWith("/revoke-all")) cookie(res, null);
     json(res, { ok: true });
     return true;
   }
