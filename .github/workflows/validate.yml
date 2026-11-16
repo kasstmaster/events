@@ -88,6 +88,9 @@ jobs:
       - name: Restricted account management on phones and desktop
         if: matrix.group == 'accounts'
         run: node test/account-management-mobile.js
+      - name: Passwordless authentication and QR RSVP cards
+        if: matrix.group == 'accounts'
+        run: node test/passwordless-mobile.js
       - name: Browser failure screenshots
         if: ${{ failure() }}
         uses: actions/upload-artifact@v6

@@ -13,7 +13,7 @@ export const INITIAL_VERSION = "2445780c-00a8-4be8-be81-64e450420038";
 const ORIGIN = "https://events.kassandraraudman.workers.dev";
 const SCRIPT = `/accounts/${ACCOUNT}/workers/scripts/events`;
 const STORAGE_ADAPTER_SHA256 =
-  "fa6bcfe06763f4981c1362d472a2e1b241f81fb98589a8f2028fa98e16c8c5e1";
+  "6b78b555da2b3559b890bb91f1183d251ea1d0c855c045fab98262662cee2bfa";
 const CONFIGURATION_SHA256 =
   "c82817e99b91122bfeb344a44bcb24ec1608ff75f38dd3566046954a6483ad88";
 const POLICY = ".github/release/approved-application.json";
@@ -596,6 +596,39 @@ export async function run(mode, options = {}) {
         page < 30,
         "appearance",
         "PR file inventory exceeds the safe bound.",
+      );
+    }
+    if (
+      files.some(
+        (path) =>
+          path.startsWith("cloudflare/") || path === "server/gather-flags.js",
+      )
+    ) {
+      must(
+        pr.labels?.some((l) => l.name === "approved-infrastructure-change"),
+        "infrastructure",
+        "Worker routing changes require owner infrastructure approval.",
+      );
+      const history = await gh(
+        `/issues/${number}/events?per_page=100`,
+        "infrastructure",
+      );
+      must(
+        Array.isArray(history) && history.length < 100,
+        "infrastructure",
+        "Infrastructure approval history is incomplete.",
+      );
+      const last = history
+        .filter(
+          (e) =>
+            ["labeled", "unlabeled"].includes(e.event) &&
+            e.label?.name === "approved-infrastructure-change",
+        )
+        .at(-1);
+      must(
+        last?.event === "labeled" && last.actor?.login === "kasstmaster",
+        "infrastructure",
+        "Infrastructure approval label must be applied by the owner.",
       );
     }
     if (files.some((p) => p.startsWith("public/"))) {

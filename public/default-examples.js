@@ -74,6 +74,7 @@ export function exampleState(view, ui) {
   if (view === "eventSingleContainer") event.containerLayout = "single";
   const guestView = [
     "personalFamily",
+    "personalFamilyDetails",
     "personalAccount",
     "personalSetup",
     "personalContacts",
@@ -286,30 +287,30 @@ export function exampleState(view, ui) {
     publicHousehold: ["login", "guestLoginSuffix", "familyLogin"].includes(view)
       ? household
       : null,
-    view:
-      view === "personalFamily"
-        ? "personal-family"
-        : ["personalAccount", "personalSetup"].includes(view)
-          ? "personal-account"
-          : view === "personalContacts"
-            ? "personal-contacts"
-            : view === "adminApprovals"
-              ? "admin-approvals"
-              : view === "adminHosts"
-                ? "admin-hosts"
-                : ["adminSettings", "guestSettings"].includes(view)
-                  ? "settings"
-                  : view === "contacts"
-                    ? "contacts"
-                    : view === "registration"
-                      ? "register"
-                      : view === "hostLogin"
-                        ? "login"
-                        : view === "familyLogin"
-                          ? "family-login"
-                          : familyView
-                            ? "family"
-                            : "home",
+    familyMemberEditing: view === "personalFamilyDetails" ? "details" : null,
+    view: ["personalFamily", "personalFamilyDetails"].includes(view)
+      ? "personal-family"
+      : ["personalAccount", "personalSetup"].includes(view)
+        ? "personal-account"
+        : view === "personalContacts"
+          ? "personal-contacts"
+          : view === "adminApprovals"
+            ? "admin-approvals"
+            : view === "adminHosts"
+              ? "admin-hosts"
+              : ["adminSettings", "guestSettings"].includes(view)
+                ? "settings"
+                : view === "contacts"
+                  ? "contacts"
+                  : view === "registration"
+                    ? "register"
+                    : view === "hostLogin"
+                      ? "login"
+                      : view === "familyLogin"
+                        ? "family-login"
+                        : familyView
+                          ? "family"
+                          : "home",
     event: [
       "event",
       "guestEvent",

@@ -148,6 +148,7 @@ try {
   admin.page.on("request", observe);
   const views = [
     "personalFamily",
+    "personalFamilyDetails",
     "personalAccount",
     "personalSetup",
     "personalContacts",
@@ -191,6 +192,16 @@ try {
     await example.locator("main").waitFor();
     if (view === "personalFamily") {
       await example
+        .getByRole("button", { name: "Edit", exact: true })
+        .first()
+        .waitFor();
+      assert.equal(
+        await example.locator('form[data-form="personal-family"]').count(),
+        0,
+      );
+    }
+    if (view === "personalFamilyDetails") {
+      await example
         .getByLabel("Who receives my updated information automatically", {
           exact: true,
         })
@@ -199,7 +210,7 @@ try {
         await example
           .locator('[data-layout="personalFamily"] > [data-layout-item]')
           .count(),
-        4,
+        3,
       );
     }
     if (view === "personalSetup")

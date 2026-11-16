@@ -1,3 +1,4 @@
+import { centralMemberForActor } from "./central-membership.js";
 import { hostFamilyMembers } from "./host-family.js";
 import {
   roleDefaults,
@@ -350,6 +351,16 @@ export class Store {
   }
   household(household) {
     return this.get("household", household, household);
+  }
+  availableNameLabel(base) {
+    if (!normalizeLabel(base)) return null;
+    for (let number = 1; number <= 10000; number++) {
+      const suffix = number === 1 ? "" : String(number);
+      const label =
+        base.slice(0, 63 - suffix.length).replace(/-+$/, "") + suffix;
+      if (this.domainAvailable(label)) return label;
+    }
+    fail(409, "Household address capacity has been reached.");
   }
   domainAvailable(value, household = null) {
     const label = normalizeLabel(value);
@@ -705,6 +716,7 @@ export class Store {
     }
     if (
       session.role === "host" &&
+      !centralMemberForActor(this, session) &&
       this.one("SELECT disabled FROM family_members WHERE id=?", session.user)
         ?.disabled
     )
@@ -715,7 +727,8 @@ export class Store {
         session.user,
         session.household,
       );
-      if (!member || member.disabled) return null;
+      if ((!member || member.disabled) && !centralMemberForActor(this, session))
+        return null;
     }
     return session;
   }
@@ -825,9 +838,12 @@ export class Store {
           403,
           "Registration is unavailable for these details. Contact the administrator.",
         );
-      const label = suggestLabel(name);
+      const base = suggestLabel(name);
+      const label = this.availableNameLabel(base);
+      if (!label) fail(400, "Choose an available household name.");
       if (
         input.subdomain !== undefined &&
+        normalizeLabel(input.subdomain) !== base &&
         normalizeLabel(input.subdomain) !== label
       )
         fail(400, "The address must match the household name.");

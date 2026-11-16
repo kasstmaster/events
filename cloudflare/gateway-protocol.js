@@ -1,3 +1,4 @@
+import { universalRoutingEnabled } from "../server/gather-flags.js";
 import {
   createHash,
   createHmac,
@@ -68,6 +69,7 @@ async function signature(request, secret) {
 export async function forwardRequest(request, env) {
   const url = new URL(request.url);
   const hosts = configuredHosts(env.HOUSEHOLD_HOSTS);
+  if (universalRoutingEnabled(env)) hosts.add("gather.ilymmd.com");
   if (url.protocol !== "https:" || url.port || !hosts.has(url.hostname))
     return null;
   if (!["GET", "POST", "PUT", "DELETE"].includes(request.method)) return null;
@@ -109,6 +111,7 @@ export async function verifyRequest(request, env) {
   if (
     !hostname ||
     !(
+      (universalRoutingEnabled(env) && hostname === "gather.ilymmd.com") ||
       configuredHosts(env.HOUSEHOLD_HOSTS).has(hostname) ||
       (env.HOUSEHOLD_ROUTING_ENABLED === "true" && hostnameLabel(hostname))
     )

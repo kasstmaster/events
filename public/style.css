@@ -3202,3 +3202,9 @@ dialog.centered-popup {
 .browse-shell.address-book-shell {
   margin: 0;
 }
+
+.rsvp-enclosure-preview svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}

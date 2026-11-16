@@ -2,11 +2,16 @@ import { once } from "node:events";
 import { Store } from "../../server/node-store.js";
 import { createApp } from "../../server/app.js";
 export const password = "Isolated-family-test-passphrase";
-export async function application(t, env = {}) {
+export async function application(
+  t,
+  env = {},
+  { origin = "http://127.0.0.1:3000", ...options } = {},
+) {
   const store = new Store(),
     server = createApp({
       store,
-      origin: "http://127.0.0.1:3000",
+      origin,
+      ...options,
       env,
       logger: { error: () => {} },
     });
@@ -23,7 +28,7 @@ export async function application(t, env = {}) {
     const r = await fetch("http://127.0.0.1:" + server.address().port + path, {
       method,
       headers: {
-        Origin: "http://127.0.0.1:3000",
+        Origin: origin,
         ...(cookie ? { Cookie: cookie } : {}),
         ...(data ? { "Content-Type": "application/json" } : {}),
         ...(version !== undefined ? { "If-Match": String(version) } : {}),

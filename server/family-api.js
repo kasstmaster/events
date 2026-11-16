@@ -1,3 +1,4 @@
+import { centralWorkspaceMembers } from "./central-membership.js";
 import {
   ensurePersonalProfile,
   registeredMethod,
@@ -70,6 +71,11 @@ export function membersView(store, household) {
       disabled: 0,
       version: 1,
     });
+  for (const central of centralWorkspaceMembers(store, household)) {
+    const index = members.findIndex((m) => m.id === central.id);
+    if (index >= 0) members[index] = { ...members[index], ...central };
+    else members.push(central);
+  }
   return members.map((m) => {
     const link = store.get("family-profile-member", m.id, household);
     const profile =
@@ -103,14 +109,17 @@ function recordInput(store, member, input, current) {
   if (!types.includes(type)) fail(400, "Choose a supported household section.");
   if (member.role === "kid") fail(403, "Adults manage household records.");
   if (["task", "chore"].includes(type) && !manager(member)) {
-    const kidIds = new Set(
-      store
+    const kidIds = new Set([
+      ...centralWorkspaceMembers(store, member.household)
+        .filter((m) => m.role === "kid")
+        .map((m) => m.id),
+      ...store
         .all(
           "SELECT id FROM family_members WHERE household=? AND role='kid'",
           member.household,
         )
         .map((m) => m.id),
-    );
+    ]);
     if (
       (input.assignees || []).some((key) => kidIds.has(key)) ||
       (current?.assignees || []).some((key) => kidIds.has(key))
@@ -348,6 +357,11 @@ export async function familyAPI(ctx) {
     return true;
   }
   if (path === "/api/family/members" && method === "POST") {
+    if (
+      env.PASSWORDLESS_ENABLED === "true" &&
+      env.PASSWORDLESS_ACTIVATION_APPROVED === "true"
+    )
+      fail(400, "Manage central people in Family; children use Allow Sign-In.");
     requireManager(member);
     const input = await body(req),
       role = input.role;
@@ -547,10 +561,15 @@ export async function familyAPI(ctx) {
     if (key !== member.id) {
       requireManager(member);
       if (
-        !store.one(
-          "SELECT id FROM family_members WHERE id=? AND household=? AND role='kid'",
-          key,
-          household,
+        !(
+          store.one(
+            "SELECT id FROM family_members WHERE id=? AND household=? AND role='kid'",
+            key,
+            household,
+          ) ||
+          centralWorkspaceMembers(store, household).find(
+            (m) => m.id === key && m.role === "kid",
+          )
         )
       )
         fail(403, "Only child preferences can be managed for another member.");
@@ -571,11 +590,15 @@ export async function familyAPI(ctx) {
       fail(403, "A parent manages child notification preferences.");
     if (input.member && input.member !== member.id) {
       requireManager(member);
-      const kid = store.one(
-        "SELECT id FROM family_members WHERE id=? AND household=? AND role='kid'",
-        input.member,
-        household,
-      );
+      const kid =
+        store.one(
+          "SELECT id FROM family_members WHERE id=? AND household=? AND role='kid'",
+          input.member,
+          household,
+        ) ||
+        centralWorkspaceMembers(store, household).find(
+          (m) => m.id === input.member && m.role === "kid",
+        );
       if (!kid) fail(403, "Adults manage child notification settings only.");
       target = kid.id;
     }
@@ -679,12 +702,16 @@ export async function familyAPI(ctx) {
       if (
         ["task", "chore"].includes(record.type) &&
         !manager(member) &&
-        record.assignees.some((key) =>
-          store.one(
-            "SELECT id FROM family_members WHERE id=? AND household=? AND role='kid'",
-            key,
-            household,
-          ),
+        record.assignees.some(
+          (key) =>
+            store.one(
+              "SELECT id FROM family_members WHERE id=? AND household=? AND role='kid'",
+              key,
+              household,
+            ) ||
+            centralWorkspaceMembers(store, household).find(
+              (m) => m.id === key && m.role === "kid",
+            ),
         )
       )
         requireManager(member);

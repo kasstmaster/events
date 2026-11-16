@@ -1,3 +1,8 @@
+import {
+  GATHER_ORIGIN,
+  authSmsEnabled,
+  universalRoutingEnabled,
+} from "../server/gather-flags.js";
 import { runFamilyReminders } from "../server/family-tasks.js";
 import { runReminders } from "../server/reminders.js";
 import { runAccountCleanup } from "./account-cleanup.js";
@@ -92,7 +97,9 @@ export class EventsDatabase extends DurableObject {
         : this.store.one(
             "SELECT min(next_attempt) AS due FROM household_deletions WHERE phase!='complete'",
           )?.due,
-      this.env.SMS_ENABLED === "true" ? Date.now() + 60000 : null,
+      this.env.SMS_ENABLED === "true" || authSmsEnabled(this.env)
+        ? Date.now() + 60000
+        : null,
     ].filter((value) => value !== null && value !== undefined);
     const due = tasks.length ? Math.min(...tasks) : null;
     if (due === null || due === undefined) return;
@@ -120,6 +127,7 @@ export class EventsDatabase extends DurableObject {
           this.store.routingDue() === null) &&
         !remaining &&
         this.env.SMS_ENABLED !== "true" &&
+        !authSmsEnabled(this.env) &&
         !this.store.one(
           "SELECT id FROM records WHERE kind='family-record' AND json_extract(body,'$.type') IN ('chore','task') AND coalesce(json_extract(body,'$.cancelled'),0)=0 LIMIT 1",
         )
@@ -136,6 +144,9 @@ export class EventsDatabase extends DurableObject {
     const householdHostname =
       request.headers.get("x-events-verified-hostname") || "";
     const path = new URL(request.url).pathname;
+    const universal =
+      universalRoutingEnabled(this.env) &&
+      request.headers.get("x-events-verified-universal") === GATHER_ORIGIN;
     // Diagnostic codes only, for signed gateway verification reads. Never log
     // hostname, headers, probe, household, response body or exception values.
     const routingCheck = (stage, status) => {
@@ -185,6 +196,9 @@ export class EventsDatabase extends DurableObject {
             "/reminder-time.js",
             "/family-ui.js",
             "/default-examples.js",
+            "/passwordless-ui.js",
+            "/auth-bootstrap.js",
+            "/rsvp-cards-ui.js",
             "/address-picker.js",
             "/address-system.js",
             "/browse-ui.js",
@@ -220,7 +234,11 @@ export class EventsDatabase extends DurableObject {
     }
     // Only this Worker's private DO binding can invoke this adapter. The public edge
     // deletes these internal headers before it verifies the gateway envelope.
-    if (householdHostname && request.method !== "GET") {
+    if (
+      (householdHostname ||
+        (universal && request.headers.has("x-events-nonce"))) &&
+      request.method !== "GET"
+    ) {
       try {
         store.consumeGatewayNonce(request.headers.get("x-events-nonce"));
       } catch {
@@ -251,9 +269,11 @@ export class EventsDatabase extends DurableObject {
       setupSecret: this.env.ADMIN_SETUP_TOKEN || "",
       setupEmail: this.env.BOOTSTRAP_ADMIN_EMAIL || "",
       requireAdmin: true,
-      origin: householdHostname
-        ? `https://${householdHostname}`
-        : this.env.APP_ORIGIN || new URL(request.url).origin,
+      origin: universal
+        ? GATHER_ORIGIN
+        : householdHostname
+          ? `https://${householdHostname}`
+          : this.env.APP_ORIGIN || new URL(request.url).origin,
       canonicalOrigin: this.env.APP_ORIGIN || new URL(request.url).origin,
       householdHostname,
       householdHosts: new Set([
@@ -294,10 +314,20 @@ export default {
     await stub.wakeRouting();
   },
   async fetch(request, env) {
-    if (env.EVENTS_ORIGIN && new URL(request.url).origin !== env.EVENTS_ORIGIN)
+    const directUniversal =
+      universalRoutingEnabled(env) &&
+      new URL(request.url).origin === GATHER_ORIGIN;
+    if (
+      env.EVENTS_ORIGIN &&
+      new URL(request.url).origin !== env.EVENTS_ORIGIN &&
+      !directUniversal
+    )
       return unavailable(403);
     const headers = new Headers(request.headers);
     headers.delete("x-events-verified-hostname");
+    headers.delete("x-events-verified-universal");
+    if (directUniversal)
+      headers.set("x-events-verified-universal", GATHER_ORIGIN);
     const gatewayAttempt = [
       "x-events-hostname",
       "x-events-signature",
@@ -312,10 +342,14 @@ export default {
         return unavailable(403);
       }
       if (!householdHostname) return unavailable(403);
-      headers.set("x-events-verified-hostname", householdHostname);
+      if (householdHostname === "gather.ilymmd.com") {
+        headers.set("x-events-verified-universal", GATHER_ORIGIN);
+        householdHostname = "";
+      } else headers.set("x-events-verified-hostname", householdHostname);
     }
     if (
       householdHostname ||
+      headers.has("x-events-verified-universal") ||
       new URL(request.url).pathname.startsWith("/api/")
     ) {
       // Always overwrite a caller-supplied forwarding header at the trusted Cloudflare edge.

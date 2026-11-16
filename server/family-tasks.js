@@ -1,3 +1,4 @@
+import { centralWorkspaceMembers } from "./central-membership.js";
 import { createHash } from "node:crypto";
 import { id, fail, text } from "./model.js";
 import { utcSchedule, localSchedule } from "../public/reminder-time.js";
@@ -20,6 +21,9 @@ export function choreInput(store, member, input, current = {}) {
     assignees.some(
       (key) =>
         key !== owner &&
+        !centralWorkspaceMembers(store, member.household).some(
+          (m) => m.id === key,
+        ) &&
         !store.one(
           "SELECT id FROM family_members WHERE household=? AND id=? AND disabled=0",
           member.household,

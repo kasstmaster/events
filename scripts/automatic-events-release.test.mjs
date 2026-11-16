@@ -293,26 +293,41 @@ async function fixture(fn) {
         return Response.json({
           ...event().pull_request,
           merged: state.prMerged,
-          labels: state.ownerLabel
-            ? [{ name: "approved-appearance-change" }]
-            : [],
+          labels: [
+            ...(state.ownerLabel
+              ? [{ name: "approved-appearance-change" }]
+              : []),
+            ...(state.infrastructureLabel
+              ? [{ name: "approved-infrastructure-change" }]
+              : []),
+          ],
         });
       if (u.pathname.endsWith("/files"))
         return Response.json(
-          state.publicChange
-            ? [
-                { filename: "public/style.css" },
-                ...(state.manifestChange
-                  ? [{ filename: ".github/release/approved-application.json" }]
-                  : []),
-              ]
-            : [{ filename: "server/handler.js" }],
+          state.infrastructureChange
+            ? [{ filename: "cloudflare/worker.js" }]
+            : state.publicChange
+              ? [
+                  { filename: "public/style.css" },
+                  ...(state.manifestChange
+                    ? [
+                        {
+                          filename: ".github/release/approved-application.json",
+                        },
+                      ]
+                    : []),
+                ]
+              : [{ filename: "server/handler.js" }],
         );
       if (u.pathname.endsWith("/events"))
         return Response.json([
           {
             event: "labeled",
-            label: { name: "approved-appearance-change" },
+            label: {
+              name: state.infrastructureChange
+                ? "approved-infrastructure-change"
+                : "approved-appearance-change",
+            },
             actor: { login: state.ownerLabelActor ? "kasstmaster" : "other" },
           },
         ]);
@@ -485,6 +500,17 @@ test("public changes require manifest update and label actually applied by owner
     state.ownerLabel = true;
     state.ownerLabelActor = false;
     await assert.rejects(run("preflight", options), /applied by the owner/);
+    assert.equal(state.publishes, 0);
+  }));
+test("Worker changes require explicit owner infrastructure approval before any publication", () =>
+  fixture(async ({ state, options }) => {
+    state.infrastructureChange = true;
+    await assert.rejects(run("preflight", options), /infrastructure approval/);
+    state.infrastructureLabel = true;
+    state.ownerLabelActor = false;
+    await assert.rejects(run("preflight", options), /applied by the owner/);
+    state.ownerLabelActor = true;
+    await run("preflight", options);
     assert.equal(state.publishes, 0);
   }));
 test("failed artifact upload, altered checkpoint and prepublish runtime drift never publish", () =>

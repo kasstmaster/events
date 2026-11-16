@@ -1,3 +1,16 @@
+import {
+  centralMembershipAPI,
+  centralMemberForActor,
+} from "./central-membership.js";
+import { handoffAPI } from "./auth-handoff.js";
+import { rsvpCardsAPI } from "./rsvp-cards.js";
+import { gatherAppAPI } from "./gather-app.js";
+import {
+  passwordlessAPI,
+  validPasswordlessSession,
+  passwordlessEnabled,
+  universalEnabled,
+} from "./passwordless.js";
 import { hostFamilyMembers } from "./host-family.js";
 import { guestAuthAPI } from "./guest-auth.js";
 import {
@@ -84,6 +97,7 @@ import {
 const files = new Map([
   ["/", ["index.html", "text/html; charset=utf-8"]],
   ["/guest", ["index.html", "text/html; charset=utf-8"]],
+  ["/signin", ["index.html", "text/html; charset=utf-8"]],
   [
     "/account-controls.js",
     ["account-controls.js", "text/javascript; charset=utf-8"],
@@ -114,6 +128,10 @@ const files = new Map([
     "appearance-editor.js",
     "event-information.js",
     "personal-ui.js",
+    "passwordless-ui.js",
+    "auth-bootstrap.js",
+    "gather-sw.js",
+    "rsvp-cards-ui.js",
   ].map((file) => ["/" + file, [file, "text/javascript; charset=utf-8"]]),
 ]);
 const date = (value) => {
@@ -406,7 +424,7 @@ export function createHandler({
   const cookie = (res, session) =>
     res.setHeader(
       "Set-Cookie",
-      `${householdHostname ? "__Host-events_session" : "events_session"}=${session?.token || ""}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${session?.seconds || 0}${secureCookies ? "; Secure" : ""}`,
+      `${householdHostname || origin === "https://gather.ilymmd.com" ? "__Host-events_session" : "events_session"}=${session?.token || ""}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${session?.seconds || 0}${secureCookies ? "; Secure" : ""}`,
     );
   const json = (res, data, status = 200) => {
     res.writeHead(status, {
@@ -455,6 +473,11 @@ export function createHandler({
         fail(404, "This household address is unavailable.");
       if (method === "GET" && !path.startsWith("/api/")) {
         const entry =
+          (/^\/(?:invite\/[A-Za-z0-9_-]{43}|[a-z0-9][a-z0-9-]{1,61}[a-z0-9])$/.test(
+            path,
+          )
+            ? files.get("/")
+            : null) ||
           files.get(path) ||
           (path === "/setup" ? files.get("/") : null) ||
           (/^\/h\/[A-Za-z0-9_-]+$/.test(path) ? files.get("/") : null);
@@ -544,11 +567,24 @@ export function createHandler({
         .map((p) => p.trim())
         .find((p) =>
           p.startsWith(
-            `${selected ? "__Host-events_session" : "events_session"}=`,
+            `${selected || origin === "https://gather.ilymmd.com" ? "__Host-events_session" : "events_session"}=`,
           ),
         )
         ?.split("=")[1];
-      const session = store.session(raw, origin, !selected);
+      let session = store.session(raw, origin, !selected);
+      if (
+        session?.role === "family" &&
+        passwordlessEnabled(env) &&
+        store.one(
+          "SELECT role FROM family_members WHERE id=? AND household=?",
+          session.user,
+          session.household,
+        )?.role === "kid" &&
+        centralMemberForActor(store, session)?.role !== "kid"
+      )
+        session = null;
+      if (session && !validPasswordlessSession(store, session))
+        fail(401, "Please sign in again.");
       if (
         selected &&
         session &&
@@ -561,7 +597,35 @@ export function createHandler({
             : session.household !== selected.id))
       )
         fail(403, "This account is not available at this household address.");
-      const newSession = (account) => store.newSession(account, origin);
+      const newSession = (account) => {
+        if (
+          !account.passwordless &&
+          passwordlessEnabled(env) &&
+          account.role === "family" &&
+          store.one("SELECT role FROM family_members WHERE id=?", account.user)
+            ?.role === "kid" &&
+          centralMemberForActor(store, account)?.role !== "kid"
+        )
+          fail(403, "A guardian must enable this child’s sign-in first.");
+        const key = account.user
+          ? "user:" + account.user
+          : account.identity
+            ? "person:" + account.identity
+            : "";
+        if (
+          !account.passwordless &&
+          passwordlessEnabled(env) &&
+          env.PASSWORDLESS_RETIRE_LEGACY_APPROVED === "true" &&
+          key &&
+          store.get("passwordless-activation", key, "platform") &&
+          !platformAdministrator(store, account)
+        )
+          fail(
+            403,
+            "Use a temporary sign-in link or administrator-assisted recovery.",
+          );
+        return store.newSession(account, origin);
+      };
       const requireRole = (role) => {
         if (!session) fail(401, "Please sign in.");
         if (role === "host" && ["host", "family"].includes(session.role)) {
@@ -569,7 +633,11 @@ export function createHandler({
             fail(403, "Household content requires an owner or administrator.");
           return;
         }
-        if (role === "admin" && platformAdministrator(store, session)) return;
+        if (role === "admin") {
+          if (!platformAdministrator(store, session))
+            fail(403, "Administrator password confirmation is required.");
+          return;
+        }
         if (session.role !== role)
           fail(403, "This action is not available to your account.");
       };
@@ -621,6 +689,95 @@ export function createHandler({
         json(res, { ok: true });
         return;
       }
+      if (
+        await gatherAppAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          env,
+          origin,
+          selected,
+          json,
+          readAsset,
+        })
+      )
+        return;
+      if (
+        await rsvpCardsAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          body,
+          json,
+          env,
+          version,
+          requireRole,
+          householdHosts,
+        })
+      )
+        return;
+      if (
+        await centralMembershipAPI({
+          householdHosts,
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          body,
+          json,
+          version,
+          env,
+          origin,
+        })
+      )
+        return;
+      if (
+        await handoffAPI({
+          canonicalOrigin,
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          body,
+          json,
+          env,
+          origin,
+          householdHosts,
+          selected,
+          newSession,
+          cookie,
+        })
+      )
+        return;
+      if (
+        await passwordlessAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          body,
+          json,
+          env,
+          origin,
+          selected,
+          householdHosts,
+          cookie,
+          newSession,
+          effectiveUI,
+        })
+      )
+        return;
       if (
         await guestAuthAPI({
           path,
@@ -921,11 +1078,28 @@ export function createHandler({
           res,
           session
             ? {
-                role: ["host", "family"].includes(session.role)
-                  ? manager(familyMember(store, session))
-                    ? "host"
-                    : "family"
-                  : session.role,
+                adminStepUpAvailable:
+                  !!store.get("passwordless-session", session.token, "platform")
+                    ?.adminRestricted &&
+                  platformAdministrator(store, {
+                    ...session,
+                    token: undefined,
+                  }),
+                passwordless: !!store.get(
+                  "passwordless-session",
+                  session.token,
+                  "platform",
+                ),
+                role:
+                  session.role === "admin" &&
+                  store.get("passwordless-session", session.token, "platform")
+                    ?.adminRestricted
+                    ? "admin-pending"
+                    : ["host", "family"].includes(session.role)
+                      ? manager(familyMember(store, session))
+                        ? "host"
+                        : "family"
+                      : session.role,
                 platformAdmin: platformAdministrator(store, session),
                 householdRole: ["host", "family"].includes(session.role)
                   ? familyMember(store, session).role
@@ -1031,11 +1205,12 @@ export function createHandler({
       if (path === "/api/subdomains" && method === "GET") {
         store.limit(`availability:${req.socket.remoteAddress}`, 120);
         const fromName = url.searchParams.has("householdName");
-        const name = fromName
+        const base = fromName
           ? suggestLabel(
               (url.searchParams.get("householdName") || "").slice(0, 100),
             )
           : url.searchParams.get("name");
+        const name = fromName ? store.availableNameLabel(base) || base : base;
         json(res, {
           available: store.domainAvailable(
             name,
@@ -1548,10 +1723,27 @@ export function createHandler({
         requireRole("guest");
         if (path === "/api/guest" && method === "GET") {
           const view = invitationView(store, session),
-            guest = store.get("guest", session.guest, session.household),
-            entry = guestBrandHousehold(store, session).id;
+            central = accountProjection(store, session),
+            guest = session.guest
+              ? store.get("guest", session.guest, session.household)
+              : { id: central.self, ...central.person, suffix: "" },
+            universal =
+              !!store.get("passwordless-session", session.token, "platform") &&
+              universalEnabled(env),
+            entry =
+              universal || !session.household
+                ? null
+                : guestBrandHousehold(store, session).id;
           json(res, {
-            household: store.publicHousehold(store.household(entry).slug),
+            household: entry
+              ? store.publicHousehold(store.household(entry).slug)
+              : {
+                  id: "universal",
+                  name: "Gather",
+                  slug: "gather",
+                  logo: "",
+                  design: {},
+                },
             guest: {
               id: guest.id,
               first: guest.first,
@@ -1561,7 +1753,9 @@ export function createHandler({
             events: view.events,
             personal: accountProjection(store, session),
             defaults: effectiveUI(store).design,
-            ui: effectiveUI(store, store.household(entry)),
+            ui: entry
+              ? effectiveUI(store, store.household(entry))
+              : effectiveUI(store),
           });
           return;
         }

@@ -249,3 +249,19 @@ Settings always uses the standard light palette when the household explicitly
 uses Light Mode, and the standard dark palette otherwise. Custom household/event
 colors and images do not style Settings. This is a display rule only: saved page
 formatting and event overrides remain unchanged.
+
+### Staged passwordless Gather and QR RSVP enclosures
+
+The shared passwordless system, universal Gather entry/PWA, household-branded
+entry pages and separate QR RSVP cards are implemented behind explicit approval
+flags. Existing login methods and production settings remain unchanged by default.
+Authentication SMS has a separate gate from optional reminders/e-vites. System
+administration requires strong step-up authentication. See
+[passwordless rollout and verification](docs/passwordless-gather.md) for the flags,
+required domain/gateway/SMS approvals, legacy migration and device limitations.
+
+Family now opens as a read-only list with per-person Edit controls. New adult
+membership uses reviewed central identities; child sign-in is off by default and
+requires approved verified delivery. Reviewed release/adulthood transitions retain
+identity and history. Duplicate approved household names receive permanently
+reserved numbered hostnames. These source changes do not activate SMS or DNS.

@@ -203,3 +203,42 @@ while retaining records/response history. Never merge accounts by matching names
 All Settings surfaces use standard Light Mode only when the household explicitly
 uses Light Mode, otherwise standard Dark Mode. Never apply custom page palettes,
 images or typography to Settings or overwrite saved household/event formatting.
+
+## Staged universal passwordless sign-in
+
+The owner-requested replacement is implemented in server/passwordless.js and the
+shared passwordless UI; this supersedes older descriptions of normal sign-in
+only after explicit activation. Preserve all legacy credentials, identities and
+compatible sessions. Public sign-in never enrolls, claims or merges accounts;
+match authoritative names and independently verified registered phones, reject
+ambiguity generically, and preserve host/family/child/administrator roles. Keep
+system administration behind strong password step-up and current sensitive-action
+checks. A typed phone, private URL or printed QR is never proof of ownership.
+
+Keep all passwordless/universal/domain/PWA flags disabled until separately
+approved. AUTH_SMS_ENABLED is independent of optional SMS_ENABLED messaging;
+never enable reminders/e-vites merely to activate transactional sign-in. Reuse the
+existing provider/alarm and only mocked SMS in tests. Store authentication hashes,
+never raw tokens/messages, and require browser/origin proofs, bounded lifetimes,
+one-shot attempts and transactional redemption/handoffs. Keep the Gather hostname
+reserved and validate exact active household labels/aliases through existing
+routing. Preserve all existing Workers, data identity, routes, settings and secrets.
+
+Source changes to Cloudflare adapters/routing require the owner-applied
+approved-infrastructure-change release label, in addition to the existing public
+appearance approval. Updating a reviewed source fingerprint never authorizes
+production flags, DNS, messaging or a gateway release. Codex only implements,
+validates, commits and pushes a feature branch; the owner reviews/merges, and
+existing release/checkpoint/inventory safeguards remain mandatory. See
+docs/passwordless-gather.md for staged activation, recovery and actual device
+limitations. Do not claim live SMS/PWA/DNS verification from local test success.
+
+## Central Family membership and child opt-in
+
+For the staged passwordless system this supersedes optional adult/child account-creation wording. Family opens as a read-only name list with explicit per-person Edit. Adults are central people, not separately created family login accounts. Only independently verified, administrator-approved authoritative host-household memberships grant adult host authority. Preserve central identities, old credentials during staged recovery, tenant boundaries and private information ownership. Never infer authority from names, addresses or phones.
+
+Children require Allow Sign-In off by default, explicit guardian/owner opt-in and independently reviewed administrator approval/delivery. Guardian-mediated shared-phone authentication additionally requires a restricted single-use device enrollment and an enrolled requesting browser; name/shared phone alone is insufficient. Children remain limited to explicitly authorized Family Workspace records/folders and never see Address Book or host controls. Recheck membership/device proof and revoke access on opt-out, release, adulthood and verified-phone changes. Adulthood is a reviewed identity/age/membership transition, never an automatic host upgrade.
+
+Adult release preserves central identity, unrelated invitations/responses/personal data and permanently reserves an independent guest household ID. Sever former household sessions and workspace authority; keep shared household data private. Block original-owner release until reviewed ownership transfer and require dependent guardian reassignment. All sensitive reviews use current system-administrator password, versions and restricted non-secret audits.
+
+New approved registrations sharing a display name allocate first never-used numbered hostnames atomically through the shared domain allocator. Preserve display names and existing labels/aliases; never reuse retired claims or bypass reserved platform labels. No live routing activation, credential change or production migration is authorized by these source changes. See docs/passwordless-gather.md for review and staged activation.
