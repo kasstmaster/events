@@ -133,7 +133,7 @@ After the owner reviews and merges the automation setup, only an owner-merged sa
 
 Before production publish require exact clean integrated source, all unit/format/browser/runtime/build/safety gates, protected main with owner-configured required reviews/checks, latest-main and forward-only production lineage checks, the shared manual/automatic release lock, stable live inventory, correct existing account/Worker/SQLite identity, mandatory timestamp checkpoint creation plus verified artifact upload, unchanged runtime settings/bindings/secrets/routes/cron/flags and closed setup. Unknown state or unreadable inventory fails closed. No runtime-correction exceptions or credential changes are allowed. Only use existing GitHub-held credentials; local Cloudflare authentication is not a prerequisite for a verified non-deploying feature push.
 
-Preserve the approved page layouts and shared toolbar code. Public-file changes must update the reviewed appearance manifest and receive the owner's `approved-appearance-change` label before merge, including public JavaScript changes. Do not update that manifest to conceal unintended visual changes. Storage-adapter/configuration fingerprint changes require a separately reviewed infrastructure change. Extend shared functions, preserve tenant formatting/data, and never use fake live accounts or real messaging for release tests. SMS stays disabled. Never reset/recreate/reverse-migrate production storage, deploy the gateway, or change unrelated resources.
+Preserve the approved page layouts and shared toolbar code. Public-file changes must update the reviewed appearance manifest within the owner-reviewed PR, including public JavaScript changes. No release approval labels are required; the owner’s review and merge provide source approval. Do not update that manifest to conceal unintended visual changes. Storage-adapter/configuration fingerprint changes require a separately reviewed infrastructure change. Extend shared functions, preserve tenant formatting/data, and never use fake live accounts or real messaging for release tests. SMS stays disabled. Never reset/recreate/reverse-migrate production storage, deploy the gateway, or change unrelated resources.
 
 Post-release verification checks the actual Wrangler-emitted version and merged-SHA annotation, full runtime/settings fingerprints, SQLite binding, closed setup and exact public asset bytes on canonical/representative household origins. Allow bounded read-only convergence checks; do not republish to retry verification. Interactive private production flows require existing authorized sessions and must be reported honestly if unverified. See `docs/automatic-events-release.md` for required owner setup, intentional appearance changes, source guards, failure handling and the manual recovery boundary. Test automation with synthetic provider fixtures and local Worker dry runs only; never trigger a live release to test the workflow.
 
@@ -224,9 +224,9 @@ one-shot attempts and transactional redemption/handoffs. Keep the Gather hostnam
 reserved and validate exact active household labels/aliases through existing
 routing. Preserve all existing Workers, data identity, routes, settings and secrets.
 
-Source changes to Cloudflare adapters/routing require the owner-applied
-approved-infrastructure-change release label, in addition to the existing public
-appearance approval. Updating a reviewed source fingerprint never authorizes
+Source changes to Cloudflare adapters/routing require owner review and merge,
+with matching reviewed source fingerprints. No GitHub approval labels or label
+history checks are required for any release. Updating a reviewed source fingerprint never authorizes
 production flags, DNS, messaging or a gateway release. Codex only implements,
 validates, commits and pushes a feature branch; the owner reviews/merges, and
 existing release/checkpoint/inventory safeguards remain mandatory. See
