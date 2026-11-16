@@ -216,3 +216,12 @@ the bound remains a hard failure. All freshness, latest-main, production-state,
 source, checkpoint and pre-publish checks still apply after the read-only wait.
 Regression tests cover delayed record/digest visibility, a single subsequent
 publish, timeout, metadata mismatches and permission failures.
+
+## Public asset route regression checks
+
+The isolated Worker runtime test reads the complete approved appearance manifest
+and verifies HTTP success and exact bytes for every asset on the canonical,
+universal and signed household entry paths, including PNG app icons. Worker-first
+asset routing requires an explicit shared server route even when the file was
+successfully uploaded. These checks run before production publishing; they never
+contact the live website or create production accounts.

@@ -98,6 +98,10 @@ const files = new Map([
   ["/", ["index.html", "text/html; charset=utf-8"]],
   ["/guest", ["index.html", "text/html; charset=utf-8"]],
   ["/signin", ["index.html", "text/html; charset=utf-8"]],
+  ...[192, 512].map((size) => [
+    "/gather-" + size + ".png",
+    ["gather-" + size + ".png", "image/png"],
+  ]),
   [
     "/account-controls.js",
     ["account-controls.js", "text/javascript; charset=utf-8"],

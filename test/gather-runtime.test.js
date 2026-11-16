@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -75,7 +76,7 @@ test(
       EVENTS_ORIGIN: canonical,
       ADMIN_SETUP_TOKEN: secret,
       EVENTS_GATEWAY_SECRET: "synthetic-gateway-secret-more-than-32-characters",
-      HOUSEHOLD_HOSTS: "",
+      HOUSEHOLD_HOSTS: "alpha.ilymmd.com",
     };
     const disabled = new Miniflare(
       convertV4MiniflareOptions({
@@ -106,6 +107,56 @@ test(
     assert.ok(
       created.headers.get("set-cookie").startsWith("__Host-events_session="),
     );
+    const adminCookie = created.headers.get("set-cookie").split(";")[0];
+    const approval = await mf.dispatchFetch(origin + "/api/admin/approvals", {
+      method: "POST",
+      headers: {
+        Origin: origin,
+        Cookie: adminCookie,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email: "host@example.test" }),
+    });
+    assert.equal(approval.status, 201);
+    const registered = await mf.dispatchFetch(origin + "/api/register", {
+      method: "POST",
+      headers: { Origin: origin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "host@example.test",
+        password: "Synthetic-runtime-password",
+        name: "Alpha",
+      }),
+    });
+    assert.equal(registered.status, 201);
+    // Every release-manifest file must be publicly routable, including binary
+    // icons. Uploading an asset does not make it reachable with worker-first routing.
+    const policy = JSON.parse(
+      await readFile(".github/release/approved-application.json", "utf8"),
+    );
+    for (const entryOrigin of [canonical, origin, "https://alpha.ilymmd.com"]) {
+      for (const [path, expectedHash] of Object.entries(policy.appearance)) {
+        const url =
+          entryOrigin +
+          "/" +
+          (path === "public/index.html" ? "" : path.slice(7));
+        const forwarded =
+          entryOrigin === "https://alpha.ilymmd.com"
+            ? await forwardRequest(new Request(url), env)
+            : null;
+        const asset = forwarded
+          ? await mf.dispatchFetch(forwarded.url, forwarded)
+          : await mf.dispatchFetch(url);
+        assert.equal(asset.status, 200, path + " on " + entryOrigin);
+        const bytes = Buffer.from(await asset.arrayBuffer());
+        assert.equal(
+          createHash("sha256").update(bytes).digest("hex"),
+          expectedHash,
+          path + " bytes on " + entryOrigin,
+        );
+        if (path.endsWith(".png"))
+          assert.equal(asset.headers.get("content-type"), "image/png");
+      }
+    }
     const context = await (
       await mf.dispatchFetch(origin + "/api/public/context")
     ).json();
