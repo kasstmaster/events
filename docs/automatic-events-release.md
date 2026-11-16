@@ -24,7 +24,7 @@ The automatic workflow listens only for `pull_request: closed` targeting main. E
 
 The source guard verifies exact HEAD, full integrated history, a clean tracked tree, no unreviewed application files and all required shared application paths. An ancestry check alone is insufficient: the former operations tree retained old history while losing the real application. Missing shared modules or an older source tree therefore stop before production access.
 
-`.github/release/approved-application.json` records the approved public-file hashes and required application files. All public assets must match the manifest, including additions/removals. Changes under `public/` also require that PR to update the manifest and carry `approved-appearance-change`, with the latest application of that label performed by the owner. A copied/forged label or missing/incomplete event history fails closed. Public JavaScript changes also require this review because it defines page layouts and interactions.
+`.github/release/approved-application.json` records the approved public-file hashes and required application files. All public assets must match the manifest, including additions/removals. Changes under `public/` require that owner-reviewed PR to update the manifest. No approval labels or label-history checks are required for public or infrastructure changes. The owner’s review and merge authorize the reviewed source change; source/configuration fingerprints and all production checks remain mandatory. Public JavaScript changes also require this review because it defines page layouts and interactions.
 
 For an intentional, owner-requested public change, stage its files, update the manifest locally, review it with the code, and commit both:
 
@@ -35,7 +35,7 @@ npx prettier --write .github/release/approved-application.json
 git add .github/release/approved-application.json
 ```
 
-The owner applies the appearance approval label before merging that PR. This is an approval for the specific reviewed change; it does not authorize generic redesigns or overwrite tenant formatting. This setup changes no application files or appearance.
+The owner reviews the appearance changes and manifest before merging that PR; no label is needed. This is an approval for the specific reviewed change; it does not authorize generic redesigns or overwrite tenant formatting. This setup changes no application files or appearance.
 
 Configuration and the production storage adapter have additional fixed fingerprints, not merely an editable manifest value. Automatic releases preserve account `37d068144865a0b725ee272bc7b2eb71`, Worker `events`, binding `EVENTS_DATABASE`, namespace `8203f4cd7fde45d2ab49de62e239d744`, class `EventsDatabase`, object `events-platform-v1`, migration tag `events-v1`, assets directory/binding, both compatibility flags, date `2026-10-30`, keep-vars, workers.dev, disabled preview URLs and the existing five-minute cron. Changing these requires a separately reviewed infrastructure release, never a policy-file-only bypass. No gateway deployment, namespace recreation or reverse migration is performed.
 

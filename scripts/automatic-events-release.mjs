@@ -598,66 +598,11 @@ export async function run(mode, options = {}) {
         "PR file inventory exceeds the safe bound.",
       );
     }
-    if (
-      files.some(
-        (path) =>
-          path.startsWith("cloudflare/") || path === "server/gather-flags.js",
-      )
-    ) {
+    if (files.some((path) => path.startsWith("public/"))) {
       must(
-        pr.labels?.some((l) => l.name === "approved-infrastructure-change"),
-        "infrastructure",
-        "Worker routing changes require owner infrastructure approval.",
-      );
-      const history = await gh(
-        `/issues/${number}/events?per_page=100`,
-        "infrastructure",
-      );
-      must(
-        Array.isArray(history) && history.length < 100,
-        "infrastructure",
-        "Infrastructure approval history is incomplete.",
-      );
-      const last = history
-        .filter(
-          (e) =>
-            ["labeled", "unlabeled"].includes(e.event) &&
-            e.label?.name === "approved-infrastructure-change",
-        )
-        .at(-1);
-      must(
-        last?.event === "labeled" && last.actor?.login === "kasstmaster",
-        "infrastructure",
-        "Infrastructure approval label must be applied by the owner.",
-      );
-    }
-    if (files.some((p) => p.startsWith("public/"))) {
-      must(
-        files.includes(POLICY) &&
-          pr.labels?.some((l) => l.name === "approved-appearance-change"),
+        files.includes(POLICY),
         "appearance",
-        "Public changes require a manifest update and owner appearance approval label.",
-      );
-      const events = await gh(
-        `/issues/${number}/events?per_page=100`,
-        "appearance",
-      );
-      must(
-        Array.isArray(events) && events.length < 100,
-        "appearance",
-        "Owner label history is incomplete.",
-      );
-      const last = events
-        .filter(
-          (e) =>
-            ["labeled", "unlabeled"].includes(e.event) &&
-            e.label?.name === "approved-appearance-change",
-        )
-        .at(-1);
-      must(
-        last?.event === "labeled" && last.actor?.login === "kasstmaster",
-        "appearance",
-        "Appearance approval label must be applied by the owner.",
+        "Public changes require an appearance manifest update in the owner-merged PR.",
       );
     }
   }

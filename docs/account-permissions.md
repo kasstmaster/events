@@ -32,7 +32,7 @@ No runtime setting, credential or live account is changed by this implementation
 
 No live test account, SMS, data reset or reverse migration is used. Node/API and phone/desktop tests run with isolated databases and synthetic identities. The only enabled-provider tests inject a mock transport and assert the destination, token secrecy, replay protection and session revocation. Real sign-in/delivery acceptance remains unverified until separately authorized provider configuration and an existing authorized account are available.
 
-Public changes are limited to these account/security controls and use the existing styles; CSS and existing Address Book structure are unchanged. The appearance manifest is updated so the owner can review the exact UI additions. Apply the existing `approved-appearance-change` owner label to the review PR before merging; production release guards and the manual recovery workflow are unchanged apart from adding regression tests to the existing browser matrix.
+Public changes are limited to these account/security controls and use the existing styles; CSS and existing Address Book structure are unchanged. The appearance manifest is updated so the owner can review the exact UI additions. The owner reviews and merges the PR without adding approval labels; production release guards and the manual recovery workflow are unchanged apart from adding regression tests to the existing browser matrix.
 
 ## Completed non-production validation
 
