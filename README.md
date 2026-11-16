@@ -272,3 +272,10 @@ rotate during use; current household permissions are checked on every request.
 Browser/OS storage restrictions still apply. See
 [Persistent sign-in](docs/passwordless-gather.md#ticket-01--persistent-sign-in-remember-users).
 SMS activation and live delivery remain separately gated.
+
+Ticket 01 now stages Firebase phone-code authentication behind separate disabled
+activation flags, reusing remembered Gather device sessions. Recover Account submits
+a private, password-confirmed system-administrator review; names and Household IDs
+are lookup hints only. Outbound SMS invitations, event reminders and RSVP/username
+texts are retired; manual invitations, cards, QR and in-app flows remain. Legacy
+access stays available during controlled migration. See [Firebase setup and limits](docs/firebase-auth.md).

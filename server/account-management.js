@@ -1,3 +1,4 @@
+import { revokeFirebaseMappings } from "./firebase-auth.js";
 import { id, text, fail, checkPassword, hashPassword } from "./model.js";
 import { contactPhone } from "./features.js";
 import { addressInput } from "./addresses.js";
@@ -11,7 +12,6 @@ import {
 } from "./personal-accounts.js";
 import {
   guestPrivateLink,
-  deliverGuestLink,
   enrollGuestContact,
   revokeGuestDevices,
   verifiedGuestContact,
@@ -43,6 +43,7 @@ function invalidatePasswordlessEnrollment(store, identity, user) {
   }
 }
 export function revokeAccount(store, identity, user) {
+  revokeFirebaseMappings(store, { identity, user });
   for (const key of [
     user && "user:" + user,
     identity && "person:" + identity,
@@ -85,7 +86,7 @@ export function revokeAccount(store, identity, user) {
       );
   }
 }
-function principal(store, key) {
+export function principal(store, key) {
   if (typeof key !== "string" || key.length > 150)
     fail(404, "Account not found.");
   if (key.startsWith("person:")) {
@@ -139,7 +140,7 @@ const registeredAddress = (value, existing, label) =>
     },
     existing || {},
   );
-function projection(store, p) {
+export function projection(store, p) {
   const member = p.profile?.members.find((m) => m.identity === p.identity),
     extra = p.user && store.get("central-user-info", p.user, PLATFORM);
   const info = extra || {};
@@ -295,6 +296,17 @@ export async function accountManagementAPI(ctx) {
     await confirmAdministrator(store, session, input.password);
     const p = principal(store, input.id),
       action = text(input.action, 30, true);
+    if (action === "send")
+      fail(
+        410,
+        "Outbound messaging is no longer available. Use Account Recovery.",
+      );
+    if (action === "revoke") {
+      revokeAccount(store, p.identity, p.user);
+      auditAccount(store, session.user, p.key, "sessions-revoked");
+      json(res, { ok: true });
+      return true;
+    }
     if (action === "update") {
       const result = store.transaction(() => {
         if (p.profile?.version !== (input.version ?? 0) && p.profile)
@@ -477,15 +489,8 @@ export async function accountManagementAPI(ctx) {
       json(res, { ok: true });
       return true;
     }
-    if (!p.identity || p.type !== "guest") {
-      if (action === "revoke") {
-        revokeAccount(store, p.identity, p.user);
-        auditAccount(store, session.user, p.key, "sessions-revoked");
-        json(res, { ok: true });
-        return true;
-      }
+    if (!p.identity || p.type !== "guest")
       fail(400, "Private links are available for registered guest accounts.");
-    }
     if (action === "reveal" || action === "reset") {
       const result = store.transaction(() => {
         const current = store.get("guest-private-link", p.identity, PLATFORM);
@@ -512,28 +517,7 @@ export async function accountManagementAPI(ctx) {
       json(res, result);
       return true;
     }
-    if (action === "send") {
-      const result = await deliverGuestLink(
-        store,
-        env,
-        p.identity,
-        canonicalOrigin,
-      );
-      auditAccount(
-        store,
-        session.user,
-        p.key,
-        "private-link-delivery-requested",
-      );
-      json(res, result);
-      return true;
-    }
-    if (action === "revoke") {
-      revokeAccount(store, p.identity, p.user);
-      auditAccount(store, session.user, p.key, "sessions-revoked");
-      json(res, { ok: true });
-      return true;
-    }
+
     fail(400, "Choose an account action.");
   }
   if (path === "/api/account/self" && ["GET", "PUT"].includes(method)) {

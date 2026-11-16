@@ -409,29 +409,6 @@ export function completeGuestVerification(
     });
   });
 }
-export async function deliverGuestLink(
-  store,
-  env,
-  identity,
-  origin,
-  { fetcher = fetch, now = Date.now } = {},
-) {
-  const contact = verifiedGuestContact(store, identity);
-  ready(store, env, contact);
-  store.transaction(() => reserveSend(store, identity, "link", now()));
-  const { url } = guestPrivateLink(store, identity, env, origin);
-  const result = await sendText(
-    env,
-    contact.phone,
-    "Your private Gather sign-in page: " +
-      url +
-      "\nKeep this link private. The link alone cannot sign you in.",
-    fetcher,
-  );
-  if (!["accepted", "unknown"].includes(result.status))
-    fail(503, "The sign-in link could not be sent. Contact the administrator.");
-  return { status: result.status === "accepted" ? "accepted" : "unconfirmed" };
-}
 export async function guestAuthAPI(ctx) {
   const {
     path,
@@ -452,6 +429,8 @@ export async function guestAuthAPI(ctx) {
     fetcher,
   } = ctx;
   if (path === "/api/guest-access/start" && method === "POST") {
+    if (env.LEGACY_SMS_FALLBACK_APPROVED !== "true")
+      fail(410, "Use Firebase sign-in or Recover Account.");
     json(
       res,
       await startGuestVerification(store, env, await body(req), {
@@ -462,6 +441,8 @@ export async function guestAuthAPI(ctx) {
     return true;
   }
   if (path === "/api/guest-access/verify" && method === "POST") {
+    if (env.LEGACY_SMS_FALLBACK_APPROVED !== "true")
+      fail(410, "Use Firebase sign-in or Recover Account.");
     const input = await body(req);
     store.limit(
       "guest-auth-verify-ip:" + digest(req.socket.remoteAddress),
@@ -493,31 +474,6 @@ export async function guestAuthAPI(ctx) {
       return true;
     }
     fail(405, "Method not allowed.");
-  }
-  const send = path.match(
-    /^\/api\/host\/guests\/([a-zA-Z0-9-]+)\/sign-in-link$/,
-  );
-  if (send && method === "POST") {
-    requireRole("host");
-    if (session.role !== "host") fail(403, "Host access is required.");
-    const guest = store.get("guest", send[1], session.household);
-    if (
-      !guest ||
-      guest.parent ||
-      recipientBlocked(store, session.household, guest.id)
-    )
-      fail(404, "Adult contact not found.");
-    json(
-      res,
-      await deliverGuestLink(
-        store,
-        env,
-        identityFor(store, guest, session.household).id,
-        canonicalOrigin,
-        { fetcher },
-      ),
-    );
-    return true;
   }
   return false;
 }

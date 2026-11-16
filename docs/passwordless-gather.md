@@ -106,3 +106,12 @@ PWA persistence and live Twilio delivery still require separately authorized tes
 SMS configuration/activation remains disabled and no provider is purchased or
 activated. Preserve the existing sign-in fields and Ticket 01 SMS design; optional
 passkeys require a separate decision. This feature does not authorize deployment.
+
+## Firebase replacement of the normal sign-in provider
+
+The later Ticket 01 request supersedes the Twilio magic-link design above for normal
+hosts/guests. [Firebase phone sign-in](firebase-auth.md) preserves persistent Gather
+sessions and existing identities, gates activation, adds independent new-invitee
+onboarding and restricted administrator recovery, and retires outbound event/account
+texts. Legacy login/outbox exists only for controlled fallback until acceptance.
+No Firebase or production settings have been activated by preparing source.

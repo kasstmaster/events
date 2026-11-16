@@ -219,6 +219,18 @@ export function revokeUserSessions(store, user) {
       (proof.identity && identities.has(proof.identity))
     )
       tokens.add(proof.id);
+  for (const mapping of store.list("firebase-account", "platform"))
+    if (
+      mapping.subject === "user:" + user ||
+      (mapping.identity && identities.has(mapping.identity))
+    )
+      store.put(
+        "firebase-account",
+        mapping.id,
+        "platform",
+        { ...mapping, notBefore: Math.floor(Date.now() / 1000) },
+        mapping.version,
+      );
   deleteDeviceSessions(store, [...tokens]);
 }
 export function revokeHouseholdSessions(store, household) {

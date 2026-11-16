@@ -1,3 +1,4 @@
+import { validFirebaseSession } from "./firebase-auth.js";
 import { persistentProof } from "./device-sessions.js";
 import { validChildDeviceRecord } from "./passwordless.js";
 import { randomBytes } from "node:crypto";
@@ -127,6 +128,9 @@ export async function handoffAPI(ctx) {
           childDeviceHash: record.childDeviceHash || "",
           sourceSession: session.token,
           deviceId: record.deviceId,
+          provider: record.provider,
+          mapping: record.mapping,
+          mappingVersion: record.mappingVersion,
         },
         row.version,
       );
@@ -151,6 +155,7 @@ export async function handoffAPI(ctx) {
         row.bindingHash !== authHash(binding) ||
         !valid(input.token) ||
         row.tokenHash !== authHash(input.token) ||
+        !validFirebaseSession(store, null, row) ||
         !verified ||
         !validChildDeviceRecord(store, subject, row.childDeviceHash, {
           allowExpired: true,
@@ -183,6 +188,9 @@ export async function handoffAPI(ctx) {
           childDeviceHash: row.childDeviceHash || "",
           adminRestricted: true,
           deviceId: row.deviceId,
+          provider: row.provider,
+          mapping: row.mapping,
+          mappingVersion: row.mappingVersion,
           at: Date.now(),
         }),
       );

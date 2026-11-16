@@ -1,6 +1,6 @@
 import { rsvpCardsUI } from "/rsvp-cards-ui.js";
 import { passwordlessUI } from "/passwordless-ui.js";
-import { accountControls } from "/account-controls.js";
+import { accountControls, recoveryUI } from "/account-controls.js";
 import { personalTools } from "/personal-ui.js";
 import { householdGroups } from "/address-system.js";
 import {
@@ -259,9 +259,12 @@ window.addEventListener("blur", () => {
   pointerInteraction = false;
 });
 const isEditing = () =>
-  ["account-management", "private-guest-sign-in", "own-account"].includes(
-    state.view,
-  ) ||
+  [
+    "account-management",
+    "account-recovery",
+    "private-guest-sign-in",
+    "own-account",
+  ].includes(state.view) ||
   state.view === "rsvp-page" ||
   !!state.familyMemberEditing ||
   !!state.eventLayoutDraft ||
@@ -634,7 +637,6 @@ function eventCard(event) {
     return ui`<article class="card event-choice">${heading}<div class="event-overview">${content}</div></article>`;
   return ui`<article class="card host-event-choice">${heading}<div class="event-overview">${content}</div><div class="event-home-actions" role="group" aria-label="${H("Event actions")}">${[
     ["dashboard", "RSVPs"],
-    ["reminders", "Reminders"],
     ["cards", "Invitation Cards"],
   ]
     .map(([action, label]) =>
@@ -887,7 +889,8 @@ function render(target = $("#app"), example = false) {
   const role = state.session?.role;
   let content = "",
     event = null;
-  if (
+  if (state.view === "account-recovery") content = recoveryQueue.page();
+  else if (
     ["account-management", "private-guest-sign-in", "own-account"].includes(
       state.view,
     )
@@ -898,11 +901,11 @@ function render(target = $("#app"), example = false) {
     state.view === "username-recovery"
   )
     content = personal.page();
+  else if (state.view === "firebase-enrollment") content = passwordless.page();
   else if (role === "admin-pending" || state.view === "passwordless-security")
     content = passwordless.securityPage();
   else if (role && state.view === "rsvp-page")
     content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C(state.manualRSVP?.hostFamily ? "RSVP for your family" : state.manualRSVP ? "Record guest RSVP" : "Will you join us?")}</h1><form data-form="rsvp">${state.rsvpMarkup}<p class="form-error" role="alert"></p><div class="row"><button>${C("RSVP")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
-  else if (state.view === "evites") content = tools.evitesPage();
   else if (state.view === "rsvp-cards") content = rsvpCards.page();
   else if (state.view === "cards-page") content = tools.cardsPage();
   else if (state.view === "card-preview") content = tools.cardPreviewPage();
@@ -923,7 +926,7 @@ function render(target = $("#app"), example = false) {
       state.view === "admin-approvals"
         ? ui`<section class="panel"><h2>Approved emails</h2><form data-form="approval">${field(H("Email address"), "email", "", "email", "required")}<p class="form-error" role="alert"></p><button>Approve host</button></form><ul class="guest-list">${state.data.approvals.map((a) => ui`<li class="row between"><span>${escape(a.email)}</span>${button("revoke", H("Remove"), `data-email="${escape(a.email)}"`, "quiet")}</li>`).join("") || M('<li class="muted">No pending approvals.</li>')}</ul></section>`
         : state.view === "admin-hosts"
-          ? ui`<section class="panel"><h2>Registered hosts</h2>${button("account-management", H("Registered accounts"))}<ul>${state.data.hosts.map((h) => ui`<li>${escape(h.email)} ${button("admin-household-identity", H("Household name / domain"), `data-id="${h.id}"`)} ${h.logoRequested ? ui`<span class="small">Family icon requested</span>` : ""} ${button("recover-owner", H("Recover owner sign-in"), `data-id="${h.id}"`)}${h.platformAdmin ? ui`<span>Administrator tools enabled</span>` : button("grant-platform-access", H("Make administrator"), `data-id="${h.id}"`)}${button("delete-host", H("Delete account"), `data-id="${h.id}"`, "danger")}</li>`).join("") || M("<li>No hosts yet.</li>")}</ul><p class="small muted">Host guest records and RSVPs are not included here.</p></section>` +
+          ? ui`<section class="panel"><h2>Registered hosts</h2>${button("account-management", H("Registered accounts"))}${button("account-recovery", H("Account Recovery"))}<ul>${state.data.hosts.map((h) => ui`<li>${escape(h.email)} ${button("admin-household-identity", H("Household name / domain"), `data-id="${h.id}"`)} ${h.logoRequested ? ui`<span class="small">Family icon requested</span>` : ""} ${button("recover-owner", H("Recover owner sign-in"), `data-id="${h.id}"`)}${h.platformAdmin ? ui`<span>Administrator tools enabled</span>` : button("grant-platform-access", H("Make administrator"), `data-id="${h.id}"`)}${button("delete-host", H("Delete account"), `data-id="${h.id}"`, "danger")}</li>`).join("") || M("<li>No hosts yet.</li>")}</ul><p class="small muted">Host guest records and RSVPs are not included here.</p></section>` +
             tools.cleanupPanel() +
             (role === "host"
               ? ui`<section class="panel"><h2>Old administrator accounts</h2>${(state.data.legacyAdministrators || []).map((a) => ui`<p>${escape(a.email)} ${button("retire-legacy-admin", H("Remove old administrator"), `data-email="${escape(a.email)}"`, "danger")}</p>`).join("") || M("<p>No old administrator accounts remain.</p>")}</section>`
@@ -1123,6 +1126,15 @@ function render(target = $("#app"), example = false) {
     (state.settingsOpen || state.view === "settings")
   ) {
     const list = target.querySelector("#main .browse-rows");
+    if (list && role === "host" && state.passwordless?.firebase)
+      list.insertAdjacentHTML(
+        "beforeend",
+        row({
+          title: C("Set up phone sign-in"),
+          symbol: "settings",
+          action: "firebase-enroll",
+        }),
+      );
     if (list)
       list.insertAdjacentHTML(
         "beforeend",
@@ -1377,7 +1389,7 @@ function guestEditor(guest = {}) {
   const host = document.querySelector(
     `[data-contact-editor="${guest.id || "new"}"]`,
   );
-  host.innerHTML = ui`<form data-form="guest" data-guest="${guest.id || "new"}"><h3>${guest.id ? C("Edit guest") : C("Add guest")}</h3>${markup}${guest.id && !guest.parent ? button("send-private-link", H("Send private sign-in link"), `data-id="${guest.id}"`) : ""}<div class="inline-identity"></div><p class="form-error" role="alert"></p><div class="row">${button("guest-cancel", H("Cancel"))}<button>${C("Save")}</button></div></form>`;
+  host.innerHTML = ui`<form data-form="guest" data-guest="${guest.id || "new"}"><h3>${guest.id ? C("Edit guest") : C("Add guest")}</h3>${markup}<div class="inline-identity"></div><p class="form-error" role="alert"></p><div class="row">${button("guest-cancel", H("Cancel"))}<button>${C("Save")}</button></div></form>`;
   document
     .querySelector(".inline-identity")
     .insertAdjacentHTML(
@@ -1746,7 +1758,7 @@ function rsvp(event = selectedEvent(), manual = false) {
     return;
   }
   state.editingResponse = structuredClone(event.response);
-  state.rsvpMarkup = ui`<p>${escape(event.title)}</p>${manual ? "" : M('<p class="small">An RSVP confirmation may be texted to the phone number your host has on file. Reply STOP to opt out.</p>')}${event.deadline && !manual ? ui`<p class="muted small">RSVP by ${escape(dateLabel(event.deadline))}. Responses close after this date.</p>` : ""}<fieldset><legend>${event.hostFamily ? C("Your family") : C("Your invited party")}</legend>${event.members
+  state.rsvpMarkup = ui`<p>${escape(event.title)}</p>${event.deadline && !manual ? ui`<p class="muted small">RSVP by ${escape(dateLabel(event.deadline))}. Responses close after this date.</p>` : ""}<fieldset><legend>${event.hostFamily ? C("Your family") : C("Your invited party")}</legend>${event.members
     .map((m) =>
       select(
         escape(fullName(m)) + (m.parent ? C(" · child") : ""),
@@ -1887,6 +1899,8 @@ async function submit(form) {
   }
   if (kind === "rsvp-cards") return rsvpCards.submit(form);
   if (kind === "passwordless-step-up") return passwordless.stepUp(form);
+  if (kind === "recovery-list" || kind === "recovery-action")
+    return recoveryQueue.submit(form);
   if (kind === "passwordless-login") return passwordless.submit(form);
   if (kind === "guest-code-claim") {
     await api(
@@ -3653,6 +3667,7 @@ const family = familyTools({
 });
 family.bind();
 const rsvpCards = rsvpCardsUI({ state, api, button, escape, render, field });
+const recoveryQueue = recoveryUI({ state, api, field, button, render });
 const passwordless = passwordlessUI({
   escape,
   state,
@@ -3708,7 +3723,6 @@ await load();
 setInterval(() => {
   if (state.session?.role && document.visibilityState === "visible") {
     load({ background: true });
-    tools.refreshEvites().catch(() => {});
   }
 }, 3000);
 window.addEventListener("online", () => load({ background: true }));

@@ -22,7 +22,11 @@ export function passwordlessUI({
       : new URLSearchParams();
   if (location.pathname === "/signin" && location.hash)
     history.replaceState(null, "", "/signin");
-  let message = "";
+  let message = "",
+    confirmation = null,
+    attempt = null,
+    recovering = false;
+  const recovery = new URLSearchParams(fragment.slice(1)).get("recover") || "";
   const entry = () =>
     /^\/([a-z0-9][a-z0-9-]{1,61}[a-z0-9])$/.exec(location.pathname)?.[1] || "";
   const invitation = () =>
@@ -78,7 +82,7 @@ export function passwordlessUI({
             .register("/gather-sw.js", { scope: "/" })
             .catch(() => {});
       }
-      if (config.enabled && transfer.toString()) {
+      if (config.enabled && transfer.toString() && !recovery) {
         const current = transfer;
         transfer = new URLSearchParams();
         try {
@@ -150,7 +154,11 @@ export function passwordlessUI({
     },
     entry,
     page() {
-      return ui`<section class="auth"><p class="eyebrow">${state.publicHousehold ? escape(state.publicHousehold.name) : C("Welcome to Gather")}</p><h1>Sign in</h1><form data-form="passwordless-login">${field(H("First Name"), "first", "", "text", 'required maxlength="80" autocomplete="given-name"')}${field(H("Last Name"), "last", "", "text", 'maxlength="80" autocomplete="family-name"')}${field(H("Phone Number"), "phone", "", "tel", 'required maxlength="30" autocomplete="tel"')}<p class="form-error" role="alert"></p><button>Send Sign-In Link</button></form><p role="status">${message ? C(message) : ""}</p><p class="small">Open the link in the browser where you requested it. Installed apps may need their own sign-in.</p>${button("passwordless-legacy", H("Administrator / account recovery"))}</section>`;
+      if (recovering)
+        return ui`<section class="auth"><h1>Recover Account</h1><form data-form="passwordless-login">${field(H("First Name"), "first", "", "text", "required")}${field(H("Last Name"), "last")}${field(H("Household ID"), "householdId", "", "text", 'required pattern="[0-9]{4}" maxlength="4" inputmode="numeric"')}<p class="form-error" role="alert"></p><button>Submit recovery request</button></form><p role="status">${escape(message)}</p>${button("firebase-back", "Back to sign in")}</section>`;
+      if (state.passwordless?.firebase)
+        return ui`<section class="auth"><p class="eyebrow">${state.publicHousehold ? escape(state.publicHousehold.name) : C("Welcome to Gather")}</p><h1>Sign in</h1><form data-form="passwordless-login">${confirmation ? field(H("Verification code"), "code", "", "text", 'required pattern="[0-9]{6}" maxlength="6" inputmode="numeric" autocomplete="one-time-code"') : field(H("First Name"), "first", "", "text", 'required maxlength="80" autocomplete="given-name"') + field(H("Last Name"), "last", "", "text", 'maxlength="80" autocomplete="family-name"') + field(H("Phone Number"), "phone", "", "tel", 'required maxlength="30" autocomplete="tel"')}<div id="firebase-recaptcha"></div><p class="form-error" role="alert"></p><button>${confirmation ? C("Verify and sign in") : C("Send verification code")}</button></form><p role="status">${escape(message)}</p><p class="small">Your device stays signed in until you sign out, unless access is revoked or stored credentials are removed. Installed apps may use separate browser storage. If verification cannot open in this app, use the same sign-in page in your browser.</p>${button("recover-account", H("Recover Account"))}${button("passwordless-legacy", H("Administrator / account recovery"))}</section>`;
+      return ui`<section class="auth"><p class="eyebrow">${state.publicHousehold ? escape(state.publicHousehold.name) : C("Welcome to Gather")}</p><h1>Sign in</h1><form data-form="passwordless-login">${field(H("First Name"), "first", "", "text", 'required maxlength="80" autocomplete="given-name"')}${field(H("Last Name"), "last", "", "text", 'maxlength="80" autocomplete="family-name"')}${field(H("Phone Number"), "phone", "", "tel", 'required maxlength="30" autocomplete="tel"')}<p class="form-error" role="alert"></p><button>Send Sign-In Link</button></form><p role="status">${message ? C(message) : ""}</p><p class="small">Open the link in the browser where you requested it. Installed apps may need their own sign-in.</p>${button("recover-account", H("Recover Account"))}${button("passwordless-legacy", H("Administrator / account recovery"))}</section>`;
     },
     securityPage() {
       return ui`<section class="auth panel"><h1>Signed in</h1><p>Administrator tools require a separate password confirmation.</p><form data-form="passwordless-step-up">${field(H("System administrator password"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Open administrator tools</button></form>${button("passwordless-revoke", H("Sign out other devices"))}${button("passwordless-revoke-all", H("Sign out all devices"))}${button("logout", H("Sign Out"))}</section>`;
@@ -164,6 +172,44 @@ export function passwordlessUI({
       await load();
     },
     async submit(form) {
+      if (recovering) {
+        message = (
+          await api("/api/account-recovery", {
+            method: "POST",
+            data: Object.fromEntries(new FormData(form)),
+          })
+        ).message;
+        render();
+        return true;
+      }
+      if (state.passwordless?.firebase) {
+        if (!confirmation) {
+          const input = Object.fromEntries(new FormData(form));
+          attempt = await api("/api/firebase/start", {
+            method: "POST",
+            data: { ...input, entry: entry(), invitation: invitation() },
+          });
+          confirmation = await requestFirebaseCode(
+            state.passwordless.firebase,
+            input.phone,
+            "firebase-recaptcha",
+          );
+          message = "Enter the verification code sent to your phone.";
+          render();
+          return true;
+        }
+        const code = new FormData(form).get("code");
+        const idToken = await confirmFirebaseCode(confirmation, code);
+        const result = await api("/api/firebase/verify", {
+          method: "POST",
+          data: { reference: attempt.reference, idToken, recovery },
+        });
+        confirmation = null;
+        attempt = null;
+        await afterAuthentication(result);
+        await load();
+        return true;
+      }
       message = (
         await api("/api/passwordless/start", {
           method: "POST",
@@ -178,6 +224,20 @@ export function passwordlessUI({
       return true;
     },
     async action(action) {
+      if (action === "firebase-enroll") {
+        state.view = "firebase-enrollment";
+        render();
+        return true;
+      }
+      if (action === "recover-account" || action === "firebase-back") {
+        recovering = action === "recover-account";
+        if (state.session?.role) state.view = "firebase-enrollment";
+        message = "";
+        confirmation = null;
+        attempt = null;
+        render();
+        return true;
+      }
       if (action === "passwordless-admin-open") {
         state.view = "passwordless-security";
         render();
@@ -211,4 +271,39 @@ export function passwordlessUI({
       return false;
     },
   };
+}
+
+// Lazy-loaded only after separately approved Firebase activation and an explicit
+// sign-in request. Gather's server cookie, not SDK persistence, authorizes the app.
+let auth, sdk, verifier;
+async function requestFirebaseCode(config, phone, container) {
+  const app =
+    await import("https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js");
+  sdk =
+    await import("https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js");
+  auth ||= sdk.getAuth(app.getApps()[0] || app.initializeApp(config));
+  await sdk.setPersistence(auth, sdk.inMemoryPersistence);
+  verifier?.clear();
+  verifier = new sdk.RecaptchaVerifier(auth, container, { size: "normal" });
+  try {
+    return await sdk.signInWithPhoneNumber(auth, phone, verifier);
+  } catch {
+    verifier.clear();
+    verifier = null;
+    throw new Error(
+      "Verification could not start. Try again later or use Recover Account.",
+    );
+  }
+}
+async function confirmFirebaseCode(confirmation, code) {
+  try {
+    const result = await confirmation.confirm(code);
+    return await result.user.getIdToken(true);
+  } catch {
+    throw new Error(
+      "Verification could not be completed. Check the code or use Recover Account.",
+    );
+  } finally {
+    if (auth) await sdk.signOut(auth);
+  }
 }

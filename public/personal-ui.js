@@ -119,7 +119,9 @@ export function personalTools({
       a = data.account;
     if (a.method === "email")
       return ui`${topbar({ title: C("Private sign-in"), back: "page-back" })}<section class="panel"><p>Use your registered email and password.</p>${field(H("Registered email"), "registeredEmail", a.email, "email", "readonly")}</section>`;
-    return ui`${topbar({ title: C(a.needsUsername ? "Create private sign-in" : "Private sign-in"), back: a.needsUsername ? "" : "page-back", extra: tool("personal-save", "Save", "", "save") })}<section class="panel" data-layout="personalAccount"><p data-layout-item="description">Your username is private. It is never shown to family, friends or hosts.</p><form data-form="personal-account" data-layout-item="credentials" data-version="${a.version}">${field(H("Username"), "username", a.username, "text", 'required minlength="3" maxlength="80" autocomplete="username"')}${field(H("Recovery phone number"), "recoveryPhone", a.recoveryPhone, "tel", 'required maxlength="30" autocomplete="tel"')}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form><div data-layout-item="verification">${a.recoveryPhone ? ui`<p>${a.recoveryVerified ? C("Recovery phone verified.") : C("Verify your recovery phone to enable username reminders.")}</p>${a.recoveryVerified ? "" : ui`${button("personal-verify-start", H("Send verification code"))}<form data-form="personal-verify">${field(H("Verification code"), "code", "", "text", 'required inputmode="numeric" maxlength="6"')}<p class="form-error" role="alert"></p><button>${C("Verify")}</button></form>`}` : ""}</div></section>`;
+    if (a.method === "firebase")
+      return ui`${topbar({ title: C("Phone sign-in"), back: "page-back" })}<section class="panel"><p>Your phone sign-in is verified. This device stays signed in until you sign out or access is revoked.</p>${field(H("Verified phone"), "verifiedPhone", a.recoveryPhone || "", "tel", "readonly")}<p>Use Recover Account if you lose access to your phone.</p>${button("recover-account", H("Recover Account"))}</section>`;
+    return ui`${topbar({ title: C(a.needsUsername ? "Create private sign-in" : "Private sign-in"), back: a.needsUsername ? "" : "page-back", extra: tool("personal-save", "Save", "", "save") })}<section class="panel" data-layout="personalAccount"><p data-layout-item="description">Your username is private. It is never shown to family, friends or hosts.</p><form data-form="personal-account" data-layout-item="credentials" data-version="${a.version}">${field(H("Username"), "username", a.username, "text", 'required minlength="3" maxlength="80" autocomplete="username"')}${field(H("Recovery phone number"), "recoveryPhone", a.recoveryPhone, "tel", 'required maxlength="30" autocomplete="tel"')}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form></section>`;
   }
   function familyPage() {
     const data = current(),
@@ -155,7 +157,7 @@ export function personalTools({
     return ui`${topbar({ title: C("Address Book"), back: "page-back" })}<section class="panel" data-layout="personalContacts">${addressBookDescription()}<form data-form="personal-add-contact" data-layout-item="add">${field(H("Household name"), "name", "", "text", 'required maxlength="100"')}${field(H("Household ID"), "householdId", "", "text", 'required inputmode="numeric" pattern="[0-9]{4}" maxlength="4"')}<p class="form-error" role="alert"></p><button>${C("Add contact")}</button></form><ul class="browse-rows" data-layout-item="contacts">${data.contacts.map((c) => ui`<li class="browse-row"><div class="grow"><strong>${esc(c.name)}</strong>${c.address ? ui`<p class="contact-mailing-address">${esc(c.address)}</p>` : ""}${c.members ? ui`<ul>${c.members.map((p) => ui`<li>${esc([p.first, p.last, p.suffix].filter(Boolean).join(" "))}${p.child ? C(" · child") : p.phone ? " · " + esc(p.phone) : ""}</li>`).join("")}</ul>` : ""}</div><div class="row">${button("personal-block", H(c.blocked ? "Unblock" : "Block"), `data-id="${c.id}" data-blocked="${c.blocked}"`)}${button("personal-remove-contact", H("Remove"), `data-id="${c.id}"`)}</div></li>`).join("")}</ul></section>`;
   }
   function recoveryPage() {
-    return ui`<section class="auth"><h1>Recover username</h1><form data-form="username-recovery">${field(H("Recovery phone number"), "phone", "", "tel", 'required maxlength="30"')}<p>We’ll text your recovery number. Reply YES to receive your username or NO to cancel.</p><p class="form-error" role="alert"></p><button>${C("Request reminder")}</button></form>${button("host-login", H("Back"))}</section>`;
+    return ui`<section class="auth"><h1>Recover Account</h1><form data-form="username-recovery">${field(H("First Name"), "first", "", "text", "required")}${field(H("Last Name"), "last")}${field(H("Household ID"), "householdId", "", "text", 'required pattern="[0-9]{4}" maxlength="4"')}<p class="form-error" role="alert"></p><button>Submit recovery request</button></form>${button("host-login", H("Back"))}</section>`;
   }
   function homeActions() {
     return ui`<div class="guest-account-actions"><section class="panel">${button("personal-family", H("Family information"))}${button("personal-account", H("Private sign-in"))}</section>${addressBookHome(button, "personal-contacts")}</div>`;
@@ -290,22 +292,17 @@ export function personalTools({
         await load();
         return true;
       }
-      if (action === "personal-verify-start") {
-        await api("/api/personal/phone/start", { method: "POST", data: {} });
-        notify(C("Verification code requested."));
-        return true;
-      }
       return false;
     },
     async submit(form, kind) {
       if (kind === "username-recovery") {
-        await api("/api/username-recovery", {
+        await api("/api/account-recovery", {
           method: "POST",
           data: Object.fromEntries(new FormData(form)),
         });
         notify(
           C(
-            "If this number is eligible, a confirmation text has been requested.",
+            "Your request has been received. The administrator will review it privately.",
           ),
         );
         return true;
@@ -340,13 +337,7 @@ export function personalTools({
           version: Number(form.dataset.version),
           data: Object.fromEntries(new FormData(form)),
         });
-      else if (kind === "personal-verify") {
-        await api("/api/personal/phone/verify", {
-          method: "POST",
-          data: Object.fromEntries(new FormData(form)),
-        });
-        data = await api("/api/personal");
-      } else if (kind === "personal-add-contact")
+      else if (kind === "personal-add-contact")
         data = await api("/api/personal/contacts", {
           method: "POST",
           data: Object.fromEntries(new FormData(form)),

@@ -1,4 +1,9 @@
 import {
+  firebaseEnabled,
+  firebaseConfig,
+  validFirebaseSession,
+} from "./firebase-auth.js";
+import {
   persistentProof,
   refreshDeviceSession,
   deleteDeviceSessions,
@@ -57,7 +62,7 @@ export function activeHouseholdLabel(store, house, hosts) {
   }
   return null;
 }
-function subjects(store) {
+export function subjects(store) {
   const results = new Map();
   for (const profile of store.list("personal-household", P)) {
     for (const person of profile.members.filter((p) => !p.archived)) {
@@ -364,6 +369,8 @@ export async function runPasswordlessMessages(
   env,
   { fetcher = fetch, now = Date.now } = {},
 ) {
+  if (firebaseEnabled(env) && env.LEGACY_SMS_FALLBACK_APPROVED !== "true")
+    return;
   if (
     !passwordlessEnabled(env) ||
     !smsEnabled({
@@ -446,6 +453,7 @@ export function validPasswordlessSession(store, session) {
   const subject = subjectByKey(store, record.subject),
     verified = subject && passwordlessContact(store, subject);
   return (
+    validFirebaseSession(store, session, record) &&
     !!verified &&
     verified.stamp === record.contactStamp &&
     validChildDeviceRecord(store, subject, record.childDeviceHash, {
@@ -545,6 +553,7 @@ export async function passwordlessAPI(ctx) {
   if (path === "/api/passwordless/config" && method === "GET") {
     json(res, {
       enabled: passwordlessEnabled(env),
+      firebase: firebaseConfig(env),
       enrollmentAvailable: true,
       universal: universalEnabled(env),
       pwa: universalEnabled(env) && env.GATHER_PWA_ENABLED === "true",
@@ -631,6 +640,8 @@ export async function passwordlessAPI(ctx) {
     return true;
   }
   if (path === "/api/passwordless/start" && method === "POST") {
+    if (firebaseEnabled(env) && env.LEGACY_SMS_FALLBACK_APPROVED !== "true")
+      fail(404, "Page not found.");
     const input = await body(req),
       secret = valid(binding) ? binding : nonce();
     const entry = input.entry
@@ -724,6 +735,19 @@ export async function passwordlessAPI(ctx) {
             if (row.deviceId === currentProof.deviceId) tokens.delete(row.id);
       }
       deleteDeviceSessions(store, tokens);
+      if (path.endsWith("/revoke-all"))
+        for (const mapping of store.list("firebase-account", P))
+          if (
+            mapping.identity === identity ||
+            mapping.subject === "user:" + primaryUser
+          )
+            store.put(
+              "firebase-account",
+              mapping.id,
+              P,
+              { ...mapping, notBefore: Math.floor(Date.now() / 1000) },
+              mapping.version,
+            );
     });
     if (path.endsWith("/revoke-all")) cookie(res, null);
     json(res, { ok: true });

@@ -1,4 +1,3 @@
-import { recordRSVPNotification } from "./rsvp-notifications.js";
 import { fail } from "./model.js";
 export function addressAdults(store, event, session) {
   const guest = store.get("guest", session.guest, session.household);
@@ -59,8 +58,7 @@ export function saveAddressResponse(
       Array.isArray(input.claims)
     )
       fail(400, "Invalid menu selections.");
-    let result,
-      ownSaved = false;
+    let result;
     for (const party of parties) {
       const own = party.guest === session.guest;
       const attendance = Object.fromEntries(
@@ -97,10 +95,8 @@ export function saveAddressResponse(
         },
         { partial: true, allowClosed: options.allowClosed === true },
       );
-      if (own && attendance[session.guest]) ownSaved = true;
     }
-    if (ownSaved && options.notify !== false)
-      recordRSVPNotification(store, env, current, session);
+    // RSVP remains in-app only; never enqueue a text.
     return result || { ok: true };
   });
 }

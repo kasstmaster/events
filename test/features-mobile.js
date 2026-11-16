@@ -554,27 +554,11 @@ try {
     path: "test-results/features-host-mobile.png",
     fullPage: true,
   });
-  stage("reminder scheduling and recipient preview");
-  await click(h.page, "Text reminders");
-  await h.page
-    .getByText("Messaging is not enabled.", { exact: false })
-    .waitFor();
-  await click(h.page, "Add reminder");
-  await h.page
-    .getByLabel("Send at (selected time zone)", { exact: true })
-    .fill("2028-05-25T12:00");
-  await h.page
-    .getByLabel("Schedule time zone", { exact: true })
-    .fill("America/Los_Angeles");
-  await click(h.page, "Preview recipients");
-  await h.page
-    .locator("#reminder-preview")
-    .getByText("No eligible recipients.", { exact: true })
-    .waitFor();
-  await dialog(h.page)
-    .getByRole("button", { name: "Save", exact: true })
-    .click();
-  await dialog(h.page).waitFor({ state: "hidden" });
+  stage("optional outbound reminders are absent");
+  assert.equal(
+    await h.page.locator('[data-action="event-action-reminders"]').count(),
+    0,
+  );
   // Dedicated full-page card workflows, QR exports and private templates are
   // covered in cards-mobile.js using the shared three-level toolbar.
   const event = store.list("event", host.household)[0];
@@ -687,10 +671,10 @@ try {
   await click(guest.page, "RSVP");
   await dialog(guest.page).waitFor({ state: "hidden" });
   assert.equal(
-    store.one(
-      "SELECT status FROM reminder_deliveries WHERE reminder='rsvp-confirmation'",
-    ).status,
-    "disabled",
+    store.all(
+      "SELECT * FROM reminder_deliveries WHERE reminder='rsvp-confirmation'",
+    ).length,
+    0,
   );
   const jordan = store
     .list("guest", host.household)
@@ -756,7 +740,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(external, []);
   console.log(
-    "PASS: global wording/role/layout editing, phone navigation, combined event editor, notes privacy, upload link, consent/reminder preview, unified guest sign-in and read-only guest preview.",
+    "PASS: global wording/role/layout editing, phone navigation, combined event editor, notes privacy, upload link, retired outbound controls, unified guest sign-in and read-only guest preview.",
   );
 } catch (error) {
   console.error(`Shared editor browser check failed during: ${phase}`, error);
