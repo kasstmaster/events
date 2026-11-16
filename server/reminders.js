@@ -1,3 +1,4 @@
+import { runPasswordlessMessages } from "./passwordless.js";
 import { runEvites, processEviteStatus } from "./evites.js";
 import {
   processAccountReply,
@@ -87,6 +88,7 @@ export async function runReminders(
     now(),
     now() - 15 * 60000,
   );
+  await runPasswordlessMessages(store, env, { fetcher, now });
   // Disabled unless the operator deliberately enables a configured provider. Never fake delivery.
   if (
     env.SMS_ENABLED !== "true" ||

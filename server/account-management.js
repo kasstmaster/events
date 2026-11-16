@@ -26,7 +26,35 @@ export function auditAccount(store, actor, subject, action, fields = []) {
     at: Date.now(),
   });
 }
+function invalidatePasswordlessEnrollment(store, identity, user) {
+  for (const key of [
+    user && "user:" + user,
+    identity && "person:" + identity,
+  ].filter(Boolean)) {
+    const record = store.get("passwordless-contact", key, PLATFORM);
+    if (record)
+      store.put(
+        "passwordless-contact",
+        key,
+        PLATFORM,
+        { ...record, verified: false },
+        record.version,
+      );
+  }
+}
 export function revokeAccount(store, identity, user) {
+  for (const key of [
+    user && "user:" + user,
+    identity && "person:" + identity,
+  ].filter(Boolean)) {
+    for (const row of store.list("passwordless-session", PLATFORM))
+      if (row.subject === key) {
+        store.run("DELETE FROM sessions WHERE token=?", row.id);
+        store.run("DELETE FROM session_origins WHERE token=?", row.id);
+        store.run("DELETE FROM guest_identity_sessions WHERE token=?", row.id);
+      }
+  }
+
   if (identity) revokeGuestDevices(store, identity);
   if (user) {
     store.run(
@@ -118,6 +146,8 @@ function projection(store, p) {
   return {
     id: p.key,
     type: p.type,
+    passwordlessVersion:
+      store.get("passwordless-contact", p.key, PLATFORM)?.version || 0,
     first:
       member?.first ||
       info.first ||
@@ -164,7 +194,7 @@ function projection(store, p) {
         ).n,
   };
 }
-async function confirmAdministrator(store, session, password) {
+export async function confirmAdministrator(store, session, password) {
   if (!platformAdministrator(store, session))
     fail(403, "System administrator access is required.");
   store.limit("central-admin-confirm:" + session.user, 10, 15 * 60000);
@@ -372,6 +402,7 @@ export async function accountManagementAPI(ctx) {
           if (input.last !== undefined) next.last = text(input.last, 80);
           if (input.phone !== undefined) {
             next.phone = contactPhone(input.phone);
+            invalidatePasswordlessEnrollment(store, p.identity, p.user);
             fields.push("phone");
             revokeAccount(store, null, p.user);
           }
@@ -522,6 +553,13 @@ export async function accountManagementAPI(ctx) {
         previous = store.get("central-user-info", p.user, PLATFORM);
       if ((previous?.version || 0) !== version(req))
         fail(409, "Account information changed. Refresh first.");
+      if (
+        input.phone !== undefined &&
+        contactPhone(input.phone || "") !== (previous?.phone || "")
+      ) {
+        invalidatePasswordlessEnrollment(store, p.identity, p.user);
+        revokeAccount(store, p.identity, p.user);
+      }
       store.put(
         "central-user-info",
         p.user,

@@ -1,3 +1,8 @@
+import {
+  centralMemberForActor,
+  membership as centralMembership,
+  permanentProfileCode,
+} from "./central-membership.js";
 import { revokeGuestDevices } from "./guest-auth.js";
 import { createHash, randomInt } from "node:crypto";
 import { id, text, fail, normalizeName } from "./model.js";
@@ -42,6 +47,8 @@ export function privateIdentity(store, session) {
     if (!proof) fail(401, "Please sign in again.");
     return proof.identity;
   }
+  const central = centralMemberForActor(store, session);
+  if (central) return central.identity;
   if (session?.role !== "host") fail(403, "A household account is required.");
   let link = store.get("host-person", session.user, session.household);
   if (!link)
@@ -109,14 +116,7 @@ export function ensurePersonalProfile(store, session) {
     } else {
       const household = store.household(session.household);
       name = household.name;
-      const reserved = new Set(
-        store.list("personal-household", PLATFORM).map((p) => p.publicCode),
-      );
-      if (reserved.size >= 10000)
-        fail(409, "Household ID capacity has been reached.");
-      do {
-        publicCode = String(randomInt(0, 10000)).padStart(4, "0");
-      } while (reserved.has(publicCode));
+      publicCode = permanentProfileCode(store);
       const owner = store.one(
         "SELECT * FROM family_members WHERE id=? AND household=?",
         session.user,
@@ -215,7 +215,7 @@ export function accountProjection(store, session) {
       needsUsername:
         session.role === "guest" && !account?.username && !account?.hostUser,
       householdId:
-        session.role === "guest"
+        session.role === "guest" && session.guest && !profile.releasedFrom
           ? accessFor(
               store,
               store.get("guest", session.guest, session.household),
@@ -737,12 +737,21 @@ export function savePersonalProfile(store, session, input, expected) {
       if (ids.has(key)) fail(400, "Duplicate family member.");
       ids.add(key);
       const old = known.get(key);
+      if (old?.archived)
+        fail(
+          400,
+          "Archived family entries cannot be restored through ordinary edits.",
+        );
       if (p.id && !old && !/^[a-f0-9-]{36}$/.test(p.id))
         fail(400, "Invalid family member.");
       if (
         old &&
         old.identity !== identity &&
-        registeredMethod(store, old.identity) &&
+        !old.parent &&
+        (registeredMethod(store, old.identity) ||
+          (profile.sourceHousehold &&
+            centralMembership(store, profile.sourceHousehold, old.identity)
+              ?.status === "approved")) &&
         ["first", "last", "suffix", "phone", "parent"].some(
           (key) => String(p[key] || "") !== String(old[key] || ""),
         )
@@ -750,6 +759,18 @@ export function savePersonalProfile(store, session, input, expected) {
         fail(
           403,
           "Another registered adult must update their own account information.",
+        );
+      if (
+        old &&
+        !!old.parent !== !!p.parent &&
+        (old.parent ||
+          (profile.sourceHousehold &&
+            centralMembership(store, profile.sourceHousehold, old.identity)
+              ?.status === "approved"))
+      )
+        fail(
+          403,
+          "A system administrator must review adulthood and membership transitions.",
         );
       let personIdentity = old?.identity;
       if (!personIdentity) {
@@ -781,7 +802,15 @@ export function savePersonalProfile(store, session, input, expected) {
     // Omitted entries retain stable identities and existing relationships; removal is an explicit archive.
     for (const old of profile.members)
       if (!ids.has(old.id)) {
-        if (old.identity !== identity && registeredMethod(store, old.identity))
+        if (
+          !old.archived &&
+          old.identity !== identity &&
+          !old.parent &&
+          (registeredMethod(store, old.identity) ||
+            (profile.sourceHousehold &&
+              centralMembership(store, profile.sourceHousehold, old.identity)
+                ?.status === "approved"))
+        )
           fail(
             403,
             "Another registered adult controls their own account information.",

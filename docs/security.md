@@ -159,3 +159,29 @@ explicit link was established; never merge by matching a display name. Archiving
 a linked roster person disables their workspace account and revokes sessions
 transactionally, retaining all identities, records and RSVP history. Family
 administrators do not gain central account editing permissions.
+
+### Staged passwordless authentication
+
+See [passwordless Gather](passwordless-gather.md). Independently verified central
+phone records qualify; editable local contacts and public name/phone submissions
+never prove ownership or create accounts. Authentication tokens are random,
+hashed-only, browser/origin-bound, expiring and consumed transactionally. The
+existing alarm drains a token-free outbox, and raw tokens exist only in memory
+for one-shot provider delivery. Authentication SMS uses its own approval gate and
+must not enable optional messaging. STOP always suppresses new messages.
+
+Origin-bound handoffs require proof cookies in both browser contexts, a live
+source session, current verified contact and a single-use transfer. No browser
+storage, Domain cookies, arbitrary redirect or QR possession grants a session.
+SMS sessions cannot exercise system-administrator authority until a separate
+password step-up; existing fresh-password controls remain mandatory. Production
+activation and per-account legacy retirement require separate approvals.
+
+Central host authority requires an independently reviewed adult household
+membership, never matching contact details. Guardian-mediated child sign-in also
+requires a child-specific enrolled requesting browser; Allow Sign-In is off by
+default. Off switches, reviewed adulthood and adult release revoke former session
+and workspace authority. Sensitive membership review and device enrollment
+issuance require current system-administrator authentication, versions and
+restricted non-secret audits. See the rollout guide for safe release/ownership
+and guardian reassignment boundaries.

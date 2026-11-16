@@ -163,25 +163,38 @@ try {
     ),
     undefined,
   );
-  await click(owner.page, "Create sign-in account");
   assert.equal(
-    await owner.page.getByLabel("Name", { exact: true }).inputValue(),
-    "Child",
+    await owner.page
+      .getByRole("button", { name: "Create sign-in account", exact: true })
+      .count(),
+    0,
   );
-  await owner.page
-    .getByLabel("Username · no email required", { exact: true })
-    .fill("child");
-  await owner.page
-    .getByLabel("Household role", { exact: true })
-    .selectOption("kid");
-  await owner.page
-    .getByLabel("Password · at least 12 characters", { exact: true })
-    .fill(password);
-  await save(owner.page);
+  assert.equal(
+    await owner.page.locator('form[data-form="personal-family"]').count(),
+    0,
+    "Family opens read-only after Save",
+  );
+  const roster = store
+    .list("personal-household", "platform")
+    .find((p) => p.sourceHousehold === host.household);
+  const childPerson = roster.members.find((p) => p.first === "Child");
+  // Existing assigned credentials remain compatible before staged activation.
+  const ownerCookie = (await owner.context.cookies())
+    .map((c) => c.name + "=" + c.value)
+    .join("; ");
+  const createdChild = await api(ownerCookie, "/api/family/members", {
+    name: "Child",
+    login: "child",
+    role: "kid",
+    password,
+    profileMember: childPerson.id,
+    profileVersion: roster.version,
+  });
   const child = store.one(
     "SELECT id FROM family_members WHERE household=? AND login='child'",
     host.household,
   );
+  await click(owner.page, "Home");
   stage("shared lists, child access and independent device updates");
   await click(owner.page, "Family");
   await click(owner.page, "Create list");

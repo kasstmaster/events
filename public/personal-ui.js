@@ -43,15 +43,19 @@ export function personalTools({
       ).length > 1;
     return ui`<fieldset data-personal-member="${esc(member.id || "")}"><legend>${member.parent ? C("Child") : C("Adult")}</legend>${field(H("First name"), "profileFirst", member.first || "", "text", 'required maxlength="80"')}<div data-personal-last ${member.parent ? "hidden" : ""}>${field(H("Last name"), "profileLast", member.last || "", "text", 'maxlength="80"')}</div>${duplicate ? field(H("Suffix"), "profileSuffix", member.suffix || "", "text", 'maxlength="30"') : ui`<input type="hidden" name="profileSuffix" value="${esc(member.suffix || "")}">`}<div data-personal-phone ${member.parent ? "hidden" : ""}>${field(H("Phone number"), "profilePhone", member.phone || "", "tel", 'maxlength="30" autocomplete="tel"')}</div>${select(H("Designated adult"), "profileParent", [["", C("Adult")], ...members.filter((m) => !m.parent && !m.archived && m.id !== member.id).map((m) => [m.id, [m.first, m.last].filter(Boolean).join(" ")])], member.parent || "")}${button("personal-remove-member", H("Remove family entry"))}</fieldset>`;
   }
-  function familyFields(data = current()) {
+  function familyFields(data = current(), includeMembers = true) {
     if (!data) return "";
     const p = data.profile;
-    return ui`<p>${C("Household ID")} · <code>${esc(data.account.householdId || p.publicCode)}</code></p><input type="hidden" name="profileVersion" value="${p.version}"><div data-layout="personalFamily"><fieldset data-layout-item="physical"><legend>Physical address</legend>${addressFields("physical", p.physical)}</fieldset><fieldset data-layout-item="mailing"><legend>Mailing address</legend><label class="check"><input type="checkbox" name="mailingSame" ${p.mailingSame ? "checked" : ""}>${C("Same as physical address")}</label><div data-mailing-fields ${p.mailingSame ? "hidden" : ""}>${addressFields("mailing", p.mailing)}</div></fieldset><fieldset data-layout-item="members"><legend>Family information</legend><div data-personal-members>${p.members
-      .filter((m) => !m.archived)
-      .map((m) => memberRow(m, p.members))
-      .join(
-        "",
-      )}</div><div class="row">${button("personal-add-adult", H("Add adult"))}${button("personal-add-child", H("Add child"))}</div></fieldset><fieldset data-layout-item="sharing"><legend>Share updated information</legend>${select(
+    return ui`<p>${C("Household ID")} · <code>${esc(data.account.householdId || p.publicCode)}</code></p><input type="hidden" name="profileVersion" value="${p.version}"><div data-layout="personalFamily"><fieldset data-layout-item="physical"><legend>Physical address</legend>${addressFields("physical", p.physical)}</fieldset><fieldset data-layout-item="mailing"><legend>Mailing address</legend><label class="check"><input type="checkbox" name="mailingSame" ${p.mailingSame ? "checked" : ""}>${C("Same as physical address")}</label><div data-mailing-fields ${p.mailingSame ? "hidden" : ""}>${addressFields("mailing", p.mailing)}</div></fieldset>${
+      includeMembers
+        ? ui`<fieldset data-layout-item="members"><legend>Family information</legend><div data-personal-members>${p.members
+            .filter((m) => !m.archived)
+            .map((m) => memberRow(m, p.members))
+            .join(
+              "",
+            )}</div><div class="row">${button("personal-add-adult", H("Add adult"))}${button("personal-add-child", H("Add child"))}</div></fieldset>`
+        : ""
+    }<fieldset data-layout-item="sharing"><legend>Share updated information</legend>${select(
       H("Who receives my updated information automatically"),
       "profileSharing",
       [
@@ -70,22 +74,44 @@ export function personalTools({
             fd.get(prefix + key[0].toUpperCase() + key.slice(1)) || "",
           ]),
         );
+    const scope = form.dataset.editScope;
+    const existing = current()?.profile;
+    if (scope === "person") {
+      const row = form.querySelector("[data-personal-member]");
+      const person = {
+        id: row.dataset.personalMember,
+        first: row.querySelector('[name="profileFirst"]').value,
+        last: row.querySelector('[name="profileLast"]').value,
+        suffix: row.querySelector('[name="profileSuffix"]').value,
+        phone: row.querySelector('[name="profilePhone"]').value,
+        parent: row.querySelector('[name="profileParent"]').value,
+      };
+      return {
+        ...existing,
+        members: existing.members.some((p) => p.id === person.id)
+          ? existing.members
+              .filter((p) => !p.archived)
+              .map((p) => (p.id === person.id ? { ...p, ...person } : p))
+          : [...existing.members.filter((p) => !p.archived), person],
+      };
+    }
     return {
       physical: address("physical"),
       mailing: address("mailing"),
       mailingSame: fd.has("mailingSame"),
       sharing: fd.get("profileSharing"),
       recipients: fd.getAll("profileRecipient"),
-      members: [...form.querySelectorAll("[data-personal-member]")].map(
-        (row) => ({
-          id: row.dataset.personalMember || undefined,
-          first: row.querySelector('[name="profileFirst"]').value,
-          last: row.querySelector('[name="profileLast"]').value,
-          suffix: row.querySelector('[name="profileSuffix"]').value,
-          phone: row.querySelector('[name="profilePhone"]').value,
-          parent: row.querySelector('[name="profileParent"]').value,
-        }),
-      ),
+      members:
+        scope === "details"
+          ? existing.members.filter((p) => !p.archived)
+          : [...form.querySelectorAll("[data-personal-member]")].map((row) => ({
+              id: row.dataset.personalMember || undefined,
+              first: row.querySelector('[name="profileFirst"]').value,
+              last: row.querySelector('[name="profileLast"]').value,
+              suffix: row.querySelector('[name="profileSuffix"]').value,
+              phone: row.querySelector('[name="profilePhone"]').value,
+              parent: row.querySelector('[name="profileParent"]').value,
+            })),
     };
   }
   function accountPage() {
@@ -96,7 +122,33 @@ export function personalTools({
     return ui`${topbar({ title: C(a.needsUsername ? "Create private sign-in" : "Private sign-in"), back: a.needsUsername ? "" : "page-back", extra: tool("personal-save", "Save", "", "save") })}<section class="panel" data-layout="personalAccount"><p data-layout-item="description">Your username is private. It is never shown to family, friends or hosts.</p><form data-form="personal-account" data-layout-item="credentials" data-version="${a.version}">${field(H("Username"), "username", a.username, "text", 'required minlength="3" maxlength="80" autocomplete="username"')}${field(H("Recovery phone number"), "recoveryPhone", a.recoveryPhone, "tel", 'required maxlength="30" autocomplete="tel"')}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form><div data-layout-item="verification">${a.recoveryPhone ? ui`<p>${a.recoveryVerified ? C("Recovery phone verified.") : C("Verify your recovery phone to enable username reminders.")}</p>${a.recoveryVerified ? "" : ui`${button("personal-verify-start", H("Send verification code"))}<form data-form="personal-verify">${field(H("Verification code"), "code", "", "text", 'required inputmode="numeric" maxlength="6"')}<p class="form-error" role="alert"></p><button>${C("Verify")}</button></form>`}` : ""}</div></section>`;
   }
   function familyPage() {
-    return ui`${topbar({ title: C("Family"), back: "page-back", extra: tool("personal-save", "Save", "", "save") })}<section class="panel"><form data-form="personal-family">${familyFields()}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form>${state.session.role === "host" ? signInControls?.() || "" : ""}</section>`;
+    const data = current(),
+      p = data.profile,
+      edit = state.familyMemberEditing;
+    const person =
+      edit &&
+      edit !== "details" &&
+      (p.members.find((m) => m.id === edit) || state.familyMemberDraft);
+    const membership = state.centralFamily?.people.find(
+      (m) => m.id === person?.id,
+    );
+    const controls = edit
+      ? tool("personal-save", "Save", "", "save") +
+        tool("personal-edit-cancel", "Cancel", "", "close")
+      : "";
+    return ui`${topbar({ title: C("Family"), back: "page-back", extra: controls })}<section class="panel"><p>${C("Household ID")} · <code>${esc(data.account.householdId || p.publicCode)}</code></p>${
+      edit
+        ? ui`<form data-form="personal-family" data-edit-scope="${person ? "person" : "details"}">${person ? ui`<input type="hidden" name="profileVersion" value="${p.version}">${memberRow(person, p.members)}` : familyFields(data, false)}${person?.parent && membership && state.session.role === "host" ? ui`<label class="check"><input type="checkbox" name="allowChildSignIn" ${membership.allowSignIn ? "checked" : ""}>Allow Sign-In</label><p class="small">Child sign-in requires independently verified delivery and administrator approval. Access is limited to authorized Family Workspace records.</p>` : ""}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form>`
+        : ui`<ul class="browse-rows">${p.members
+            .filter((m) => !m.archived)
+            .map(
+              (m) =>
+                ui`<li class="browse-row"><div class="grow">${esc([m.first, m.parent ? "" : m.last, m.suffix].filter(Boolean).join(" "))}${m.parent ? C(" · child") : ""}</div>${button("personal-edit-member", H("Edit"), `data-id="${esc(m.id)}"`)}</li>`,
+            )
+            .join(
+              "",
+            )}</ul><div class="row">${button("personal-add-adult", H("Add adult"))}${button("personal-add-child", H("Add child"))}${button("personal-edit-details", H("Edit family information"))}</div>`
+    }</section>`;
   }
   function contactsPage() {
     const data = current();
@@ -145,6 +197,10 @@ export function personalTools({
         ].includes(action)
       ) {
         state.view = action;
+        if (action === "personal-family") {
+          state.familyMemberEditing = null;
+          state.centralFamily = await api("/api/central/family");
+        }
         render();
         return true;
       }
@@ -156,37 +212,61 @@ export function personalTools({
           ?.requestSubmit();
         return true;
       }
+      if (
+        [
+          "personal-edit-member",
+          "personal-edit-details",
+          "personal-edit-cancel",
+        ].includes(action)
+      ) {
+        state.familyMemberEditing =
+          action === "personal-edit-member"
+            ? target.dataset.id
+            : action === "personal-edit-details"
+              ? "details"
+              : null;
+        state.familyMemberDraft = null;
+        render();
+        return true;
+      }
       if (action === "personal-add-adult" || action === "personal-add-child") {
-        const form = target.closest("form"),
-          members = collectFamily(form).members;
         const parent =
           action === "personal-add-child"
-            ? members.find((p) => !p.parent)?.id
+            ? current().profile.members.find((p) => !p.parent && !p.archived)
+                ?.id
             : "";
         if (action === "personal-add-child" && !parent)
           throw Error("Save an adult family entry first.");
-        form.querySelector("[data-personal-members]").insertAdjacentHTML(
-          "beforeend",
-          memberRow(
-            {
-              id: crypto.randomUUID(),
-              first: "",
-              last: "",
-              phone: "",
-              parent: parent || "",
-            },
-            members,
-          ),
-        );
-        form.dataset.dirty = "true";
+        state.familyMemberDraft = {
+          id: crypto.randomUUID(),
+          first: "",
+          last: "",
+          phone: "",
+          parent: parent || "",
+        };
+        state.familyMemberEditing = state.familyMemberDraft.id;
+        render();
         return true;
       }
       if (action === "personal-remove-member") {
-        const row = target.closest("[data-personal-member]");
-        if (row.dataset.personalMember === current().self)
+        const key = target.closest("[data-personal-member]").dataset
+          .personalMember;
+        if (key === current().self)
           throw Error("Keep your own adult family entry.");
-        row.closest("form").dataset.dirty = "true";
-        row.remove();
+        if (!confirm(String(C("Remove this family entry?")))) return true;
+        const data = await api("/api/personal/family", {
+          method: "PUT",
+          version: current().profile.version,
+          data: {
+            ...current().profile,
+            members: current().profile.members.filter(
+              (p) => !p.archived && p.id !== key,
+            ),
+          },
+        });
+        state.data.personal = data;
+        state.familyMemberEditing = null;
+        await load();
         return true;
       }
       if (action === "personal-block" || action === "personal-remove-contact") {
@@ -232,13 +312,29 @@ export function personalTools({
       }
       if (!kind.startsWith("personal-")) return false;
       let data;
-      if (kind === "personal-family")
+      if (kind === "personal-family") {
         data = await api("/api/personal/family", {
           method: "PUT",
           version: Number(form.elements.profileVersion.value),
           data: collectFamily(form),
         });
-      else if (kind === "personal-account")
+        const child = form.elements.allowChildSignIn;
+        const member = state.centralFamily?.people.find(
+          (p) => p.id === state.familyMemberEditing,
+        );
+        if (child && member && child.checked !== member.allowSignIn)
+          await api("/api/central/family", {
+            method: "POST",
+            data: {
+              member: member.id,
+              version: member.version,
+              allowSignIn: child.checked,
+            },
+          });
+        state.familyMemberEditing = null;
+        state.familyMemberDraft = null;
+        state.centralFamily = await api("/api/central/family");
+      } else if (kind === "personal-account")
         data = await api("/api/personal/account", {
           method: "PUT",
           version: Number(form.dataset.version),

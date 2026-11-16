@@ -107,7 +107,8 @@ export function featureTools(ctx) {
           hostSettings: "Host Settings",
           guestSettings: "Guest Settings",
           familySettings: "Family Settings",
-          personalFamily: "Guest family information",
+          personalFamily: "Family name list",
+          personalFamilyDetails: "Edit family addresses and sharing",
           personalAccount: "Guest private sign-in settings",
           personalSetup: "Guest first-time username setup",
           personalContacts: "Registered household Address Book",
@@ -462,6 +463,11 @@ export function featureTools(ctx) {
       return topbar({
         title: escape(editingCard.name),
         extra: [
+          ...(state.passwordless?.universal &&
+          role() === "host" &&
+          editingCard?.event
+            ? [["rsvp-card-open", "RSVP cards", "invite"]]
+            : []),
           ["download-card", "Download SVG", "download"],
           ["download-png", "Download PNG", "download"],
           ...(role() === "host" && editingCard.event
@@ -1380,8 +1386,21 @@ export function featureTools(ctx) {
         downloadBlob(await pngCard(), "png");
         return true;
       }
+      if (action === "rsvp-card-open") {
+        ctx.openRSVPCards(editingCard.event, editingCard);
+        return true;
+      }
       if (action === "download-card") {
         download();
+        return true;
+      }
+      if (
+        action === "print-card" &&
+        state.passwordless?.universal &&
+        role() === "host" &&
+        editingCard?.event
+      ) {
+        ctx.openRSVPCards(editingCard.event, editingCard);
         return true;
       }
       if (action === "print-card") {

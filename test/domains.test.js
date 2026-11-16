@@ -71,7 +71,7 @@ test("whole-name suggestions normalize consistently without added words", () => 
     assert.equal(suggestLabel(name), expected);
 });
 
-test("registration derives exact names atomically and rejects collisions, reserved names and overrides", async () => {
+test("registration allocates numbered exact names atomically and rejects reserved names and overrides", async () => {
   const store = new Store();
   try {
     for (const address of ["one", "two", "reserved", "short"])
@@ -89,16 +89,10 @@ test("registration derives exact names atomically and rejects collisions, reserv
         }),
       ),
     );
-    assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
-    assert.equal(
-      results.find((r) => r.status === "rejected").reason.status,
-      409,
-    );
-    assert.equal(
-      store.household(
-        results.find((r) => r.status === "fulfilled").value.household,
-      ).subdomain,
-      "dubois",
+    assert.equal(results.filter((r) => r.status === "fulfilled").length, 2);
+    assert.deepEqual(
+      results.map((r) => store.household(r.value.household).subdomain).sort(),
+      ["dubois", "dubois2"],
     );
     for (const [address, name] of [
       ["reserved", "TheMeyers"],
@@ -117,8 +111,8 @@ test("registration derives exact names atomically and rejects collisions, reserv
       }),
       { status: 400 },
     );
-    assert.equal(store.one("SELECT count(*) AS n FROM approvals").n, 3);
-    assert.equal(store.one("SELECT count(*) AS n FROM household_routing").n, 1);
+    assert.equal(store.one("SELECT count(*) AS n FROM approvals").n, 2);
+    assert.equal(store.one("SELECT count(*) AS n FROM household_routing").n, 2);
     assert.equal(store.routingJob("dubois").phase, "pending");
   } finally {
     store.db.close();
@@ -140,9 +134,14 @@ test("atomic registration, competing case-insensitive claims, rollback and perma
         }),
       ),
     );
-    assert.equal(race.filter((x) => x.status === "fulfilled").length, 1);
-    assert.equal(race.find((x) => x.status === "rejected").reason.status, 409);
-    const account = race.find((x) => x.status === "fulfilled").value;
+    assert.equal(race.filter((x) => x.status === "fulfilled").length, 2);
+    assert.deepEqual(
+      race.map((r) => store.household(r.value.household).subdomain).sort(),
+      ["racename", "racename2"],
+    );
+    const account = race.find(
+      (x) => store.household(x.value.household).subdomain === "racename",
+    ).value;
     const h = store.household(account.household);
     assert.equal(h.subdomain, "racename");
     assert.throws(
@@ -180,20 +179,14 @@ test("atomic registration, competing case-insensitive claims, rollback and perma
     );
     assert.throws(() => store.hostnameHousehold("racename"), { status: 404 });
     assert.equal(store.domainAvailable("racename", h.id), false);
-    await assert.rejects(
-      store.register({
-        email: "c@example.test",
-        password,
-        name: "RaceName",
-        subdomain: "racename",
-      }),
-      { status: 409 },
-    );
-    assert.equal(
-      store.one("SELECT email FROM approvals WHERE email=?", "c@example.test")
-        .email,
-      "c@example.test",
-    );
+    const third = await store.register({
+      email: "c@example.test",
+      password,
+      name: "RaceName",
+      subdomain: "racename",
+    });
+    assert.equal(store.household(third.household).subdomain, "racename3");
+    assert.equal(store.domainAvailable("racename"), false);
     await assert.rejects(
       store.register({
         email: "unapproved@example.test",

@@ -7,7 +7,10 @@ function allocate(store) {
       .all(
         "SELECT json_extract(body,'$.code') AS code FROM records WHERE kind='guest-access-code'",
       )
-      .map((r) => r.code),
+      .map((r) => r.code)
+      .concat(
+        store.list("personal-code-reservation", "platform").map((r) => r.id),
+      ),
   );
   const free = Array.from({ length: 10000 }, (_, i) =>
     String(i).padStart(4, "0"),

@@ -89,6 +89,30 @@ try {
           "22 Central Ave" &&
         !document.querySelector('form[data-form="account-edit"][data-saving]'),
     );
+    const membership = page.locator('form[data-form="membership-query"]');
+    await membership
+      .getByLabel("Host household", { exact: true })
+      .selectOption(host.household);
+    await membership
+      .getByLabel("Current administrator password")
+      .fill(password);
+    await membership
+      .getByRole("button", { name: "Review family membership", exact: true })
+      .click();
+    await page.locator('form[data-form="membership-action"]').waitFor();
+    assert.equal(
+      await membership
+        .getByLabel("Current administrator password")
+        .inputValue(),
+      "",
+    );
+    assert.ok(
+      (await page
+        .locator(
+          'form[data-form="membership-action"] select[name="identity"] option',
+        )
+        .count()) > 0,
+    );
     assert.equal(
       await page.evaluate(
         () => document.documentElement.scrollWidth > innerWidth + 1,

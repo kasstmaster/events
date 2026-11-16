@@ -1,3 +1,5 @@
+import { rsvpCardsUI } from "/rsvp-cards-ui.js";
+import { passwordlessUI } from "/passwordless-ui.js";
 import { accountControls } from "/account-controls.js";
 import { personalTools } from "/personal-ui.js";
 import { householdGroups } from "/address-system.js";
@@ -261,6 +263,7 @@ const isEditing = () =>
     state.view,
   ) ||
   state.view === "rsvp-page" ||
+  !!state.familyMemberEditing ||
   !!state.eventLayoutDraft ||
   !!state.eventInviteDraft ||
   pointerInteraction ||
@@ -297,6 +300,8 @@ async function load({ background = false } = {}) {
       render();
       return;
     }
+    const passwordlessConfig = await api("/api/passwordless/config");
+    await passwordless.initialize(passwordlessConfig);
     const [context, platform, session] = await Promise.all([
       api("/api/public/context"),
       api("/api/interface"),
@@ -324,9 +329,40 @@ async function load({ background = false } = {}) {
     let data = null,
       templates = [],
       publicHousehold = context.household;
+    if (
+      !session.role &&
+      passwordlessConfig.universal &&
+      passwordless.entry() &&
+      !["signin", "guest", "setup"].includes(passwordless.entry())
+    )
+      publicHousehold = (
+        await api(
+          "/api/passwordless/entry?label=" +
+            encodeURIComponent(passwordless.entry()),
+        )
+      ).household;
+    if (!session.role && passwordlessConfig.universal) {
+      const ref = location.pathname.match(
+        /^\/invite\/([A-Za-z0-9_-]{43})$/,
+      )?.[1];
+      if (ref) {
+        const context = await api("/api/invitations/" + ref + "/resolve");
+        if (context.entry)
+          publicHousehold = (
+            await api(
+              "/api/passwordless/entry?label=" +
+                encodeURIComponent(context.entry),
+            )
+          ).household;
+      }
+    }
     if (session.role) {
       data = await api(
-        session.role === "admin" ? "/api/admin" : `/api/${session.role}`,
+        session.role === "admin-pending"
+          ? "/api/passwordless/security"
+          : session.role === "admin"
+            ? "/api/admin"
+            : `/api/${session.role}`,
       );
       if (session.role === "host" && session.platformAdmin) {
         const admin = await api("/api/admin");
@@ -384,6 +420,8 @@ async function load({ background = false } = {}) {
       publicHousehold,
       lastSync: new Date(),
     });
+    if (!background && state.passwordless?.universal)
+      await passwordless.resolveInvitation();
     if (!unchanged) renderRefresh(preserveScroll);
     else $("#sync-status")?.replaceChildren();
     if (syncCompleted && state.view === "contacts")
@@ -459,6 +497,12 @@ function authPage(designTarget) {
     return setupPage();
   const household = state.publicHousehold;
   if (household) applyDesign(household.design, designTarget);
+  if (
+    state.passwordless?.enabled &&
+    !state.passwordlessLegacy &&
+    state.view !== "register"
+  )
+    return passwordless.page();
   if (state.view === "family-login" && household)
     return ui`<section class="auth"><div class="panel"><h1>${escape(household.name)}</h1><h2>Family member sign-in</h2><form data-form="family-login">${field(H("Username"), "login", "", "text", 'required autocomplete="username"')}${field(H("Password"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Sign in</button></form></div></section>`;
   if (state.view !== "register" && state.view !== "family-login")
@@ -476,6 +520,7 @@ function toolbar(event) {
   if (
     role === "guest" &&
     state.data?.personal?.account.needsUsername &&
+    !state.session?.passwordless &&
     !state.preview
   )
     return bottom([{ action: "logout", label: "Sign Out", icon: "settings" }]);
@@ -811,9 +856,10 @@ function render(target = $("#app"), example = false) {
     existingGuest &&
     existingGuest.dataset.guest === (state.editingGuest?.id || "new");
   if (keepGuest) existingGuest.remove();
-  const activeEvent = state.data?.events?.find(
-    (e) => (e.invitationKey || e.id) === state.event,
-  );
+  const activeEvent = [
+    ...(state.data?.events || []),
+    ...(state.data?.receivedEvents || []),
+  ].find((e) => (e.invitationKey || e.id) === state.event);
   let active =
     activeEvent?.ui ||
     state.data?.ui ||
@@ -829,6 +875,7 @@ function render(target = $("#app"), example = false) {
   if (
     state.session?.role === "guest" &&
     state.data?.personal?.account.needsUsername &&
+    !state.session?.passwordless &&
     !state.preview &&
     !example
   ) {
@@ -851,9 +898,12 @@ function render(target = $("#app"), example = false) {
     state.view === "username-recovery"
   )
     content = personal.page();
+  else if (role === "admin-pending" || state.view === "passwordless-security")
+    content = passwordless.securityPage();
   else if (role && state.view === "rsvp-page")
     content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C(state.manualRSVP?.hostFamily ? "RSVP for your family" : state.manualRSVP ? "Record guest RSVP" : "Will you join us?")}</h1><form data-form="rsvp">${state.rsvpMarkup}<p class="form-error" role="alert"></p><div class="row"><button>${C("RSVP")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
   else if (state.view === "evites") content = tools.evitesPage();
+  else if (state.view === "rsvp-cards") content = rsvpCards.page();
   else if (state.view === "cards-page") content = tools.cardsPage();
   else if (state.view === "card-preview") content = tools.cardPreviewPage();
   else if (state.view === "card-editor" && ["host", "admin"].includes(role))
@@ -880,7 +930,7 @@ function render(target = $("#app"), example = false) {
               : "")
           : ui`<section class="hero"><p class="eyebrow">Administrator</p><h1>Open the door<br>for your next host.</h1><p>Approve email addresses and manage shared invitation artwork. No emails are sent.</p></section><section class="panel"><h2>Administration</h2><p>Use the toolbar to manage approvals, hosts, templates and shared page defaults.</p></section>`;
   } else {
-    event = state.data.events.find(
+    event = [...state.data.events, ...(state.data.receivedEvents || [])].find(
       (e) => (e.invitationKey || e.id) === state.event,
     );
     state.activeUI =
@@ -1066,6 +1116,38 @@ function render(target = $("#app"), example = false) {
         tool("settings", "Settings", "", "settings"),
       );
     }
+  }
+  if (
+    role &&
+    state.passwordless?.enabled &&
+    (state.settingsOpen || state.view === "settings")
+  ) {
+    const list = target.querySelector("#main .browse-rows");
+    if (list)
+      list.insertAdjacentHTML(
+        "beforeend",
+        row({
+          title: C("Sign out other devices"),
+          symbol: "logout",
+          action: "passwordless-revoke",
+        }),
+      );
+    if (!list)
+      target
+        .querySelector("#main .panel")
+        ?.insertAdjacentHTML(
+          "beforeend",
+          button("passwordless-revoke", H("Sign out other devices")),
+        );
+    if (list && state.session.adminStepUpAvailable)
+      list.insertAdjacentHTML(
+        "beforeend",
+        row({
+          title: C("Administrator tools"),
+          symbol: "settings",
+          action: "passwordless-admin-open",
+        }),
+      );
   }
   if (state.settingsOpen && role === "host") {
     const details = target.querySelector(".settings-details"),
@@ -1793,6 +1875,9 @@ async function submit(form) {
     notify(C("Read-only preview: no guest data will be changed."));
     return;
   }
+  if (kind === "rsvp-cards") return rsvpCards.submit(form);
+  if (kind === "passwordless-step-up") return passwordless.stepUp(form);
+  if (kind === "passwordless-login") return passwordless.submit(form);
   if (kind === "guest-code-claim") {
     await api(
       `/api/public/households/${state.publicHousehold.slug}/claim-code`,
@@ -2111,7 +2196,7 @@ document.addEventListener("click", (event) => {
 document.addEventListener("dblclick", async (event) => {
   if (state.preview || state.example || state.session?.role !== "host") return;
   const target = event.target.closest("#main [data-event-edit]");
-  if (!target || !selectedEvent()) return;
+  if (!target || !selectedEvent() || selectedEvent().invitingHousehold) return;
   event.preventDefault();
   if (appearance.active() && !(await appearance.leave())) return;
   eventEditor(selectedEvent(), target.dataset.eventEdit);
@@ -2202,6 +2287,7 @@ document.addEventListener("click", async (event) => {
     if (
       state.session.role === "guest" &&
       state.data?.personal?.account.needsUsername &&
+      !state.session?.passwordless &&
       !state.preview &&
       !["personal-save", "logout"].includes(action)
     ) {
@@ -2661,6 +2747,8 @@ document.addEventListener("click", async (event) => {
       await saved("Guest link reviewed.");
       return;
     }
+    if (await rsvpCards.action(action, target)) return;
+    if (await passwordless.action(action, target)) return;
     if (await personal.action(action, target)) return;
     if (await tools.action(action, target)) return;
     if (action === "close") {
@@ -2681,6 +2769,12 @@ document.addEventListener("click", async (event) => {
       render();
       return;
     }
+    if (
+      action === "home" &&
+      state.session?.passwordless &&
+      (await passwordless.goHome())
+    )
+      return;
     if (action === "home") {
       resetContactInvites();
       closeModal();
@@ -3528,6 +3622,8 @@ const family = familyTools({
   openFamilyProfile: async () => {
     state.familyData = await api("/api/family");
     state.data.personal = await api("/api/personal");
+    state.centralFamily = await api("/api/central/family");
+    state.familyMemberEditing = null;
     state.view = "personal-family";
     render();
   },
@@ -3546,6 +3642,17 @@ const family = familyTools({
   load,
 });
 family.bind();
+const rsvpCards = rsvpCardsUI({ state, api, button, escape, render, field });
+const passwordless = passwordlessUI({
+  escape,
+  state,
+  api,
+  field,
+  button,
+  render,
+  load,
+  notify,
+});
 const accounts = accountControls({
   state,
   api,
@@ -3568,6 +3675,7 @@ const personal = personalTools({
 });
 personal.bind();
 const tools = featureTools({
+  openRSVPCards: (event, card) => rsvpCards.open(event, card),
   state,
   api,
   modal,

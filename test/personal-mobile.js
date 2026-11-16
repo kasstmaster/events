@@ -146,6 +146,12 @@ try {
     "rgb(21, 23, 25)",
   );
   await click(p, "Family information");
+  assert.equal(
+    await p.locator('form[data-form="personal-family"]').count(),
+    0,
+    "Family is initially read-only",
+  );
+  await click(p, "Edit family information");
   const form = p.locator('form[data-form="personal-family"]');
   await form.locator('[name="physicalStreet"]').fill("9 Physical Street");
   await form.locator('[name="physicalCity"]').fill("Sample");
@@ -155,21 +161,27 @@ try {
   await form.locator('[name="mailingCity"]').fill("Sample");
   await form.locator('[name="mailingState"]').fill("CA");
   await form.locator('[name="mailingZip"]').fill("90210");
-  const adultRow = form
-    .locator("[data-personal-member]")
-    .filter({ has: p.locator("legend", { hasText: /^Adult$/ }) })
-    .first();
-  await adultRow.locator('[name="profilePhone"]').fill("+15005550124");
-  const childRow = form
-    .locator("[data-personal-member]")
-    .filter({ has: p.locator("legend", { hasText: /^Child$/ }) });
-  assert.equal(
-    await childRow.getByLabel("Last name", { exact: true }).isVisible(),
-    false,
-  );
   await form.locator('[name="profileRecipient"]').check();
   await form.getByRole("button", { name: "Save", exact: true }).click();
   await p.getByText("Household information saved.", { exact: true }).waitFor();
+  await p
+    .locator(".browse-row")
+    .filter({ hasText: "Casey Example" })
+    .getByRole("button", { name: "Edit", exact: true })
+    .click();
+  await form.locator('[name="profilePhone"]').fill("+15005550124");
+  await form.getByRole("button", { name: "Save", exact: true }).click();
+  await p.getByText("Household information saved.", { exact: true }).waitFor();
+  await p
+    .locator(".browse-row")
+    .filter({ hasText: /child/ })
+    .getByRole("button", { name: "Edit", exact: true })
+    .click();
+  assert.equal(
+    await form.getByLabel("Last name", { exact: true }).isVisible(),
+    false,
+  );
+  await click(p, "Cancel");
   assert.match(
     store.get("address", adult.address, hosts[0].household).lines,
     /PO Box 77/,
@@ -228,7 +240,12 @@ try {
   await click(p, "Cancel");
   await click(p, "Home");
   await click(p, "Family information");
-  await form.locator('[name="profilePhone"]').first().fill("+15005550125");
+  await p
+    .locator(".browse-row")
+    .filter({ hasText: "Casey Example" })
+    .getByRole("button", { name: "Edit", exact: true })
+    .click();
+  await form.locator('[name="profilePhone"]').fill("+15005550125");
   await form.getByRole("button", { name: "Save", exact: true }).click();
   await p.getByText("Household information saved.", { exact: true }).waitFor();
   assert.equal(

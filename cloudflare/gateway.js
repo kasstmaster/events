@@ -1,3 +1,4 @@
+import { universalRoutingEnabled } from "../server/gather-flags.js";
 import { configuredHosts, hostnameLabel } from "../server/household-domains.js";
 import { forwardRequest, unavailable } from "./gateway-protocol.js";
 
@@ -7,6 +8,9 @@ export default {
       const url = new URL(request.url);
       let forwardingEnv = env;
       if (
+        !(
+          universalRoutingEnabled(env) && url.hostname === "gather.ilymmd.com"
+        ) &&
         !configuredHosts(env.HOUSEHOLD_HOSTS).has(url.hostname) &&
         env.HOUSEHOLD_ROUTING_ENABLED === "true"
       ) {
@@ -50,7 +54,12 @@ export default {
       // Refuse Domain cookies or legacy canonical cookies on a household hostname.
       for (const cookie of response.headers.getSetCookie()) {
         if (
-          !cookie.startsWith("__Host-events_session=") ||
+          ![
+            /^__Host-events_session=/,
+            /^__Host-gather_login=/,
+            /^__Host-gather_transfer=/,
+            /^__Host-gather_child_[a-f0-9]{16}=/,
+          ].some((pattern) => pattern.test(cookie)) ||
           /;\s*domain=/i.test(cookie) ||
           !/;\s*secure(?:;|$)/i.test(cookie) ||
           !/;\s*path=\/(?:;|$)/i.test(cookie)

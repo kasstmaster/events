@@ -1,7 +1,13 @@
+import {
+  centralMemberForActor,
+  centralWorkspaceMembers,
+} from "./central-membership.js";
 import { fail, text } from "./model.js";
 export function familyMember(store, session) {
   if (!session || !["host", "family"].includes(session.role))
     fail(403, "Family access is not available.");
+  const central = centralMemberForActor(store, session);
+  if (central) return central;
   const original = store.one(
     "SELECT id,email FROM users WHERE household=? AND role='host'",
     session.household,
@@ -73,6 +79,9 @@ export function accessInput(store, member, input, current = {}) {
     new Set(keys).size !== keys.length ||
     keys.some(
       (key) =>
+        !centralWorkspaceMembers(store, member.household).some(
+          (m) => m.id === key && m.role === "kid",
+        ) &&
         !store.one(
           "SELECT id FROM family_members WHERE id=? AND household=? AND role='kid' AND disabled=0",
           key,
