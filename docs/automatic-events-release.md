@@ -225,3 +225,12 @@ universal and signed household entry paths, including PNG app icons. Worker-firs
 asset routing requires an explicit shared server route even when the file was
 successfully uploaded. These checks run before production publishing; they never
 contact the live website or create production accounts.
+
+Cloudflare inventory GETs retry HTTP 500/502/503/504 at most three total attempts,
+with one- and two-second waits. Error bodies remain unread/unreported. Persistent
+failures stop before publishing; authentication failures, rate limits, malformed
+responses and GitHub failures are not retried by this policy. This does not retry
+uploads or bypass checkpoint, latest-main, stable-inventory or verification guards.
+If a release stops at settings preflight, its publish step has not run. The owner
+may use Actions → the failed release → Re-run failed jobs to repeat all existing
+release guards with the same credentials. Do not replace credentials for HTTP 500.

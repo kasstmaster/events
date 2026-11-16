@@ -1033,3 +1033,86 @@ test("artifact visibility waits cannot bypass changed production or a newer main
     });
   }
 });
+
+test("transient Cloudflare settings GET failures retry within a bound before full preflight", () =>
+  fixture(async ({ state, options, preflight, root }) => {
+    const original = options.fetcher,
+      waits = [];
+    let reads = 0;
+    options.wait = async (ms) => waits.push(ms);
+    options.fetcher = async (url, init) => {
+      if (
+        new URL(url).hostname === "api.cloudflare.com" &&
+        new URL(url).pathname.endsWith("/settings")
+      ) {
+        reads++;
+        if (reads <= 2)
+          return new Response("private-provider-error", { status: 500 });
+      }
+      return original(url, init);
+    };
+    await preflight();
+    assert.deepEqual(waits, [1000, 2000]);
+    assert.equal(reads, 4);
+    assert.equal(state.publishes, 0);
+    assert.ok(await readFile(join(root, "recovery/events-checkpoint.json")));
+  }));
+test("persistent 5xx stops before checkpoint/publication and never exposes provider bodies", () =>
+  fixture(async ({ state, options, root }) => {
+    let reads = 0;
+    const original = options.fetcher;
+    options.fetcher = async (url, init) => {
+      if (new URL(url).hostname === "api.cloudflare.com") {
+        reads++;
+        return new Response("private-provider-error", { status: 503 });
+      }
+      return original(url, init);
+    };
+    await assert.rejects(
+      run("preflight", options),
+      (e) =>
+        e.stage === "settings" &&
+        /503.*3 attempts/.test(e.message) &&
+        !e.message.includes("private-provider-error"),
+    );
+    assert.equal(reads, 3);
+    assert.equal(state.publishes, 0);
+    await assert.rejects(
+      readFile(join(root, "recovery/events-checkpoint.json")),
+    );
+  }));
+test("authorization, rate limiting and GitHub failures are never treated as retryable Cloudflare outages", async () => {
+  for (const status of [400, 401, 403, 429])
+    await fixture(async ({ state, options }) => {
+      let reads = 0;
+      const original = options.fetcher;
+      options.wait = async () => {
+        throw Error("Must not retry authorization or rate limits");
+      };
+      options.fetcher = async (url, init) => {
+        if (new URL(url).hostname === "api.cloudflare.com") {
+          reads++;
+          return new Response("private-provider-error", { status });
+        }
+        return original(url, init);
+      };
+      await assert.rejects(
+        run("preflight", options),
+        (e) =>
+          e.message.includes(String(status)) &&
+          !e.message.includes("private-provider-error"),
+      );
+      assert.equal(reads, 1);
+      assert.equal(state.publishes, 0);
+    });
+  await fixture(async ({ state, options }) => {
+    let reads = 0;
+    options.fetcher = async () => {
+      reads++;
+      return new Response("private-error", { status: 500 });
+    };
+    await assert.rejects(run("preflight", options), /500/);
+    assert.equal(reads, 1);
+    assert.equal(state.publishes, 0);
+  });
+});

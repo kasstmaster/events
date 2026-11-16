@@ -512,28 +512,49 @@ export async function run(mode, options = {}) {
   );
   const fetcher = options.fetcher || fetch;
   let serverTime, runtimeConfiguration, versionTag;
+  const readWait =
+    options.wait || ((ms) => new Promise((r) => setTimeout(r, ms)));
   async function json(url, token, stage, cloudflare = false) {
-    let r;
-    try {
-      r = await fetcher(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
-        redirect: "error",
-        signal: AbortSignal.timeout(20000),
-      });
-    } catch {
-      throw new ReleaseError(
-        stage,
-        "Read-only transport failed; diagnostics withheld.",
-      );
+    let r,
+      attempts = 0;
+    // Only Cloudflare inventory GETs may retry transient provider failures.
+    // Publication and every authorization/configuration guard remain single-pass.
+    for (;;) {
+      attempts++;
+      try {
+        r = await fetcher(url, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+          redirect: "error",
+          signal: AbortSignal.timeout(20000),
+        });
+      } catch {
+        throw new ReleaseError(
+          stage,
+          "Read-only transport failed; diagnostics withheld.",
+        );
+      }
+      if (
+        !cloudflare ||
+        ![500, 502, 503, 504].includes(r.status) ||
+        attempts >= 3
+      )
+        break;
+      // Do not read or report a potentially secret-bearing provider error body.
+      try {
+        await r.body?.cancel();
+      } catch {
+        /* No diagnostics. */
+      }
+      await readWait(attempts * 1000);
     }
     must(
       r.ok,
       stage,
-      `Read-only request failed (HTTP ${r.status}); diagnostics withheld.`,
+      `Read-only request failed (HTTP ${r.status})${attempts > 1 ? " after " + attempts + " attempts" : ""}; diagnostics withheld.`,
     );
     let j;
     try {
