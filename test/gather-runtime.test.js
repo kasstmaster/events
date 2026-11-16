@@ -197,5 +197,89 @@ test(
       200,
     );
     assert.equal((await mf.dispatchFetch(origin + "/api/session")).status, 200);
+
+    const firebaseRuntime = new Miniflare(
+      convertV4MiniflareOptions({
+        ...base,
+        bindings: {
+          ...env,
+          FIREBASE_AUTH_ENABLED: "true",
+          FIREBASE_ACTIVATION_APPROVED: "true",
+          FIREBASE_PROJECT_ID: "gather-runtime-test",
+          FIREBASE_API_KEY: "synthetic-public-key",
+          FIREBASE_AUTH_DOMAIN: "gather-runtime-test.firebaseapp.com",
+        },
+      }),
+    );
+    t.after(() => firebaseRuntime.dispose());
+    const firebaseSetup = await firebaseRuntime.dispatchFetch(
+      origin + "/api/setup",
+      {
+        method: "POST",
+        headers: { Origin: origin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: secret,
+          email: "admin@example.test",
+          password: "Synthetic-runtime-password",
+          confirmPassword: "Synthetic-runtime-password",
+        }),
+      },
+    );
+    assert.equal(firebaseSetup.status, 201);
+
+    const configResponse = await firebaseRuntime.dispatchFetch(
+      origin + "/api/passwordless/config",
+    );
+    assert.equal(configResponse.status, 200);
+    assert.equal(
+      (await configResponse.json()).firebase.projectId,
+      "gather-runtime-test",
+    );
+    const attempt = await firebaseRuntime.dispatchFetch(
+      origin + "/api/firebase/start",
+      {
+        method: "POST",
+        headers: { Origin: origin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          first: "Synthetic",
+          last: "Person",
+          phone: "+15005550123",
+        }),
+      },
+    );
+    assert.equal(attempt.status, 200);
+    assert.match(
+      attempt.headers.get("set-cookie"),
+      /HttpOnly; Secure; SameSite=Strict/,
+    );
+    const refused = await firebaseRuntime.dispatchFetch(
+      origin + "/api/firebase/verify",
+      {
+        method: "POST",
+        headers: {
+          Origin: origin,
+          "Content-Type": "application/json",
+          Cookie: attempt.headers.get("set-cookie").split(";")[0],
+        },
+        body: JSON.stringify({
+          reference: (await attempt.json()).reference,
+          idToken: "invalid",
+        }),
+      },
+    );
+    assert.equal(refused.status, 401);
+    const recovery = await firebaseRuntime.dispatchFetch(
+      origin + "/api/account-recovery",
+      {
+        method: "POST",
+        headers: { Origin: origin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          first: "Synthetic",
+          last: "Person",
+          householdId: "0000",
+        }),
+      },
+    );
+    assert.equal(recovery.status, 200);
   },
 );

@@ -75,7 +75,7 @@ jobs:
           node test/information-popups-mobile.js
           node test/rsvp-page-mobile.js
           node test/address-book-mobile.js
-      - name: Cards, private accounts and mocked e-vites
+      - name: Cards, accounts and retired outbound messaging
         if: matrix.group == 'accounts'
         run: |
           node test/cards-mobile.js
@@ -84,6 +84,7 @@ jobs:
           node test/account-management-mobile.js
           node test/passwordless-mobile.js
           node test/persistent-sessions-mobile.js
+          node test/firebase-mobile.js
       - uses: actions/upload-artifact@v6
         if: failure()
         with:

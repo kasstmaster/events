@@ -127,7 +127,7 @@ test("editing local contacts never mutates registered information or verified au
         data: {},
       })
     ).status,
-    503,
+    410,
   );
   assert.equal(f.store.list("guest-auth-challenge", "platform").length, 0);
   assert.equal(

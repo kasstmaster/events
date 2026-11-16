@@ -9,7 +9,6 @@ import {
   safeEvent,
 } from "./features.js";
 import { resolveUI, layouts } from "../public/ui-system.js";
-import { reminderRecipients, reminderInput } from "./reminders.js";
 import { deletionSummary, requestDeletion } from "./account-deletion.js";
 function invitationTargets(input) {
   if (
@@ -555,59 +554,6 @@ export async function featureAPI({
         fail(409, "This template is in use.");
       store.remove(kind, key, household, version(req));
       json(res, { ok: true });
-      return true;
-    }
-  }
-  const reminder = path.match(
-    /^\/api\/host\/events\/([a-zA-Z0-9-]+)\/reminders$/,
-  );
-  if (reminder) {
-    requireRole("host");
-    const event = owned("event", reminder[1]);
-    if (method === "GET") {
-      json(res, {
-        reminders: event.reminders || [],
-        configured:
-          env?.SMS_ENABLED === "true" &&
-          !!env.TWILIO_ACCOUNT_SID &&
-          !!env.TWILIO_AUTH_TOKEN &&
-          !!env.TWILIO_FROM,
-        deliveries: store.all(
-          "SELECT reminder,guest,phone,status,error,updated FROM reminder_deliveries WHERE household=? AND event=?",
-          session.household,
-          event.id,
-        ),
-      });
-      return true;
-    }
-    if (method === "POST") {
-      const input = await body(req),
-        reminders = reminderInput(input.reminders);
-      json(res, {
-        previews: reminders.map((r) => ({
-          ...r,
-          recipients: reminderRecipients(
-            store,
-            session.household,
-            event,
-            r,
-          ).map((g) => ({ name: [g.first, g.last].join(" "), phone: g.phone })),
-        })),
-      });
-      return true;
-    }
-    if (method === "PUT") {
-      const input = await body(req);
-      json(
-        res,
-        store.put(
-          "event",
-          event.id,
-          session.household,
-          { ...event, reminders: reminderInput(input.reminders) },
-          version(req),
-        ),
-      );
       return true;
     }
   }

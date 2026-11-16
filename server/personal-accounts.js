@@ -1,10 +1,11 @@
+import { revokeFirebaseMappings } from "./firebase-auth.js";
 import {
   centralMemberForActor,
   membership as centralMembership,
   permanentProfileCode,
 } from "./central-membership.js";
 import { revokeGuestDevices } from "./guest-auth.js";
-import { createHash, randomInt } from "node:crypto";
+import { createHash } from "node:crypto";
 import { id, text, fail, normalizeName } from "./model.js";
 import {
   identityFor,
@@ -16,7 +17,6 @@ import { accessFor, accessCandidates } from "./guest-access.js";
 import { saveAddressResponse } from "./address-rsvp.js";
 import { addressInput } from "./addresses.js";
 import { contactPhone } from "./features.js";
-import { smsEnabled, sendText } from "./sms-provider.js";
 const PLATFORM = "platform";
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const normalizedAddress = (value) =>
@@ -29,6 +29,12 @@ export function personalAccount(store, identity) {
   return store.get("person-account", identity, PLATFORM);
 }
 export function registeredMethod(store, identity) {
+  if (
+    store
+      .list("firebase-account", "platform")
+      .some((m) => m.identity === identity && !m.revoked)
+  )
+    return "firebase";
   const a = personalAccount(store, identity);
   return a?.hostUser
     ? "email"
@@ -204,7 +210,12 @@ export function accountProjection(store, session) {
     },
     account: {
       version: account?.version || 0,
-      method: account?.hostUser ? "email" : "username",
+      method:
+        registeredMethod(store, identity) === "firebase"
+          ? "firebase"
+          : account?.hostUser
+            ? "email"
+            : "username",
       email: account?.hostUser
         ? store.one("SELECT email FROM users WHERE id=?", account.hostUser)
             ?.email || ""
@@ -213,15 +224,20 @@ export function accountProjection(store, session) {
       recoveryPhone: account?.recoveryPhone || "",
       recoveryVerified: account?.recoveryVerified === true,
       needsUsername:
-        session.role === "guest" && !account?.username && !account?.hostUser,
+        session.role === "guest" &&
+        registeredMethod(store, identity) !== "firebase" &&
+        !account?.username &&
+        !account?.hostUser,
       householdId:
-        session.role === "guest" && session.guest && !profile.releasedFrom
-          ? accessFor(
-              store,
-              store.get("guest", session.guest, session.household),
-              session.household,
-            ).code
-          : profile.publicCode,
+        registeredMethod(store, identity) === "firebase"
+          ? profile.publicCode
+          : session.role === "guest" && session.guest && !profile.releasedFrom
+            ? accessFor(
+                store,
+                store.get("guest", session.guest, session.household),
+                session.household,
+              ).code
+            : profile.publicCode,
     },
     contacts: personalContacts(store, identity),
   };
@@ -699,6 +715,7 @@ function savePrivateAccount(store, session, input, expected) {
     previous?.version,
   );
   if (previous?.recoveryPhone !== recoveryPhone) {
+    revokeFirebaseMappings(store, { identity });
     const contact = store.get("guest-auth-contact", identity, PLATFORM);
     if (contact)
       store.remove("guest-auth-contact", identity, PLATFORM, contact.version);
@@ -865,136 +882,6 @@ export function savePersonalProfile(store, session, input, expected) {
     return accountProjection(store, session);
   });
 }
-export function startRecovery(store, env, phone, { now = Date.now } = {}) {
-  phone = contactPhone(phone);
-  store.limit("username-recovery:" + hash(phone), 3, 24 * 3600000);
-  if (!smsEnabled(env))
-    fail(503, "Username recovery texting is not configured.");
-  const accounts = store
-    .list("person-account", PLATFORM)
-    .filter(
-      (a) =>
-        !a.hostUser &&
-        a.recoveryPhone === phone &&
-        a.recoveryVerified &&
-        a.username,
-    );
-  if (accounts.length) {
-    const previous = store.get("username-recovery", hash(phone), PLATFORM);
-    store.put(
-      "username-recovery",
-      hash(phone),
-      PLATFORM,
-      {
-        phone,
-        accounts: accounts.map((a) => a.id),
-        expires: now() + 10 * 60000,
-        state: "queued",
-        message:
-          "Someone requested a Gather username reminder. Reply YES to receive it, or NO to cancel.",
-      },
-      previous?.version,
-    );
-  }
-  return { ok: true };
-}
-export function processAccountReply(store, params) {
-  const phone = String(params.get?.("From") || params.From || ""),
-    action = String(params.get?.("Body") || params.Body || "")
-      .trim()
-      .toUpperCase();
-  const record = store.get("username-recovery", hash(phone), PLATFORM);
-  if (
-    !record ||
-    record.expires < Date.now() ||
-    record.state !== "awaiting" ||
-    !["YES", "NO"].includes(action)
-  )
-    return;
-  if (action === "NO") {
-    store.put(
-      "username-recovery",
-      record.id,
-      PLATFORM,
-      { ...record, state: "cancelled" },
-      record.version,
-    );
-    return;
-  }
-  const names = record.accounts
-    .map((key) => personalAccount(store, key))
-    .filter(
-      (a) => !a?.hostUser && a?.recoveryVerified && a.recoveryPhone === phone,
-    )
-    .map((a) => a.username);
-  store.put(
-    "username-recovery",
-    record.id,
-    PLATFORM,
-    {
-      ...record,
-      state: names.length ? "username-queued" : "cancelled",
-      message:
-        "Your Gather username" +
-        (names.length === 1 ? ": " : "s: ") +
-        names.join(", "),
-    },
-    record.version,
-  );
-}
-export async function runAccountMessages(store, env, { fetcher = fetch } = {}) {
-  if (!smsEnabled(env)) return;
-  for (const kind of ["username-recovery", "phone-verification"])
-    for (const pending of store.list(kind, PLATFORM)) {
-      if (
-        !["queued", "username-queued"].includes(pending.state) ||
-        pending.expires < Date.now()
-      )
-        continue;
-      const claimed = store.transaction(() => {
-        const record = store.get(kind, pending.id, PLATFORM);
-        if (
-          record.version !== pending.version ||
-          store.one("SELECT phone FROM sms_optouts WHERE phone=?", record.phone)
-        )
-          return null;
-        return store.put(
-          kind,
-          record.id,
-          PLATFORM,
-          { ...record, state: "sending" },
-          record.version,
-        );
-      });
-      if (!claimed) continue;
-      const result = await sendText(
-        env,
-        claimed.phone,
-        claimed.message,
-        fetcher,
-      );
-      const current = store.get(kind, claimed.id, PLATFORM);
-      if (
-        !current ||
-        current.version !== claimed.version ||
-        current.state !== "sending"
-      )
-        continue;
-      store.put(
-        kind,
-        current.id,
-        PLATFORM,
-        {
-          ...current,
-          state:
-            result.status === "accepted" && pending.state === "queued"
-              ? "awaiting"
-              : result.status,
-        },
-        current.version,
-      );
-    }
-}
 export async function personalAPI({
   path,
   method,
@@ -1046,61 +933,6 @@ export async function personalAPI({
       res,
       savePersonalProfile(store, session, await body(req), version(req)),
     );
-    return true;
-  }
-  if (path === "/api/personal/phone/start" && method === "POST") {
-    if (!smsEnabled(env))
-      fail(503, "Phone verification texting is not configured.");
-    const account = personalAccount(store, identity);
-    if (!account?.recoveryPhone)
-      fail(400, "Save your recovery phone number first.");
-    store.limit("verify-phone:" + identity, 3, 24 * 3600000);
-    const code = String(randomInt(100000, 1000000)),
-      previous = store.get("phone-verification", identity, PLATFORM);
-    store.put(
-      "phone-verification",
-      identity,
-      PLATFORM,
-      {
-        phone: account.recoveryPhone,
-        codeHash: hash(code),
-        expires: Date.now() + 10 * 60000,
-        state: "queued",
-        message: "Your Gather recovery phone verification code is " + code,
-      },
-      previous?.version,
-    );
-    json(res, { ok: true });
-    return true;
-  }
-  if (path === "/api/personal/phone/verify" && method === "POST") {
-    store.limit("verify-code:" + identity, 5, 10 * 60000);
-    const input = await body(req),
-      challenge = store.get("phone-verification", identity, PLATFORM),
-      account = personalAccount(store, identity);
-    if (
-      !challenge ||
-      challenge.state === "complete" ||
-      challenge.expires < Date.now() ||
-      challenge.phone !== account?.recoveryPhone ||
-      challenge.codeHash !== hash(String(input.code || ""))
-    )
-      fail(400, "The verification code is invalid or expired.");
-    store.put(
-      "person-account",
-      identity,
-      PLATFORM,
-      { ...account, recoveryVerified: true },
-      account.version,
-    );
-    store.put(
-      "phone-verification",
-      identity,
-      PLATFORM,
-      { ...challenge, state: "complete", codeHash: "", message: "" },
-      challenge.version,
-    );
-    json(res, { ok: true });
     return true;
   }
   const contact = path.match(/^\/api\/personal\/contacts\/([a-zA-Z0-9-]+)$/);

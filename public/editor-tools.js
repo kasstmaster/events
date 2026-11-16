@@ -1,5 +1,4 @@
 import { topbar, tool, editorToolbar } from "/browse-ui.js";
-import { utcSchedule, localSchedule } from "/reminder-time.js";
 import { ui, M, C, H } from "/ui-runtime.js";
 import {
   layouts,
@@ -53,8 +52,7 @@ export function featureTools(ctx) {
     editingCard,
     cardContext = {},
     qrData = "",
-    dragIndex = null,
-    reminderVersion;
+    dragIndex = null;
   const role = () =>
     state.session.role === "host" &&
     state.session.platformAdmin &&
@@ -470,9 +468,6 @@ export function featureTools(ctx) {
             : []),
           ["download-card", "Download SVG", "download"],
           ["download-png", "Download PNG", "download"],
-          ...(role() === "host" && editingCard.event
-            ? [["evites-open", "Text E-vites", "invite"]]
-            : []),
           ["print-card", "Print", "print"],
           ["share-card", "Share", "share"],
           ["email-card", "Email", "email"],
@@ -945,42 +940,6 @@ export function featureTools(ctx) {
     frame.contentWindow.print();
     setTimeout(() => frame.remove(), 60000);
   }
-  async function reminders() {
-    const event = selectedEvent(),
-      data = await api(`/api/host/events/${event.id}/reminders`);
-    reminderVersion = event.version;
-    state.editingReminders = data.reminders;
-    modal(
-      C("Reminders"),
-      ui`<p>${data.configured ? C("Messaging provider configured. Enabling a schedule can send real texts.") : C("Messaging is not enabled. Schedules can be saved and previewed, but no texts will send.")}</p><p>RSVP messaging starts when an adult submits their response. Reminders use eligible invited adults with an international phone number on file. STOP opt-outs always win.</p><div id="reminder-rows">${data.reminders.map(reminderRow).join("")}</div>${button("add-reminder", H("Add reminder"))}${button("preview-reminders", H("Preview recipients"))}<div id="reminder-preview"></div><h3>Delivery status</h3><ul>${data.deliveries.map((d) => ui`<li>${escape(d.phone)}: ${escape(d.status === "sent" ? "Sent (provider-reported; delivery unconfirmed)" : d.status)}${d.error ? " · " + escape(d.error) : ""}</li>`).join("") || M("<li>No deliveries.</li>")}</ul><p class="small muted">Accepted means the provider accepted a request, not delivered. Unknown outcomes are not retried automatically.</p>`,
-      "reminders",
-    );
-  }
-  function reminderRow(r = {}) {
-    return ui`<fieldset data-reminder-id="${r.id || crypto.randomUUID()}"><legend>Reminder</legend>${select(
-      H("Reminder type"),
-      "reminderKind",
-      [
-        ["rsvp", C("RSVP: no response")],
-        ["upcoming", C("Upcoming: attending")],
-      ],
-      r.kind || "rsvp",
-    )}${field(H("Send at (selected time zone)"), "reminderWhen", r.when ? localSchedule(r.when, r.timezone) : "", "datetime-local", "required")}${field(H("Schedule time zone"), "reminderTimezone", r.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone, "text", "required")}${area(H("Message"), "reminderMessage", r.message || "A reminder about our gathering.", 'required maxlength="1200"')}<label class="check"><input name="reminderEnabled" type="checkbox" ${r.enabled ? "checked" : ""}>Enable reminder</label>${button("remove-reminder", H("Remove reminder"), "", "quiet")}</fieldset>`;
-  }
-  function readReminders() {
-    return [...document.querySelectorAll("[data-reminder-id]")].map((row) => ({
-      id: row.dataset.reminderId,
-      kind: row.querySelector("[name=reminderKind]").value,
-      when: utcSchedule(
-        row.querySelector("[name=reminderWhen]").value,
-        row.querySelector("[name=reminderTimezone]").value,
-      ),
-      localTime: row.querySelector("[name=reminderWhen]").value,
-      timezone: row.querySelector("[name=reminderTimezone]").value,
-      message: row.querySelector("[name=reminderMessage]").value,
-      enabled: row.querySelector("[name=reminderEnabled]").checked,
-    }));
-  }
   async function deletion(key) {
     const summary = await api(`/api/admin/hosts/${key}/deletion`);
     state.deletingHost = { key, ...summary };
@@ -997,44 +956,8 @@ export function featureTools(ctx) {
       C("Permanently delete host"),
     );
   }
-  let evites = null;
-  function evitesPage() {
-    if (!evites) return "";
-    const missing = evites.missing;
-    const statusLabel = (status) =>
-      ({
-        "not-sent": C("Not sent"),
-        "missing-phone": C("Missing phone"),
-        queued: C("Queued"),
-        sending: C("Sending"),
-        accepted: C("Accepted by provider · delivery unconfirmed"),
-        sent: C("Sent · delivery unconfirmed"),
-        delivered: C("Delivered"),
-        failed: C("Failed · not resent"),
-        undelivered: C("Undelivered · not resent"),
-        unknown: C("Delivery unknown · not resent"),
-        blocked: C("Blocked"),
-        cancelled: C("Cancelled"),
-      })[status] || C("Delivery unknown");
-    return ui`${topbar({ title: C("Text E-vites"), back: "card-editor-back" })}<section class="panel"><p>Send this invitation image and guest link to invited adults. Children are included through their adults. Previously sent or uncertain deliveries are never resent.</p>${!evites.enabled ? ui`<p>Text invitations are disabled. No messages will be sent.</p>` : ""}<div class="row">${button("evites-send", H("Send E-vites"), evites.enabled ? "" : "disabled")}${button("evites-resend", H("Send to newly added phone numbers"), evites.enabled && evites.resendEligible ? "" : "disabled")}</div><h2>Missing phone numbers</h2><ul>${missing.map((r) => ui`<li>${escape(r.household)} · ${escape(r.name)}</li>`).join("") || ui`<li>None</li>`}</ul><div class="row">${button("evites-copy", H("Copy list"))}${button("evites-download", H("Download list"))}</div><h2>Delivery status</h2><p class="small">Provider acceptance does not confirm delivery. Unknown results are never resent.</p><ul>${evites.recipients.map((r) => ui`<li>${escape(r.household)} · ${escape(r.name)} · ${statusLabel(r.status)}${r.sharedPhone ? C(" · shared phone, one invitation") : ""}</li>`).join("")}</ul></section>`;
-  }
-  async function refreshEvites() {
-    if (state.view !== "evites" || !editingCard?.event) return;
-    const eventId = editingCard.event;
-    const next = await api(`/api/host/events/${eventId}/evites`);
-    if (
-      state.view === "evites" &&
-      editingCard?.event === eventId &&
-      JSON.stringify(next) !== JSON.stringify(evites)
-    ) {
-      evites = next;
-      render();
-    }
-  }
   return {
     uiEditor,
-    evitesPage,
-    refreshEvites,
     cards,
     async invitation() {
       const event = selectedEvent(),
@@ -1106,120 +1029,6 @@ export function featureTools(ctx) {
     },
     async action(action, target) {
       const key = target.dataset.id;
-      if (action === "evites-open") {
-        evites = await api(`/api/host/events/${editingCard.event}/evites`);
-        state.view = "evites";
-        render();
-        return true;
-      }
-      if (action === "evites-copy" || action === "evites-download") {
-        const text = evites.missing
-          .map((r) => `${r.household} · ${r.name}`)
-          .join("\n");
-        if (action === "evites-copy") {
-          await navigator.clipboard.writeText(text);
-          notify(C("List copied."));
-        } else {
-          const url = URL.createObjectURL(
-              new Blob([text], { type: "text/plain;charset=utf-8" }),
-            ),
-            link = document.createElement("a");
-          link.href = url;
-          link.download = "missing-phone-numbers.txt";
-          link.click();
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-        }
-        return true;
-      }
-      if (action === "evites-send" || action === "evites-resend") {
-        if (
-          !confirm(
-            String(C("Send invitation texts to the eligible invited adults?")),
-          )
-        )
-          return true;
-        const event = state.data.events.find(
-          (event) => event.id === editingCard.event,
-        );
-        if (!event) throw Error("Event not found.");
-        const personalized = editingCard.elements.some((element) =>
-          element.field.startsWith("recipient."),
-        );
-        const encode = (blob) =>
-          new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = () => reject(Error("Image export failed."));
-            reader.readAsDataURL(blob);
-          });
-        const requestId = crypto.randomUUID(),
-          mode = action === "evites-resend" ? "resend-missing" : "send";
-        const queue = async (payload) => {
-          evites = await api(`/api/host/events/${event.id}/evites`, {
-            method: "POST",
-            version: event.version,
-            data: { ...payload, mode, requestId },
-          });
-        };
-        try {
-          if (personalized) {
-            let images = {},
-              size = 0;
-            const eligible = evites.recipients.filter(
-              (r) =>
-                r.hasPhone &&
-                (action === "evites-resend"
-                  ? r.canResend
-                  : r.status === "not-sent"),
-            );
-            for (const recipient of eligible) {
-              const guest = state.data.guests.find(
-                  (g) => g.id === recipient.id,
-                ),
-                address = state.data.addresses.find(
-                  (a) => a.id === guest.address,
-                );
-              const context = {
-                ...cardContext,
-                event: cardContext.event || event,
-                recipient: {
-                  name: [guest.first, guest.last, guest.suffix]
-                    .filter(Boolean)
-                    .join(" "),
-                  first: guest.first,
-                  last: guest.last,
-                  address: address?.lines || "",
-                  ...(editingCard.elements.some(
-                    (e) => e.field === "recipient.inviteCode",
-                  )
-                    ? { inviteCode: guest.inviteCode || "" }
-                    : {}),
-                },
-              };
-              const data = await encode(await pngCard(context));
-              if (size + data.length > 7000000 && Object.keys(images).length) {
-                await queue({ images });
-                images = {};
-                size = 0;
-              }
-              images[guest.id] = data;
-              size += data.length;
-            }
-            await queue({ images });
-          } else await queue({ image: await encode(await pngCard()) });
-        } catch (error) {
-          evites = await api(`/api/host/events/${event.id}/evites`);
-          render();
-          throw Error(
-            "Some invitations may already be queued. Check delivery status before trying again. " +
-              error.message,
-          );
-        }
-        render();
-        notify(C("Invitation delivery status updated."));
-        return true;
-      }
-
       if (action === "card-preview-edit") {
         await cardEditor(
           editingCard,
@@ -1324,11 +1133,6 @@ export function featureTools(ctx) {
           "[data-action=card-tools-toggle]",
         ))
           b.setAttribute("aria-expanded", String(state.cardToolsOpen));
-        return true;
-      }
-      if (action === "card-editor-back" && state.view === "evites") {
-        state.view = "card-preview";
-        render();
         return true;
       }
       if (action === "card-editor-back") {
@@ -1458,33 +1262,6 @@ export function featureTools(ctx) {
           row.nextElementSibling.after(row);
         return true;
       }
-      if (action === "reminders") {
-        await reminders();
-        return true;
-      }
-      if (action === "add-reminder") {
-        document
-          .querySelector("#reminder-rows")
-          .insertAdjacentHTML("beforeend", reminderRow());
-        return true;
-      }
-      if (action === "remove-reminder") {
-        target.closest("[data-reminder-id]").remove();
-        return true;
-      }
-      if (action === "preview-reminders") {
-        const result = await api(
-          `/api/host/events/${selectedEvent().id}/reminders`,
-          { method: "POST", data: { reminders: readReminders() } },
-        );
-        document.querySelector("#reminder-preview").innerHTML = result.previews
-          .map(
-            (r) =>
-              ui`<h3>${escape(r.kind)} · ${escape(new Date(r.when).toLocaleString(undefined, { timeZone: r.timezone }))}</h3><p>${escape(r.message)}</p><ul>${r.recipients.map((g) => ui`<li>${escape(g.name)} · ${escape(g.phone)}</li>`).join("") || M("<li>No eligible recipients.</li>")}</ul>`,
-          )
-          .join("");
-        return true;
-      }
       if (action === "delete-host") {
         await deletion(key);
         return true;
@@ -1559,15 +1336,6 @@ export function featureTools(ctx) {
         } finally {
           surfaces.forEach((surface) => (surface.inert = false));
         }
-      }
-      if (kind === "reminders") {
-        await api(`/api/host/events/${selectedEvent().id}/reminders`, {
-          method: "PUT",
-          version: reminderVersion,
-          data: { reminders: readReminders() },
-        });
-        await saved("Reminder schedule saved.");
-        return true;
       }
       if (kind === "delete-host") {
         const d = state.deletingHost;

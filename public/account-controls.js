@@ -90,7 +90,7 @@ export function accountControls({
       return ui`<section class="auth panel"><h1>Private guest sign-in</h1><form data-form="private-guest-access">${challenge ? field(H("Verification code"), "code", "", "text", 'required inputmode="numeric" maxlength="6" autocomplete="one-time-code"') : ui`${field(H("First name"), "first", "", "text", "required")}${field(H("Last name"), "last", "", "text", "required")}${field(H("Household ID"), "householdId", "", "text", 'required inputmode="numeric" pattern="[0-9]{4}" maxlength="4"')}`}<p class="form-error" role="alert"></p><button>${challenge ? "Verify and sign in" : "Send verification code"}</button></form></section>`;
     if (state.view === "own-account")
       return ui`${topbar({ title: "My account", back: "page-back" })}<section class="panel"><form data-form="own-account">${field(H("First name"), "first", self?.first || "", "text", "required")}${field(H("Last name"), "last", self?.last || "")}${field(H("Phone number"), "phone", self?.phone || "", "tel")}${field(H("Address"), "address", self?.physical?.lines || "")}<p class="form-error" role="alert"></p><button>Save</button></form></section>`;
-    return ui`${topbar({ title: "Registered accounts", back: "page-back" })}<section class="panel account-management"><form data-form="account-query">${password()}<p class="form-error" role="alert"></p><button>View registered accounts</button><button name="audit" value="true">View restricted audit log</button>${nextOffset !== null ? '<button name="next" value="true">Next account page</button>' : ""}</form>${records.length ? ui`<ul>${records.map((r) => ui`<li>${esc([r.first, r.last].filter(Boolean).join(" ") || r.email)} · ${esc(r.type)} ${button("account-select", "Manage", `data-id="${esc(r.id)}"`)}</li>`).join("")}</ul>` : ""}${selected ? ui`<h2>${esc([selected.first, selected.last].filter(Boolean).join(" ") || selected.email)}</h2><p>${esc(selected.email)} · Household ID ${esc(selected.householdId)} · ${selected.sessions} sessions</p><form data-form="account-edit">${field(H("Registered first name"), "first", selected.first)}${field(H("Registered last name"), "last", selected.last)}${field(H("Registered phone number"), "phone", selected.phone, "tel")}${field(H("Verified sign-in phone"), "verifiedPhone", selected.verifiedPhone || "", "tel", "readonly")}${field(H("Registered physical address"), "physicalAddress", selected.physical?.lines || "")}${field(H("Registered address"), "address", selected.mailing?.lines || "")}<p class="small">A shared family address applies to that central family record. Local Address Book notes remain private.</p><label class="check"><input type="checkbox" name="verifiedOutOfBand">I verified the intended person and phone ownership outside this sign-in attempt.</label><label class="check"><input type="checkbox" name="consented">Security-text delivery is authorized for this number.</label>${password()}<p class="form-error" role="alert"></p><button>Save registered information</button></form>${state.passwordless?.enrollmentAvailable ? ui`<form data-form="account-passwordless"><h3>Passwordless enrollment</h3>${field(H("Phone for passwordless enrollment"), "enrollPhone", selected.verifiedPhone || selected.phone, "tel", "readonly")}<p>Use only after independently verifying the registered phone. This does not send a message.</p><label class="check"><input name="verifiedOutOfBand" type="checkbox" required>I verified the intended person and registered phone ownership independently.</label><label class="check"><input name="consented" type="checkbox" required>Security-text delivery is authorized.</label>${password()}<p class="form-error" role="alert"></p><button>Enroll verified phone for sign-in links</button></form>` : ""}<form data-form="account-access"><label>Account security action<select name="action"><option value="revoke">Revoke sessions and authorized devices</option>${selected.type === "family" ? '<option value="reset-password">Reset assigned account password</option>' : ""}${selected.type === "guest" ? '<option value="reveal">Reveal private sign-in URL and ID</option><option value="reset">Regenerate private sign-in URL</option><option value="send">Send private sign-in link</option>' : ""}</select></label>${selected.type === "family" ? field(H("New assigned-account password"), "newPassword", "", "password", 'minlength="12" autocomplete="new-password"') : ""}<label class="check"><input type="checkbox" name="confirm">Confirm this account's URL reset, if selected; the old URL will stop working.</label>${password()}<p class="form-error" role="alert"></p><button>Confirm action</button></form>${disclosure ? ui`<div data-private-disclosure><label>Restricted private sign-in URL<textarea readonly autocomplete="off">${esc(disclosure)}</textarea></label>${field(H("Private URL ID"), "privateUrlId", disclosure.split("#")[1] || "", "text", 'readonly autocomplete="off"')}</div><p class="small">Visible only after your password confirmation. Do not share this with hosts.</p>` : ""}` : ""}<div data-account-audit></div></section>${state.passwordless?.enrollmentAvailable ? membershipPanel() : ""}`;
+    return ui`${topbar({ title: "Registered accounts", back: "page-back" })}<section class="panel account-management">${button("account-recovery", H("Account Recovery"))}<form data-form="account-query">${password()}<p class="form-error" role="alert"></p><button>View registered accounts</button><button name="audit" value="true">View restricted audit log</button>${nextOffset !== null ? '<button name="next" value="true">Next account page</button>' : ""}</form>${records.length ? ui`<ul>${records.map((r) => ui`<li>${esc([r.first, r.last].filter(Boolean).join(" ") || r.email)} · ${esc(r.type)} ${button("account-select", "Manage", `data-id="${esc(r.id)}"`)}</li>`).join("")}</ul>` : ""}${selected ? ui`<h2>${esc([selected.first, selected.last].filter(Boolean).join(" ") || selected.email)}</h2><p>${esc(selected.email)} · Household ID ${esc(selected.householdId)} · ${selected.sessions} sessions</p><form data-form="account-edit">${field(H("Registered first name"), "first", selected.first)}${field(H("Registered last name"), "last", selected.last)}${field(H("Registered phone number"), "phone", selected.phone, "tel")}${field(H("Verified sign-in phone"), "verifiedPhone", selected.verifiedPhone || "", "tel", "readonly")}${field(H("Registered physical address"), "physicalAddress", selected.physical?.lines || "")}${field(H("Registered address"), "address", selected.mailing?.lines || "")}<p class="small">A shared family address applies to that central family record. Local Address Book notes remain private.</p><label class="check"><input type="checkbox" name="verifiedOutOfBand">I verified the intended person and phone ownership outside this sign-in attempt.</label><label class="check"><input type="checkbox" name="consented">Security-text delivery is authorized for this number.</label>${password()}<p class="form-error" role="alert"></p><button>Save registered information</button></form>${state.passwordless?.enrollmentAvailable ? ui`<form data-form="account-passwordless"><h3>Passwordless enrollment</h3>${field(H("Phone for passwordless enrollment"), "enrollPhone", selected.verifiedPhone || selected.phone, "tel", "readonly")}<p>Use only after independently verifying the registered phone. This does not send a message.</p><label class="check"><input name="verifiedOutOfBand" type="checkbox" required>I verified the intended person and registered phone ownership independently.</label><label class="check"><input name="consented" type="checkbox" required>Security-text delivery is authorized.</label>${password()}<p class="form-error" role="alert"></p><button>Enroll verified phone for sign-in links</button></form>` : ""}<form data-form="account-access"><label>Account security action<select name="action"><option value="revoke">Revoke sessions and authorized devices</option>${selected.type === "family" ? '<option value="reset-password">Reset assigned account password</option>' : ""}${selected.type === "guest" ? '<option value="reveal">Reveal private sign-in URL and ID</option><option value="reset">Regenerate private sign-in URL</option>' : ""}</select></label>${selected.type === "family" ? field(H("New assigned-account password"), "newPassword", "", "password", 'minlength="12" autocomplete="new-password"') : ""}<label class="check"><input type="checkbox" name="confirm">Confirm this account's URL reset, if selected; the old URL will stop working.</label>${password()}<p class="form-error" role="alert"></p><button>Confirm action</button></form>${disclosure ? ui`<div data-private-disclosure><label>Restricted private sign-in URL<textarea readonly autocomplete="off">${esc(disclosure)}</textarea></label>${field(H("Private URL ID"), "privateUrlId", disclosure.split("#")[1] || "", "text", 'readonly autocomplete="off"')}</div><p class="small">Visible only after your password confirmation. Do not share this with hosts.</p>` : ""}` : ""}<div data-account-audit></div></section>${state.passwordless?.enrollmentAvailable ? membershipPanel() : ""}`;
   }
   document.addEventListener(
     "click",
@@ -98,17 +98,20 @@ export function accountControls({
       const target = event.target.closest("[data-action]");
       if (!target) return;
       const action = target.dataset.action;
+      if (action === "account-recovery") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!administrator()) return;
+        state.view = "account-recovery";
+        render();
+        return;
+      }
       if (action !== "account-select") {
         clearAccounts();
         self = null;
       }
       if (
-        ![
-          "account-management",
-          "account-select",
-          "send-private-link",
-          "my-account",
-        ].includes(action)
+        !["account-management", "account-select", "my-account"].includes(action)
       ) {
         if (state.view === "account-management") {
           records = [];
@@ -139,13 +142,6 @@ export function accountControls({
           selected = records.find((r) => r.id === target.dataset.id);
           disclosure = "";
           render();
-        }
-        if (action === "send-private-link") {
-          await api("/api/host/guests/" + target.dataset.id + "/sign-in-link", {
-            method: "POST",
-            data: {},
-          });
-          notify("Private sign-in link delivery requested.");
         }
         if (action === "my-account") {
           self = await api("/api/account/self");
@@ -393,4 +389,81 @@ export function accountControls({
     true,
   );
   return { page };
+}
+
+export function recoveryUI({ state, api, field, button, render }) {
+  let records = [],
+    nextOffset = null,
+    grant = "";
+  const esc = (v) =>
+    String(v ?? "").replace(
+      /[&<>"']/g,
+      (c) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[c],
+    );
+  const password = () =>
+    field(
+      H("Current administrator password"),
+      "password",
+      "",
+      "password",
+      'required autocomplete="current-password"',
+    );
+  function clear() {
+    grant = "";
+    records = [];
+    nextOffset = null;
+    for (const el of document.querySelectorAll("[data-recovery-grant]"))
+      el.remove();
+  }
+  window.addEventListener("blur", clear);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) clear();
+  });
+  return {
+    page() {
+      if (!(state.session?.role === "admin" || state.session?.platformAdmin)) {
+        clear();
+        return "";
+      }
+      return ui`${topbar({ title: "Account Recovery", back: "page-back" })}<section class="panel"><form data-form="recovery-list">${password()}<p class="form-error" role="alert"></p><button>Review recovery requests</button></form>${records.map((r) => ui`<article><h2>${esc(r.first)} ${esc(r.last)}</h2><p>${esc(r.status)} · ${esc(new Date(r.at).toLocaleString())} · Household ID ${esc(r.householdId)}</p>${r.account ? ui`<p>${esc(r.account.phone)} · ${esc(r.account.email)} · ${esc(r.account.mailing?.lines)}</p><h3>Existing Address Book relationships</h3><ul>${r.contacts.map((c) => ui`<li>${esc(c.household)} · ${esc(c.email)} · ${esc(c.phone)}</li>`).join("")}</ul>` : "<p>No unambiguous account match. Investigate independently; these hints are not proof of identity.</p>"}<form data-form="recovery-action" data-id="${esc(r.id)}" data-version="${r.version}"><label>Action<select name="action"><option value="review">Record review</option><option value="authorize">Authorize verified-phone re-enrollment</option><option value="reject">Reject request</option></select></label>${field(H("Review notes"), "review", r.review || "", "text", 'required maxlength="2000"')}${!r.subject ? field(H("Reviewed central account ID"), "subject", "", "text", 'placeholder="person:… or user:…"') : ""}${field(H("Replacement phone"), "phone", "", "tel")}<label class="check"><input type="checkbox" name="verifiedIdentity">I independently verified the intended person; a host statement alone is not sufficient.</label>${password()}<p class="form-error" role="alert"></p><button>Confirm reviewed action</button></form></article>`).join("")}${nextOffset !== null ? ui`<form data-form="recovery-list" data-offset="${nextOffset}">${password()}<p class="form-error" role="alert"></p><button>Next recovery page</button></form>` : ""}${grant ? ui`<label data-recovery-grant>Replacement enrollment link · expires in 30 minutes<textarea readonly>${esc(grant)}</textarea></label><p>Deliver personally only after independent identity review. Firebase will verify the replacement phone. This is not a Firebase code.</p>` : ""}</section>`;
+    },
+    async submit(form) {
+      const data = Object.fromEntries(new FormData(form));
+      if (form.dataset.form === "recovery-list") {
+        const result = await api("/api/admin/account-recovery", {
+          method: "POST",
+          data: {
+            ...data,
+            action: "list",
+            offset: Number(form.dataset.offset || 0),
+          },
+        });
+        records = result.records;
+        nextOffset = result.nextOffset;
+        grant = "";
+      } else {
+        const result = await api("/api/admin/account-recovery", {
+          method: "POST",
+          data: {
+            ...data,
+            id: form.dataset.id,
+            version: Number(form.dataset.version),
+            verifiedIdentity: data.verifiedIdentity === "on",
+          },
+        });
+        grant = result.recoveryURL || "";
+        records = [];
+        nextOffset = null;
+      }
+      render();
+    },
+    clear,
+  };
 }

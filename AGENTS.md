@@ -254,3 +254,31 @@ password step-up. Never substitute permanent administrator elevation or weaken
 current authorization. Platform storage deletion can require fresh authentication.
 Keep legacy authentication compatible and SMS activation disabled. See
 `docs/passwordless-gather.md` for the implementation and device-test limitations.
+
+## Firebase Ticket 01 and outbound messaging retirement
+
+This supersedes normal Twilio magic-link sign-in and optional outbound messaging
+instructions. Normal host/guest phone authentication is staged Firebase verification
+with the same First/Last/Phone fields plus code/reCAPTCHA; preserve PR #87 persistent
+Gather sessions, origin-bound cookies, rotation, current authority and immediate
+revocation. Firebase UID/phone ownership never establishes central identity or host
+membership by itself. New invitations enroll only a new authorized person; never
+claim/merge existing accounts by name/phone/QR. Strong administrator authentication
+and controlled legacy access remain until migration acceptance.
+
+Keep Firebase and all existing production activation flags disabled unless separately
+owner-approved. No project, provider, billing, DNS, secrets or live SMS changes during
+implementation/tests. Retire outbound e-vites, event reminder scheduling/delivery,
+RSVP texts and username/upgrade notifications from live UI/API/queues/schedulers;
+preserve their historical records and manual/in-app invitation/card/QR functions.
+The custom login outbox remains only for explicitly approved migration fallback.
+No global daily 10-text cap; per-account/number/IP limits cannot guarantee a bill cap.
+
+Account Recovery is a restricted system-admin queue. Lookup hints are not proof.
+Every read/action requires current password confirmation, authorization, version and
+rate checks; show only actual contact relationships and authorized central details,
+never private notes or Firebase codes/tokens. Independently reviewed replacement
+phones still require fresh Firebase ownership proof; revoke old sessions/mappings,
+keep identity/invitations/RSVPs, and audit without secrets. See docs/firebase-auth.md
+for exact owner configuration and unverified native-device acceptance. Codex commits
+and pushes only; owner creates/reviews/merges and existing guarded automation releases.

@@ -221,3 +221,15 @@ PWA persistence and live Twilio delivery still require separately authorized tes
 SMS configuration/activation remains disabled and no provider is purchased or
 activated. Preserve the existing sign-in fields and Ticket 01 SMS design; optional
 passkeys require a separate decision. This feature does not authorize deployment.
+
+## Firebase Ticket 01 supersedes custom SMS login
+
+See [Firebase ownership, persistence and account recovery](firebase-auth.md). Google
+signatures, exact project/phone claims, recent authentication, provider account state,
+server replay/browser binding and authoritative central identity are all required.
+The SDK's own persistence is never server authorization. Firebase activation remains
+disabled. Outbound event/account messaging is retired; historical records remain.
+Recovery requires restricted fresh-password administrator review plus fresh verified
+replacement-phone ownership, with affected sessions/mappings revoked and non-secret
+audits. No names/Household IDs/QR grant access. Existing strong administrator and
+controlled legacy access are retained until approved migration/device acceptance.

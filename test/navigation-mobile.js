@@ -428,21 +428,22 @@ try {
     assert.deepEqual(await card.getByRole("button").allTextContents(), [
       "View Event",
       "RSVPs",
-      "Reminders",
       "Invitation Cards",
     ]);
     await card.getByRole("button", { name: "RSVPs", exact: true }).click();
     await p.getByRole("dialog").getByText(title, { exact: true }).waitFor();
     assert.ok(requests.includes(`/api/host/events/${event.id}/dashboard`));
     await click(p, "Close editor");
-    await card.getByRole("button", { name: "Reminders", exact: true }).click();
-    await p.getByRole("dialog").waitFor();
-    await p
-      .getByRole("dialog")
-      .getByText("Delivery status", { exact: true })
-      .waitFor();
-    assert.ok(requests.includes(`/api/host/events/${event.id}/reminders`));
-    await click(p, "Close editor");
+    assert.equal(
+      await card
+        .getByRole("button", { name: "Reminders", exact: true })
+        .count(),
+      0,
+    );
+    assert.equal(
+      requests.includes(`/api/host/events/${event.id}/reminders`),
+      false,
+    );
     await card
       .getByRole("button", { name: "Invitation Cards", exact: true })
       .click();

@@ -94,6 +94,9 @@ jobs:
       - name: Persistent SMS device sessions and browser restarts
         if: matrix.group == 'accounts'
         run: node test/persistent-sessions-mobile.js
+      - name: Firebase ownership, persistence and recovery (mocked)
+        if: matrix.group == 'accounts'
+        run: node test/firebase-mobile.js
       - name: Browser failure screenshots
         if: ${{ failure() }}
         uses: actions/upload-artifact@v6

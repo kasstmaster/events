@@ -1,4 +1,10 @@
 import {
+  firebaseAPI,
+  firebaseEnabled,
+  firebaseConfig,
+} from "./firebase-auth.js";
+import { accountRecoveryAPI } from "./account-recovery.js";
+import {
   revokeUserSessions,
   refreshDeviceSession,
   revokeCurrentDevice,
@@ -23,7 +29,6 @@ import {
   accountManagementAPI,
   rejectCentralContactEdits,
 } from "./account-management.js";
-import { eviteStatus, prepareEvites, eviteMedia } from "./evites.js";
 import { accessCandidates } from "./guest-access.js";
 import {
   personalAPI,
@@ -34,7 +39,6 @@ import {
   autoAssociateContact,
   initializeHostPersonal,
   renamePersonalHousehold,
-  startRecovery,
   savePersonalProfile,
 } from "./personal-accounts.js";
 import { informationInput } from "../public/event-information.js";
@@ -76,12 +80,7 @@ import {
   webURL,
   contactPhone,
 } from "./features.js";
-import {
-  reminderInput,
-  cancelReminders,
-  verifyTwilio,
-  processTwilio,
-} from "./reminders.js";
+import { cancelReminders, verifyTwilio, processTwilio } from "./reminders.js";
 import { suggestLabel } from "./household-domains.js";
 import { Buffer } from "node:buffer";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -409,7 +408,12 @@ function eventInput(input, store, household, existing) {
         : input.ui === undefined
           ? existing?.ui || {}
           : hostUI(input.ui, existing?.ui),
-    reminders: reminderInput(input.reminders ?? existing?.reminders ?? []),
+    reminders:
+      input.reminders !== undefined &&
+      JSON.stringify(input.reminders) !==
+        JSON.stringify(existing?.reminders || [])
+        ? fail(410, "Reminder scheduling is no longer available.")
+        : existing?.reminders || [],
     registries: savedRegistries,
   };
 }
@@ -426,7 +430,9 @@ export function createHandler({
   householdHostname = "",
   householdHosts = new Set(),
   canonicalOrigin = origin,
+  firebaseFetcher,
 } = {}) {
+  const firebaseSettings = firebaseConfig(env);
   if (new URL(origin).origin !== origin)
     throw new Error(
       "APP_ORIGIN must be a canonical origin without a path or trailing slash.",
@@ -451,7 +457,11 @@ export function createHandler({
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader(
       "Content-Security-Policy",
-      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
+      firebaseEnabled(env)
+        ? "default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.google.com https://www.recaptcha.net; frame-src https://www.google.com https://www.recaptcha.net https://" +
+            firebaseSettings.authDomain +
+            "; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.gstatic.com; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+        : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
     );
     try {
       const url = new URL(req.url, origin),
@@ -774,6 +784,50 @@ export function createHandler({
       )
         return;
       if (
+        path === "/api/username-recovery" ||
+        /^\/api\/host\/events\/[^/]+\/(reminders|evites)$/.test(path) ||
+        /^\/api\/public\/evite-media\//.test(path) ||
+        /^\/api\/host\/guests\/[^/]+\/sign-in-link$/.test(path) ||
+        /^\/api\/personal\/phone\/(start|verify)$/.test(path)
+      )
+        fail(
+          410,
+          "Outbound messaging is no longer available. Use manual invitations or Recover Account.",
+        );
+      if (
+        await firebaseAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          body,
+          json,
+          env,
+          origin,
+          selected,
+          householdHosts,
+          cookie,
+          newSession,
+          firebaseFetcher,
+        })
+      )
+        return;
+      if (
+        await accountRecoveryAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          body,
+          json,
+        })
+      )
+        return;
+      if (
         await passwordlessAPI({
           raw,
           path,
@@ -845,11 +899,6 @@ export function createHandler({
         })
       )
         return;
-      if (path === "/api/username-recovery" && method === "POST") {
-        authLimit("username-recovery", "phone");
-        json(res, startRecovery(store, env, (await body(req)).phone));
-        return;
-      }
       if (path === "/api/sign-in" && method === "POST") {
         const input = await body(req),
           account = text(input.account, 200, true),
@@ -1201,20 +1250,7 @@ export function createHandler({
         });
         return;
       }
-      const mediaMatch = path.match(
-        /^\/api\/public\/evite-media\/([a-zA-Z0-9_-]{43})$/,
-      );
-      if (mediaMatch && method === "GET") {
-        const image = eviteMedia(store, mediaMatch[1]),
-          [head, data] = image.split(",");
-        res.writeHead(200, {
-          "Content-Type": head.slice(5).split(";")[0],
-          "Cache-Control": "private, max-age=3600",
-          "X-Content-Type-Options": "nosniff",
-        });
-        res.end(Buffer.from(data, "base64"));
-        return;
-      }
+
       if (path === "/api/subdomains" && method === "GET") {
         store.limit(`availability:${req.socket.remoteAddress}`, 120);
         const fromName = url.searchParams.has("householdName");
@@ -1398,33 +1434,6 @@ export function createHandler({
       if (path.startsWith("/api/host")) {
         requireRole("host");
         const household = session.household;
-        const eviteMatch = path.match(
-          /^\/api\/host\/events\/([a-zA-Z0-9-]+)\/evites$/,
-        );
-        if (eviteMatch) {
-          const event = store.get("event", eviteMatch[1], household);
-          if (!event) fail(404, "Event not found.");
-          if (method === "GET") {
-            json(res, eviteStatus(store, household, event, env));
-            return;
-          }
-          if (method === "POST") {
-            const input = await body(req);
-            input.version = version(req);
-            json(
-              res,
-              prepareEvites(
-                store,
-                env,
-                household,
-                event,
-                input,
-                canonicalOrigin,
-              ),
-            );
-            return;
-          }
-        }
         if (path === "/api/host" && method === "GET") {
           json(res, {
             household: presentHousehold(store.household(household)),
