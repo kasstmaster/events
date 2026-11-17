@@ -8,6 +8,8 @@ on:
       - scripts/manual-events-release*.mjs
       - scripts/cloudflare-metadata-check*.mjs
       - scripts/production-provenance-diagnostic*.mjs
+      - scripts/application-provenance*.mjs
+      - scripts/select-release-evidence*.mjs
       - .github/workflows/verify-production-provenance.yml
       - docs/production-provenance-diagnostic.md
       - .github/workflows/check-cloudflare-auth.yml
@@ -25,13 +27,16 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
       - run: npm ci
       - run: node --test scripts/manual-events-release.test.mjs scripts/cloudflare-metadata-check.test.mjs
-      - run: node --test scripts/production-provenance-diagnostic.test.mjs
+      - run: node --test scripts/production-provenance-diagnostic.test.mjs scripts/application-provenance.test.mjs
       - name: Install isolated read-only AnyList adapter
         run: npm ci --ignore-scripts --prefix integrations/anylist
       - name: Check AnyList transport and protobuf decoding

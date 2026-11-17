@@ -35,75 +35,21 @@ const need = (condition, code) => {
   if (!condition) throw new DiagnosticError(code);
 };
 
-// Hash ALL returned modules, including maps, WASM and asset routing modules.
-// An opaque ETag, message, author or version UUID is never code evidence.
-export function moduleIdentity(version, expectedID) {
-  need(version?.id === expectedID, "MODULE_VERSION_MISMATCH");
-  need(
-    Array.isArray(version.modules) &&
-      version.modules.length > 0 &&
-      version.modules.length <= 1000,
-    "MODULE_BYTES_UNAVAILABLE",
-  );
-  const names = new Set();
-  let total = 0;
-  const modules = version.modules
-    .map((m) => {
-      need(
-        typeof m.name === "string" &&
-          m.name.length > 0 &&
-          m.name.length <= 1024 &&
-          !names.has(m.name),
-        "MODULE_INVENTORY_INVALID",
-      );
-      names.add(m.name);
-      need(
-        typeof m.content_type === "string" &&
-          typeof m.content_base64 === "string",
-        "MODULE_BYTES_UNAVAILABLE",
-      );
-      const bytes = Buffer.from(m.content_base64, "base64");
-      need(
-        bytes.toString("base64") === m.content_base64,
-        "MODULE_ENCODING_INVALID",
-      );
-      total += bytes.length;
-      need(total <= 25000000, "MODULE_BYTES_TOO_LARGE");
-      return { name: m.name, type: m.content_type, sha256: sha(bytes) };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
-  need(
-    typeof version.main_module === "string" && names.has(version.main_module),
-    "ENTRYPOINT_UNAVAILABLE",
-  );
-  return {
-    fingerprint: fingerprint({ main_module: version.main_module, modules }),
-    count: modules.length,
-  };
-}
+export { moduleIdentity } from "./application-provenance.mjs";
+import {
+  moduleIdentity,
+  approvedManifest,
+  historicalAssets,
+  verifyAssetBytes,
+  assetRouting,
+  ProvenanceError,
+} from "./application-provenance.mjs";
 
 export function compareApplication(previous, active) {
   const before = moduleIdentity(previous, BASE),
     after = moduleIdentity(active, ACTIVE);
   need(before.fingerprint === after.fingerprint, "APPLICATION_CODE_MISMATCH");
-  // The API returns the uploaded asset token/reference and config. Require exact
-  // equality, in addition to fetching every reviewed public asset below. Never
-  // decode/log/store this token. If the provider omits/rotates it, stop for review.
-  need(
-    typeof previous.assets?.jwt === "string" &&
-      previous.assets.jwt.length > 0 &&
-      typeof active.assets?.jwt === "string",
-    "ASSET_REFERENCE_UNAVAILABLE",
-  );
-  need(
-    fingerprint(previous.assets) === fingerprint(active.assets),
-    "ASSET_REFERENCE_MISMATCH",
-  );
-  return {
-    code_sha256: before.fingerprint,
-    module_count: before.count,
-    asset_reference_sha256: fingerprint(previous.assets),
-  };
+  return { code_sha256: before.fingerprint, module_count: before.count };
 }
 
 export function checkConfiguration(raw, receipt) {
@@ -249,7 +195,15 @@ export async function diagnose({
     const previousModules = await get(`${MODULES}${BASE}?include=modules`);
     const currentModules = await get(`${MODULES}${ACTIVE}?include=modules`);
     Object.assign(safe, compareApplication(previousModules, currentModules));
-    pass("actual-module-bytes-and-asset-reference");
+    pass("actual-module-bytes");
+    safe.historical_asset_manifest_sha256 = historicalAssets(receipt, manifest);
+    safe.historical_asset_count = Object.keys(manifest).length;
+    pass("historical-complete-manifest");
+    need(
+      assetRouting(previousModules) === assetRouting(currentModules),
+      "ASSET_ROUTING_CONFIGURATION_MISMATCH",
+    );
+    pass("worker-first-asset-routing");
     const settingsBefore = await get(`${SCRIPT}/settings`);
     Object.assign(safe, checkConfiguration(settingsBefore, receipt));
     pass("bindings-runtime-and-disabled-firebase");
@@ -295,42 +249,11 @@ export async function diagnose({
       cron_sha256: fingerprint(receipt.preserved.crons),
     });
     pass("routes-cron-service-and-previews");
-    const paths = Object.entries(manifest || {});
-    need(
-      paths.length > 0 &&
-        paths.length <= 500 &&
-        paths.every(
-          ([p, h]) =>
-            /^public\/[A-Za-z0-9_./-]+$/.test(p) &&
-            !p.includes("..") &&
-            /^[a-f0-9]{64}$/.test(h),
-        ),
-      "ASSET_MANIFEST_INVALID",
-    );
-    for (const origin of ORIGINS)
-      for (const [path, hash] of paths) {
-        let response;
-        try {
-          response = await fetcher(
-            origin + "/" + (path === "public/index.html" ? "" : path.slice(7)),
-            {
-              method: "GET",
-              redirect: "error",
-              signal: AbortSignal.timeout(20000),
-            },
-          );
-        } catch {
-          throw new DiagnosticError("PUBLIC_ASSET_READ_FAILED");
-        }
-        need(response.ok, "PUBLIC_ASSET_READ_FAILED");
-        const bytes = await response.arrayBuffer();
-        need(
-          bytes.byteLength <= 8000000 && sha(Buffer.from(bytes)) === hash,
-          "PUBLIC_ASSET_BYTES_MISMATCH",
-        );
-      }
+    await verifyAssetBytes(manifest, fetcher);
     safe.asset_manifest_sha256 = fingerprint(manifest);
-    safe.asset_count = paths.length;
+    safe.asset_count = Object.keys(manifest).length;
+    safe.asset_evidence =
+      "historical-verification-receipt-and-complete-live-byte-comparison";
     pass("all-reviewed-public-asset-bytes");
     need(
       fingerprint(activeDeployment(await get(`${SCRIPT}/deployments`))) ===
@@ -346,7 +269,7 @@ export async function diagnose({
     safe.status = "verified-diagnostic-only";
   } catch (error) {
     safe.blocker =
-      error instanceof DiagnosticError
+      error instanceof DiagnosticError || error instanceof ProvenanceError
         ? error.code
         : "UNSUPPORTED_OR_UNREADABLE_EVIDENCE";
     log(`STOP ${safe.blocker}`);
@@ -372,9 +295,7 @@ export async function main() {
       }).trim();
     git("merge-base", "--is-ancestor", COMMIT, MAIN);
     git("merge-base", "--is-ancestor", MAIN, "HEAD");
-    const manifest = JSON.parse(
-      git("show", `${COMMIT}:.github/release/approved-application.json`),
-    ).appearance;
+    const manifest = approvedManifest(COMMIT);
     report = await diagnose({ receipt, manifest });
   } catch (error) {
     report = {

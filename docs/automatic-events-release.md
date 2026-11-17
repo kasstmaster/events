@@ -43,7 +43,7 @@ Configuration and the production storage adapter have additional fixed fingerpri
 
 Before publication, independent merge jobs run formatting, all application/API and release-safety tests, six AnyList adapter tests, both Cloudflare runtime checks, a local events Worker dry run, and all 11 browser suites across navigation/editors/accounts matrices. Failed or skipped required dependencies prevent publication. PR/main validation separately runs the application/browser suites and the release/build check, without Cloudflare credentials or publishing.
 
-Publishing shares the unchanged manual workflow's `events-production` concurrency lock, with cancellation disabled. GitHub may replace pending jobs, but cannot overlap running releases. Within that lock the helper re-reads GitHub and requires the exact owner-reviewed merged SHA to still be latest main immediately before publishing. Annotated production releases must be strict ancestors of the next release; equal, unknown or newer/unrelated releases stop. The one unannotated baseline allowed is the previously verified restored Worker `2445780c-00a8-4be8-be81-64e450420038`. This is a recovery baseline only, never a deployment target. Any unexpected manual production version requires fresh review rather than guessing.
+Publishing shares the unchanged manual workflow's `events-production` concurrency lock, with cancellation disabled. GitHub may replace pending jobs, but cannot overlap running releases. Within that lock the helper re-reads GitHub and requires the exact owner-reviewed merged SHA to still be latest main immediately before publishing. Application identity is resolved from the latest trusted successful owner-merged release receipt, immutable module bytes, the complete historical asset manifest and observed live assets. The resolved Git SHA must be a strict ancestor of the next release; equal, unknown or newer/unrelated releases stop. A configuration-only dashboard version does not need a Git-SHA message when this independent proof passes. A UUID or the old initial-version exception alone cannot satisfy the new provenance gate. See [evidence and limits](production-provenance-diagnostic.md).
 
 A newer owner merge may arrive during an active release. It waits for the same lock. Read-only verification of the already-published release can finish; a queued older release must pass latest-main checks again before it can publish. Direct pushes to main never trigger production.
 
@@ -225,3 +225,22 @@ universal and signed household entry paths, including PNG app icons. Worker-firs
 asset routing requires an explicit shared server route even when the file was
 successfully uploaded. These checks run before production publishing; they never
 contact the live website or create production accounts.
+
+## Receipts for configuration-only versions
+
+The publish job now selects verified evidence from the newest successful release
+run, verifies its exact owner-merged PR and artifact identity, downloads the archive
+without forwarding GitHub credentials, and verifies its SHA-256 before bounded
+JSON-only extraction. The legacy bootstrap receipt is additionally pinned by its
+exact verification-file hash. New successful receipts record module, complete asset
+manifest, protected configuration and asset-routing fingerprints plus the merged SHA.
+They are uploaded mandatorily and retained for 90 days, subject to GitHub policy.
+Missing/expired/untrusted evidence blocks; receipt retention does not extend SQLite PITR.
+
+The supported evidence chain uses the historical successful verification attestation
+and its entire committed public tree, not an unavailable upload-only asset JWT or
+today's pages alone. Only the explicitly validated public Firebase configuration
+fields may vary from the protected fingerprint. Both activation flags must be false.
+All other existing configuration/identity/source/checkpoint/concurrency and post-release
+guards remain. No live diagnostic or deployment was run to test this correction.
+See [owner-run diagnostic and evidence scope](production-provenance-diagnostic.md).

@@ -294,6 +294,8 @@ fully offline regression; the real-provider runner is manual opt-in and never ru
 in CI. It cannot claim verification of the normal real-captcha-to-SMS delivery chain.
 
 The [staged production provenance diagnostic](docs/production-provenance-diagnostic.md)
-compares exact historical/current Worker module bytes, assets and runtime inventory
-using read-only operations. It requires separate owner approval to run. The permanent
-deployment correction remains unactivated until that evidence is verified.
+compares exact historical/current Worker module bytes, complete historical asset
+manifests and runtime inventory using read-only operations. It requires separate
+owner approval to run. The permanent release guard verifies trusted receipts, code,
+assets and protected configuration before recognizing configuration-only versions.
+Live verification remains required; source preparation does not deploy anything.

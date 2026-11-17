@@ -35,7 +35,6 @@ const version = (id) => ({
     },
   ],
   assets: {
-    jwt: "synthetic-asset-reference",
     config: { run_worker_first: true },
   },
 });
@@ -58,6 +57,9 @@ function fixture() {
   const receipt = {
     release: COMMIT,
     version_id: BASE,
+    verified_at: "2026-11-16T22:53:37.000Z",
+    health:
+      "All reviewed public assets match on canonical and representative household origin; setup closed.",
     preserved: {
       settings: safeSettings(old),
       runtime_digest: runtimeSettingsFingerprint(old),
@@ -155,7 +157,7 @@ function fixture() {
       ].includes(u.origin),
     );
     assert.equal(u.pathname, "/app.js");
-    assert.equal(options.headers, undefined);
+    assert.equal(options.headers?.Authorization, undefined);
     return new Response("synthetic asset");
   };
   return {
@@ -188,15 +190,12 @@ test("module-byte proof accepts configuration-only versions and ignores display 
     /APPLICATION_CODE_MISMATCH/,
   );
 });
-test("missing byte provenance, malformed inventories, different entrypoints or asset references never pass", () => {
+test("missing byte provenance, malformed inventories and different entrypoints never pass", () => {
   for (const update of [
     (v) => delete v.modules,
     (v) => v.modules.push(v.modules[0]),
     (v) => (v.main_module = "missing"),
     (v) => (v.modules[0].content_base64 = "not-base64!"),
-    (v) => delete v.assets.jwt,
-    (v) => (v.assets.jwt = "other-reference"),
-    (v) => (v.assets.config.run_worker_first = false),
   ]) {
     const active = version(ACTIVE);
     update(active);
@@ -251,7 +250,7 @@ test("end-to-end diagnostic is GET-only, checks both origins, emits no raw value
   const report = await diagnose(f.options);
   assert.equal(report.status, "verified-diagnostic-only");
   assert.equal(report.purpose, "diagnostic-only-not-release-authorization");
-  assert.equal(report.checks.length, 8);
+  assert.equal(report.checks.length, 10);
   assert.equal(report.asset_count, 1);
   const output = JSON.stringify({ report, logs: f.logs });
   for (const value of [

@@ -6,6 +6,17 @@ import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { safeSettings } from "./manual-events-release.mjs";
+import { loadEvidence } from "./select-release-evidence.mjs";
+import {
+  approvedManifest,
+  historicalAssets,
+  resolveApplication,
+  moduleIdentity,
+  assetRouting,
+  verifyAssetBytes,
+  protectedRuntime,
+  ProvenanceError,
+} from "./application-provenance.mjs";
 export const ACCOUNT = "37d068144865a0b725ee272bc7b2eb71";
 export const NAMESPACE = "8203f4cd7fde45d2ab49de62e239d744";
 export const INTEGRATION = "562ca263097e79fa8026d6427a21ebedfe8deae1";
@@ -511,7 +522,16 @@ export async function run(mode, options = {}) {
     "Existing GitHub-held credentials are required.",
   );
   const fetcher = options.fetcher || fetch;
-  let serverTime, runtimeConfiguration, versionTag;
+  let serverTime, runtimeConfiguration, versionTag, evidence;
+  const manifests = new Map();
+  const manifestFor = (commit) => {
+    if (!manifests.has(commit))
+      manifests.set(
+        commit,
+        (options.manifestLoader || approvedManifest)(commit, root),
+      );
+    return manifests.get(commit);
+  };
   async function json(url, token, stage, cloudflare = false) {
     let r;
     try {
@@ -672,6 +692,91 @@ export async function run(mode, options = {}) {
       "domains",
       "Custom-domain inventory is incomplete.",
     );
+    let application;
+    try {
+      const modules = await cf(
+        `/accounts/${ACCOUNT}/workers/workers/events/versions/${version_id}?include=modules`,
+        "provenance",
+      );
+      must(
+        modules.id === version_id,
+        "provenance",
+        "Returned module version differs from active version.",
+      );
+      if (mode === "verify") {
+        must(
+          version.annotations?.["workers/message"] === release,
+          "provenance",
+          "Published version has no exact merged-SHA annotation.",
+        );
+        application = {
+          schema: 1,
+          commit: release,
+          code_sha256: moduleIdentity(modules, version_id).fingerprint,
+          asset_manifest_sha256: fingerprint(manifestFor(release)),
+          asset_count: Object.keys(manifestFor(release)).length,
+          asset_routing_sha256: assetRouting(modules),
+          evidence: "verified-release-manifest-and-observed-complete-assets",
+        };
+      } else {
+        const anchor = evidence.receipt;
+        const original =
+          version_id === anchor.version_id
+            ? version
+            : await cf(`${SCRIPT}/versions/${anchor.version_id}`, "provenance");
+        must(
+          original.annotations?.["workers/message"] === anchor.release &&
+            original.resources?.script_runtime?.migration_tag === "events-v1",
+          "provenance",
+          "Historical release identity or SQLite lineage differs from trusted receipt.",
+        );
+        const historical =
+          version_id === anchor.version_id
+            ? modules
+            : await cf(
+                `/accounts/${ACCOUNT}/workers/workers/events/versions/${anchor.version_id}?include=modules`,
+                "provenance",
+              );
+        application = resolveApplication(
+          anchor,
+          historical,
+          modules,
+          manifestFor(anchor.release),
+        );
+        await verifyAssetBytes(manifestFor(anchor.release), fetcher);
+        const protectedRaw = protectedRuntime(raw);
+        const expectedRuntime =
+          anchor.application?.protected_runtime_sha256 ||
+          anchor.preserved.runtime_digest;
+        const expectedSettings =
+          anchor.application?.protected_settings_sha256 ||
+          fingerprint(anchor.preserved.settings);
+        must(
+          runtimeSettingsFingerprint(protectedRaw) === expectedRuntime &&
+            fingerprint(safeSettings(protectedRaw)) === expectedSettings,
+          "provenance",
+          "Unapproved runtime or binding change since verified release.",
+        );
+        must(
+          fingerprint(routes) === anchor.preserved.routes_digest &&
+            fingerprint(domains) === anchor.preserved.domains_digest &&
+            fingerprint(crons) === fingerprint(anchor.preserved.crons) &&
+            environment === anchor.preserved.environment,
+          "provenance",
+          "Routing, cron or environment differs from verified release.",
+        );
+      }
+      const protectedRaw = protectedRuntime(raw);
+      application.protected_runtime_sha256 =
+        runtimeSettingsFingerprint(protectedRaw);
+      application.protected_settings_sha256 = fingerprint(
+        safeSettings(protectedRaw),
+      );
+    } catch (error) {
+      if (error instanceof ProvenanceError)
+        throw new ReleaseError("provenance", error.code);
+      throw error;
+    }
     let response;
     try {
       response = await fetcher(ORIGIN + "/api/setup", {
@@ -696,7 +801,8 @@ export async function run(mode, options = {}) {
     return {
       version_id,
       deployment_id: latest.id,
-      release: version.annotations?.["workers/message"] || null,
+      release: application.commit,
+      application,
       settings,
       runtime_digest: runtimeDigest,
       crons,
@@ -708,6 +814,28 @@ export async function run(mode, options = {}) {
     };
   }
   await githubGate();
+  if (mode !== "verify") {
+    try {
+      evidence = options.evidence || (await loadEvidence(env));
+      historicalAssets(evidence.receipt, manifestFor(evidence.receipt.release));
+      validateForward(
+        {
+          version_id: evidence.receipt.version_id,
+          release: evidence.receipt.release,
+        },
+        release,
+        root,
+      );
+    } catch (error) {
+      if (error instanceof ReleaseError) throw error;
+      throw new ReleaseError(
+        "provenance",
+        error instanceof ProvenanceError
+          ? error.code
+          : "Trusted successful release evidence is unavailable.",
+      );
+    }
+  }
   const file = resolve(root, CHECKPOINT),
     receipt = resolve(root, RECEIPT);
   if (mode === "preflight") {
@@ -846,10 +974,17 @@ export async function run(mode, options = {}) {
   const wait = options.wait || ((ms) => new Promise((r) => setTimeout(r, ms)));
   for (let attempt = 0; attempt < 13; attempt++) {
     const after = await snapshot();
+    must(
+      after.application.asset_routing_sha256 ===
+        checkpoint.before.application.asset_routing_sha256,
+      "preservation",
+      "Static asset routing changed during deployment.",
+    );
     const preserved = ({
       version_id,
       deployment_id,
       release: annotation,
+      application: _application,
       ...rest
     }) => rest;
     must(
@@ -898,6 +1033,7 @@ export async function run(mode, options = {}) {
           {
             release,
             version_id: after.version_id,
+            application: after.application,
             verified_at: serverTime,
             preserved: preserved(after),
             health:
