@@ -242,3 +242,13 @@ single-use handoff. Explicit cross-origin owner enrollment additionally confirms
 current owner password and live source-session authority. Retain current device
 identity/revocation and origin-bound cookies. Failed PWA handoff cannot auto-loop
 or trigger another SMS; native-device behavior still needs acceptance testing.
+
+## Local real-Firebase testing
+
+The opt-in isolated harness uses only newly created temporary SQLite/profile paths
+and fulfills all Gather traffic from loopback. It cannot select production storage
+or contact Cloudflare. Provider phone sends require an approved number and a one-use
+SDK-generated official fictional-mode token; normal live captcha tokens are blocked.
+The genuine captcha check is separate and has no send capability. Public configuration
+must stay in an owner-only file outside Git; codes are browser-only. Cleanup never
+removes Firebase users or unrelated files. See [scope, limits and manual operation](isolated-firebase-test.md).
