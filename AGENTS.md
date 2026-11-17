@@ -282,3 +282,23 @@ phones still require fresh Firebase ownership proof; revoke old sessions/mapping
 keep identity/invitations/RSVPs, and audit without secrets. See docs/firebase-auth.md
 for exact owner configuration and unverified native-device acceptance. Codex commits
 and pushes only; owner creates/reviews/merges and existing guarded automation releases.
+
+## Shared central Firebase routing
+
+All Firebase verification/SDK/reCAPTCHA must run on gather.ilymmd.com only; ordinary
+household/canonical visits with valid local sessions never redirect or request SMS.
+For unauthenticated foreground visits use a server-issued short-lived, central-browser
+bound navigation context and the existing authorized single-use session handoff.
+Derive destinations from current authoritative household claims and invitation
+permissions, never caller-supplied URLs. Preserve household branding, QR destinations,
+persistent device identity and role-limited guest returns. New active subdomains
+require no Firebase Authorized Domains additions. Explicit cross-origin owner
+phone enrollment must still confirm source owner access and current owner password;
+context references alone are not identity proof. Keep recovery grants compatible.
+
+A failed PWA/browser handoff shows fixed-origin browser fallback without automatic
+redirect/SMS loops. Test synthetic multi-origin/standalone-storage behavior; report
+native Safari/iOS/Android installation and live Firebase as unverified unless actually
+exercised. No Firebase, routing, DNS, secrets or activation changes are authorized by
+source preparation. See docs/firebase-auth.md. Owner creates/merges PRs; Codex only
+validates, commits and pushes the feature branch.

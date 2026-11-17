@@ -279,3 +279,9 @@ a private, password-confirmed system-administrator review; names and Household I
 are lookup hints only. Outbound SMS invitations, event reminders and RSVP/username
 texts are retired; manual invitations, cards, QR and in-app flows remain. Legacy
 access stays available during controlled migration. See [Firebase setup and limits](docs/firebase-auth.md).
+
+Firebase verification is centralized at `gather.ilymmd.com`. Household sign-in keeps
+its branding and uses a server-validated return context plus the existing secure
+session handoff; valid local sessions are reused. New active household subdomains
+need no individual Firebase domain entry. Activation remains separately approved.
+See [central routing and device limits](docs/firebase-auth.md#shared-central-verification-and-authorized-return-contexts).

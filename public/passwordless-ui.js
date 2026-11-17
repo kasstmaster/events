@@ -26,11 +26,37 @@ export function passwordlessUI({
     confirmation = null,
     attempt = null,
     recovering = false;
+  const centralOrigin = "https://gather.ilymmd.com";
+  let loginContext =
+    new URLSearchParams(fragment.slice(1)).get("login-context") || "";
+  let loginEntry = "",
+    loginInvitation = "",
+    loginEnrollment = false,
+    handoffFailed = false;
   const recovery = new URLSearchParams(fragment.slice(1)).get("recover") || "";
+  async function centralSignIn(enroll = false) {
+    const result = await api("/api/firebase/routing/start", {
+      method: "POST",
+      data: {
+        entry: state.publicHousehold?.subdomain || entry(),
+        invitation: invitation(),
+        ...(enroll ? { enroll: true } : {}),
+      },
+    });
+    if (result.authenticated) return false;
+    if (new URL(result.url).origin !== centralOrigin)
+      throw Error("Unsupported sign-in destination.");
+    location.replace(result.url);
+    return true;
+  }
   const entry = () =>
-    /^\/([a-z0-9][a-z0-9-]{1,61}[a-z0-9])$/.exec(location.pathname)?.[1] || "";
+    loginEntry ||
+    /^\/([a-z0-9][a-z0-9-]{1,61}[a-z0-9])$/.exec(location.pathname)?.[1] ||
+    "";
   const invitation = () =>
-    /^\/invite\/([A-Za-z0-9_-]{43})$/.exec(location.pathname)?.[1] || "";
+    loginInvitation ||
+    /^\/invite\/([A-Za-z0-9_-]{43})$/.exec(location.pathname)?.[1] ||
+    "";
   async function transferTo(destination, ref = "") {
     const origin = new URL(destination).origin;
     if (origin === location.origin) return false;
@@ -43,25 +69,53 @@ export function passwordlessUI({
     return true;
   }
   async function afterAuthentication(result = {}) {
+    if (loginContext) {
+      const routed = await api("/api/firebase/routing/complete", {
+        method: "POST",
+        data: { reference: loginContext },
+      });
+      loginContext = "";
+      loginEnrollment = false;
+      if (await transferTo(routed.destination, routed.invitation)) return true;
+      result = { ...result, invitation: routed.invitation };
+    }
     const ref = result.invitation || invitation();
     if (ref) {
       const view = await api(
         "/api/invitations/" + encodeURIComponent(ref) + "/resolve",
       );
       if (view.authenticated) {
-        if (await transferTo(view.destination, ref)) return;
+        if (await transferTo(view.destination, ref)) return true;
         state.event = view.invitationKey;
         state.view = "home";
       }
     } else {
       const { home } = await api("/api/passwordless/home");
-      if (await transferTo(home)) return;
+      if (await transferTo(home)) return true;
     }
     history.replaceState(null, "", "/");
+    return false;
   }
   return {
     async initialize(config) {
       state.passwordless = config;
+      if (loginContext && !loginEntry && config.firebaseEnabled) {
+        try {
+          const context = await api("/api/firebase/routing/context", {
+            method: "POST",
+            data: { reference: loginContext },
+          });
+          loginEntry = context.entry;
+          loginInvitation = context.invitation;
+          loginEnrollment = context.enrollment;
+          if (loginEnrollment) state.view = "firebase-enrollment";
+        } catch {
+          handoffFailed = true;
+          loginContext = "";
+          message =
+            "This sign-in context expired. Open your household or invitation again.";
+        }
+      }
       if (config.pwa && !document.querySelector('link[rel="manifest"]')) {
         const manifest = document.createElement("link");
         manifest.rel = "manifest";
@@ -82,7 +136,7 @@ export function passwordlessUI({
             .register("/gather-sw.js", { scope: "/" })
             .catch(() => {});
       }
-      if (config.enabled && transfer.toString() && !recovery) {
+      if (config.enabled && transfer.toString() && !recovery && !loginContext) {
         const current = transfer;
         transfer = new URLSearchParams();
         try {
@@ -124,8 +178,9 @@ export function passwordlessUI({
             await afterAuthentication(result);
           }
         } catch {
+          handoffFailed = true;
           message =
-            "This installed app needs its own sign-in. Request a link inside this app or use account recovery.";
+            "This installed app could not finish sign-in. Continue in your browser or use Recover Account.";
         }
       }
       if (pending) {
@@ -144,6 +199,67 @@ export function passwordlessUI({
           }
       }
     },
+    async routeSignIn(session, household) {
+      if (
+        !state.passwordless?.firebaseEnabled ||
+        state.preview ||
+        state.passwordlessLegacy ||
+        state.view === "private-guest-sign-in" ||
+        handoffFailed
+      )
+        return false;
+      if (location.origin === centralOrigin) {
+        if (
+          !session.role &&
+          !loginContext &&
+          (invitation() || household?.subdomain)
+        ) {
+          const result = await api("/api/firebase/routing/start", {
+            method: "POST",
+            data: {
+              entry: household?.subdomain || "",
+              invitation: invitation(),
+            },
+          });
+          if (new URL(result.url).origin !== centralOrigin)
+            throw Error("Unsupported sign-in destination.");
+          location.replace(result.url);
+          return true;
+        }
+        if (
+          loginContext &&
+          session.role &&
+          session.passwordless &&
+          !loginEnrollment
+        ) {
+          try {
+            return await afterAuthentication();
+          } catch {
+            loginContext = "";
+            message = "This account cannot open that household or invitation.";
+            notify(C(message));
+            return false;
+          }
+        }
+        return false;
+      }
+      if (session.role) return false;
+      if (recovery) {
+        location.replace(
+          centralOrigin + "/#recover=" + encodeURIComponent(recovery),
+        );
+        return true;
+      }
+      const result = await api("/api/firebase/routing/start", {
+        method: "POST",
+        data: { entry: household?.subdomain || "", invitation: invitation() },
+      });
+      if (result.authenticated) return false;
+      if (new URL(result.url).origin !== centralOrigin)
+        throw Error("Unsupported sign-in destination.");
+      location.replace(result.url);
+      return true;
+    },
     async goHome() {
       const { home } = await api("/api/passwordless/home");
       return transferTo(home);
@@ -156,8 +272,8 @@ export function passwordlessUI({
     page() {
       if (recovering)
         return ui`<section class="auth"><h1>Recover Account</h1><form data-form="passwordless-login">${field(H("First Name"), "first", "", "text", "required")}${field(H("Last Name"), "last")}${field(H("Household ID"), "householdId", "", "text", 'required pattern="[0-9]{4}" maxlength="4" inputmode="numeric"')}<p class="form-error" role="alert"></p><button>Submit recovery request</button></form><p role="status">${escape(message)}</p>${button("firebase-back", "Back to sign in")}</section>`;
-      if (state.passwordless?.firebase)
-        return ui`<section class="auth"><p class="eyebrow">${state.publicHousehold ? escape(state.publicHousehold.name) : C("Welcome to Gather")}</p><h1>Sign in</h1><form data-form="passwordless-login">${confirmation ? field(H("Verification code"), "code", "", "text", 'required pattern="[0-9]{6}" maxlength="6" inputmode="numeric" autocomplete="one-time-code"') : field(H("First Name"), "first", "", "text", 'required maxlength="80" autocomplete="given-name"') + field(H("Last Name"), "last", "", "text", 'maxlength="80" autocomplete="family-name"') + field(H("Phone Number"), "phone", "", "tel", 'required maxlength="30" autocomplete="tel"')}<div id="firebase-recaptcha"></div><p class="form-error" role="alert"></p><button>${confirmation ? C("Verify and sign in") : C("Send verification code")}</button></form><p role="status">${escape(message)}</p><p class="small">Your device stays signed in until you sign out, unless access is revoked or stored credentials are removed. Installed apps may use separate browser storage. If verification cannot open in this app, use the same sign-in page in your browser.</p>${button("recover-account", H("Recover Account"))}${button("passwordless-legacy", H("Administrator / account recovery"))}</section>`;
+      if (state.passwordless?.firebaseEnabled || state.passwordless?.firebase)
+        return ui`<section class="auth"><p class="eyebrow">${state.publicHousehold ? escape(state.publicHousehold.name) : C("Welcome to Gather")}</p><h1>Sign in</h1><form data-form="passwordless-login">${confirmation ? field(H("Verification code"), "code", "", "text", 'required pattern="[0-9]{6}" maxlength="6" inputmode="numeric" autocomplete="one-time-code"') : field(H("First Name"), "first", "", "text", 'required maxlength="80" autocomplete="given-name"') + field(H("Last Name"), "last", "", "text", 'maxlength="80" autocomplete="family-name"') + field(H("Phone Number"), "phone", "", "tel", 'required maxlength="30" autocomplete="tel"')}${confirmation && loginEnrollment ? field(H("Current owner password"), "ownerPassword", "", "password", 'required maxlength="256" autocomplete="current-password"') : ""}<div id="firebase-recaptcha"></div><p class="form-error" role="alert"></p><button>${confirmation ? C("Verify and sign in") : C("Send verification code")}</button></form><p role="status">${escape(message)}</p><p class="small">Your device stays signed in until you sign out, unless access is revoked or stored credentials are removed. Installed apps may use separate browser storage. If verification cannot open in this app, use the same sign-in page in your browser.</p>${handoffFailed ? ui`<p><a href="https://gather.ilymmd.com/">Continue sign-in in your browser</a></p>` : ""}${button("recover-account", H("Recover Account"))}${button("passwordless-legacy", H("Administrator / account recovery"))}</section>`;
       return ui`<section class="auth"><p class="eyebrow">${state.publicHousehold ? escape(state.publicHousehold.name) : C("Welcome to Gather")}</p><h1>Sign in</h1><form data-form="passwordless-login">${field(H("First Name"), "first", "", "text", 'required maxlength="80" autocomplete="given-name"')}${field(H("Last Name"), "last", "", "text", 'maxlength="80" autocomplete="family-name"')}${field(H("Phone Number"), "phone", "", "tel", 'required maxlength="30" autocomplete="tel"')}<p class="form-error" role="alert"></p><button>Send Sign-In Link</button></form><p role="status">${message ? C(message) : ""}</p><p class="small">Open the link in the browser where you requested it. Installed apps may need their own sign-in.</p>${button("recover-account", H("Recover Account"))}${button("passwordless-legacy", H("Administrator / account recovery"))}</section>`;
     },
     securityPage() {
@@ -182,13 +298,24 @@ export function passwordlessUI({
         render();
         return true;
       }
-      if (state.passwordless?.firebase) {
+      if (state.passwordless?.firebaseEnabled || state.passwordless?.firebase) {
+        if (location.origin !== centralOrigin)
+          return centralSignIn(state.view === "firebase-enrollment");
         if (!confirmation) {
           const input = Object.fromEntries(new FormData(form));
           attempt = await api("/api/firebase/start", {
             method: "POST",
-            data: { ...input, entry: entry(), invitation: invitation() },
+            data: {
+              ...input,
+              entry: entry(),
+              invitation: invitation(),
+              ...(loginContext ? { context: loginContext } : {}),
+            },
           });
+          if (attempt.authenticated) {
+            await load();
+            return true;
+          }
           confirmation = await requestFirebaseCode(
             state.passwordless.firebase,
             input.phone,
@@ -202,7 +329,14 @@ export function passwordlessUI({
         const idToken = await confirmFirebaseCode(confirmation, code);
         const result = await api("/api/firebase/verify", {
           method: "POST",
-          data: { reference: attempt.reference, idToken, recovery },
+          data: {
+            reference: attempt.reference,
+            idToken,
+            recovery,
+            ...(loginEnrollment
+              ? { ownerPassword: new FormData(form).get("ownerPassword") }
+              : {}),
+          },
         });
         confirmation = null;
         attempt = null;
@@ -225,6 +359,7 @@ export function passwordlessUI({
     },
     async action(action) {
       if (action === "firebase-enroll") {
+        if (location.origin !== centralOrigin) return centralSignIn(true);
         state.view = "firebase-enrollment";
         render();
         return true;
@@ -277,6 +412,8 @@ export function passwordlessUI({
 // sign-in request. Gather's server cookie, not SDK persistence, authorizes the app.
 let auth, sdk, verifier;
 async function requestFirebaseCode(config, phone, container) {
+  if (location.origin !== "https://gather.ilymmd.com")
+    throw Error("Continue verification through Gather.");
   const app =
     await import("https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js");
   sdk =

@@ -97,6 +97,9 @@ jobs:
       - name: Firebase ownership, persistence and recovery (mocked)
         if: matrix.group == 'accounts'
         run: node test/firebase-mobile.js
+      - name: Shared central Firebase routing and origin handoff
+        if: matrix.group == 'accounts'
+        run: node test/firebase-routing-mobile.js
       - name: Browser failure screenshots
         if: ${{ failure() }}
         uses: actions/upload-artifact@v6

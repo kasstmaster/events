@@ -1,8 +1,10 @@
+import { boundLoginContext, enrollmentSession } from "./firebase-routing.js";
+import { GATHER_ORIGIN } from "./gather-flags.js";
 import { auditAccount } from "./account-management.js";
 import { firebaseEnroll } from "./firebase-enrollment.js";
 import { Buffer } from "node:buffer";
 import { webcrypto, randomBytes } from "node:crypto";
-import { fail, text } from "./model.js";
+import { fail, text, checkPassword } from "./model.js";
 import { compareName } from "./guest-identities.js";
 import { contactPhone } from "./features.js";
 import {
@@ -188,9 +190,30 @@ export async function firebaseAPI(ctx) {
   if (!path.startsWith("/api/firebase/")) return false;
   if (!firebaseEnabled(env)) fail(404, "Page not found.");
   firebaseConfig(env);
+  if (origin !== GATHER_ORIGIN)
+    fail(403, "Continue Firebase verification through Gather.");
   if (path === "/api/firebase/start" && method === "POST") {
     const input = await body(req),
       phone = contactPhone(input.phone || "");
+    if (
+      session &&
+      store.get("passwordless-session", session.token, P) &&
+      !input.recovery
+    ) {
+      const existingContext = input.context
+        ? boundLoginContext(
+            store,
+            input.context,
+            origin,
+            req,
+            ctx.householdHosts,
+          )
+        : null;
+      if (!existingContext?.enrollmentSession) {
+        json(res, { authenticated: true });
+        return true;
+      }
+    }
     store.limit(
       "firebase-start-ip:" + authHash(req.socket.remoteAddress),
       10,
@@ -202,6 +225,9 @@ export async function firebaseAPI(ctx) {
       "DELETE FROM records WHERE household='platform' AND kind IN ('firebase-attempt','firebase-token-used') AND json_extract(body,'$.expires')<=?",
       Date.now(),
     );
+    const login = input.context
+      ? boundLoginContext(store, input.context, origin, req, ctx.householdHosts)
+      : null;
     const reference = nonce(),
       binding = nonce();
     store.put("firebase-attempt", reference, P, {
@@ -212,8 +238,9 @@ export async function firebaseAPI(ctx) {
       binding: authHash(binding),
       expires: Date.now() + 600000,
       state: "pending",
-      invitation: text(input.invitation || "", 80),
-      entry: text(input.entry || "", 63),
+      context: login?.id || "",
+      invitation: login?.invitation || text(input.invitation || "", 80),
+      entry: login?.entry || text(input.entry || "", 63),
     });
     res.setHeader(
       "Set-Cookie",
@@ -251,6 +278,23 @@ export async function firebaseAPI(ctx) {
       fetcher: ctx.firebaseFetcher || fetch,
     });
     if (claim.phone !== row.phone) fail(401, neutral);
+    const loginBefore = row.context
+      ? boundLoginContext(store, row.context, origin, req, ctx.householdHosts)
+      : null;
+    const ownerBefore = enrollmentSession(store, loginBefore);
+    const ownerPasswordHash =
+      ownerBefore &&
+      store.one("SELECT password FROM users WHERE id=?", ownerBefore.user)
+        ?.password;
+    if (ownerBefore) {
+      store.limit("firebase-owner-confirm:" + ownerBefore.user, 5, 900000);
+      if (!(await checkPassword(input.ownerPassword, ownerPasswordHash)))
+        fail(
+          403,
+          "Confirm your current owner password to enroll phone sign-in.",
+        );
+    }
+
     const result = store.transaction(() => {
       const current = store.get("firebase-attempt", row.id, P);
       if (
@@ -273,9 +317,26 @@ export async function firebaseAPI(ctx) {
       if (subjects(store).filter((s) => s.phone === claim.phone).length !== 1)
         candidates = [];
       let subject = candidates.length === 1 ? candidates[0] : null;
+      const login = row.context
+        ? boundLoginContext(store, row.context, origin, req, ctx.householdHosts)
+        : null;
+      const enrollment = enrollmentSession(store, login);
+      if (
+        enrollment &&
+        store.one("SELECT password FROM users WHERE id=?", enrollment.user)
+          ?.password !== ownerPasswordHash
+      )
+        fail(401, "Owner authorization changed. Return to Settings.");
+      if (enrollment && subject && subject.key !== "user:" + enrollment.user)
+        fail(403, "Enroll only the authenticated owner account.");
       subject =
-        firebaseEnroll(store, { input, row, claim, subject, session }) ||
-        subject;
+        firebaseEnroll(store, {
+          input,
+          row,
+          claim,
+          subject,
+          session: enrollment || session,
+        }) || subject;
       if (!subject || subject.child || subject.role === "admin")
         fail(401, neutral);
       const verified = passwordlessContact(store, subject);

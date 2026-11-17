@@ -96,11 +96,12 @@ Never enable `SMS_ENABLED` to activate Firebase; no Twilio Verify is added.
 2. In the owner's existing chosen Firebase project, register a Web app and review
    Authentication → Sign-in method → Phone. Enabling Phone, SMS regions or billing
    requires a separate owner decision. No Firebase project or paid plan was created.
-3. Review Authentication → Settings → Authorized domains: include `gather.ilymmd.com`,
-   the canonical Events hostname if it will offer verification, and each active host
-   hostname used for direct phone verification. Do not authorize arbitrary domains,
-   previews or wildcards. Gather's branded universal entry and signed origin handoff
-   remain available. Add future direct-verification hostnames through reviewed setup.
+3. Firebase verification runs only at `https://gather.ilymmd.com`. In Authentication
+   → Settings → Authorized domains, add `gather.ilymmd.com` and retain the project's
+   existing Firebase auth domain. Do not add every household, previews, wildcards or
+   the parent `ilymmd.com` merely for this app. New active household hostnames use
+   Gather's existing authoritative registry and session handoff, not Firebase domain
+   registration. The canonical Worker hostname also redirects rather than verifying.
 4. Record the Web app's **public configuration**, not service-account credentials:
    `FIREBASE_PROJECT_ID`, `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN` (exactly
    `<project-id>.firebaseapp.com`). The API key is public Web configuration, not an
@@ -154,3 +155,51 @@ browser fallback, app/browser/device restarts, one-device/all-device sign-out,
 current membership removal, administrator recovery and replacement-number verification.
 Check host/guest roles and mobile/desktop approved appearance. No real SMS, production
 account changes, DNS, billing activation or manual deployment is authorized by local tests.
+
+## Shared central verification and authorized return contexts
+
+All Firebase start/verify API operations, SDK/reCAPTCHA loading and phone-code
+verification are restricted to `https://gather.ilymmd.com`, including explicit
+phone enrollment. Non-central config responses expose the central-origin marker
+but no Firebase SDK configuration; those pages retain their ordinary self-only
+script/connect policy. No new Worker variable is required. Existing Firebase and
+routing/PWA activation approvals remain separate and default off.
+
+On a foreground unauthenticated household/legacy household-link visit, the shared
+client asks the server for a ten-minute login context, then navigates to the fixed
+central origin. The context contains only validated public household/invitation
+navigation and, for explicit owner enrollment, a server-side source-session hash.
+No name, phone, password, Firebase token or account authority goes in the navigation
+URL. The random reference is removed from browser history before application code
+continues and is bound to a separate secure HttpOnly central-browser cookie.
+Household name, logo and saved appearance still resolve through the existing shared
+branded sign-in renderer. Redirect parameters never supply an arbitrary return URL.
+
+Valid local sessions skip the redirect. A valid central phone-authenticated session
+can resume a new context without another SMS. After authentication the server
+rechecks current household claims, invitation eligibility and subject permissions.
+It consumes the context and lets the existing 60-second, browser/origin-bound,
+single-use session handoff perform any cross-origin return. Firebase proofs/device
+identity remain attached to the destination session, preserving revocation and
+persistent sign-in. Invited hosts get guest-only authority at the inviter; ordinary
+guests keep the inviter-branded Gather QR destination. No QR destination or encoding
+is changed. Expired contexts, retired labels, withdrawn invitations and revoked
+sessions fail closed rather than silently returning to another household.
+
+Explicit Settings → Set up phone sign-in from a household uses the central page as
+well. It additionally confirms the current owner password when redeeming the phone
+proof: a copied navigation reference cannot substitute for the authenticated owner
+cookie on another origin. The source owner session must still be active. This
+confirmation is not part of ordinary SMS sign-in. Recovery enrollment links retain
+their separate independently reviewed grant and phone-verification requirements;
+root recovery fragments are captured/cleared before app initialization too.
+
+A failed browser/PWA handoff shows a safe fixed central-browser link and never
+starts an automatic redirect loop or SMS retry. Installed apps may have separate
+storage or open a system browser. Synthetic Chromium tests cover standalone display
+mode, isolated browser storage, failed-handoff fallback, mobile/tablet/desktop
+viewports, multi-household/QR permissions and valid-session reuse. Actual Safari,
+iOS/Android installation, app opening and live Firebase/reCAPTCHA remain unverified.
+Before activation, verify central hostname/gateway reachability and the existing
+approved routing/PWA configuration; this source task changes no DNS, gateway,
+production flags, credentials, Firebase settings or SMS delivery.
