@@ -302,3 +302,24 @@ native Safari/iOS/Android installation and live Firebase as unverified unless ac
 exercised. No Firebase, routing, DNS, secrets or activation changes are authorized by
 source preparation. See docs/firebase-auth.md. Owner creates/merges PRs; Codex only
 validates, commits and pushes the feature branch.
+
+## Isolated real-Firebase harness
+
+`scripts/firebase-test/` is opt-in, local-only tooling, never a production mode or
+GitHub Actions real-provider job. Create a new temporary SQLite database and browser
+profile; intercept every Gather origin to loopback, never production. Real phone
+requests must use Firebase's official fictional-number app-verification mode and
+one-use approved-number/testing-token transport permits. A genuine reCAPTCHA check
+is separate and cannot request SMS; never forward its real token to phone delivery.
+The normal captcha-to-real-SMS chain remains unverified by this safe harness.
+
+Require owner-only configuration outside the repository, explicit fictional-number
+and provider test-user acknowledgement, and fixed project gather-58a79. Never accept
+verification codes/private keys in config or command arguments; users enter codes
+only in the isolated browser. No raw diagnostics, screenshots, traces, token/phone
+reports, production DB/profile selection, Cloudflare management or Firebase user
+cleanup. Remove owned temporary Gather data on exit; stale cleanup must verify
+ownership/marker/dead PID. Keep production activation flags unchanged. Automated
+harness tests mock Google only; manual real SDK/reCAPTCHA/code checks require owner
+interaction. See docs/isolated-firebase-test.md. Commit and push for owner review;
+never create/merge PRs, deploy or activate production.

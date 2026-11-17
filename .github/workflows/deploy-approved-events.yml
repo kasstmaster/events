@@ -86,6 +86,7 @@ jobs:
           node test/persistent-sessions-mobile.js
           node test/firebase-mobile.js
           node test/firebase-routing-mobile.js
+          node --test scripts/firebase-test/browser.test.mjs
       - uses: actions/upload-artifact@v6
         if: failure()
         with:

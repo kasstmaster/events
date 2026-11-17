@@ -285,3 +285,10 @@ its branding and uses a server-validated return context plus the existing secure
 session handoff; valid local sessions are reused. New active household subdomains
 need no individual Firebase domain entry. Activation remains separately approved.
 See [central routing and device limits](docs/firebase-auth.md#shared-central-verification-and-authorized-return-contexts).
+
+The [isolated real-Firebase harness](docs/isolated-firebase-test.md) uses a temporary
+Gather database/private Chromium profile, configured fictional numbers and Firebase's
+official testing verifier. A separate genuine reCAPTCHA check cannot send messages.
+Production flags/data stay unchanged. Run `npm run test:firebase:isolated` for the
+fully offline regression; the real-provider runner is manual opt-in and never runs
+in CI. It cannot claim verification of the normal real-captcha-to-SMS delivery chain.
