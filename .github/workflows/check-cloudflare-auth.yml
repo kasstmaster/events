@@ -2,12 +2,23 @@ name: Check Cloudflare authentication (read only)
 
 on:
   workflow_dispatch:
+    inputs:
+      diagnostic:
+        description: metadata or provenance (provenance requires explicit confirmation)
+        type: choice
+        options: [metadata, provenance]
+        default: metadata
+      confirm:
+        description: Enter VERIFY_READ_ONLY only for the reviewed provenance diagnostic
+        default: NOT_APPROVED
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   check-cloudflare-auth:
+    if: inputs.diagnostic != 'provenance'
     runs-on: ubuntu-24.04
     timeout-minutes: 6
     steps:
@@ -24,3 +35,10 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           EVENTS_READ_ONLY_BUILD: "true"
         run: node scripts/cloudflare-metadata-check.mjs
+  provenance:
+    if: inputs.diagnostic == 'provenance'
+    uses: ./.github/workflows/verify-production-provenance.yml
+    with:
+      confirm: ${{ inputs.confirm }}
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
