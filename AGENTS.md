@@ -323,3 +323,21 @@ ownership/marker/dead PID. Keep production activation flags unchanged. Automated
 harness tests mock Google only; manual real SDK/reCAPTCHA/code checks require owner
 interaction. See docs/isolated-firebase-test.md. Commit and push for owner review;
 never create/merge PRs, deploy or activate production.
+
+## Staged production provenance investigation
+
+`scripts/production-provenance-diagnostic.mjs` and its dispatch-only workflow are
+read-only evidence gathering, not release authorization. Do not dispatch until the
+owner explicitly approves the diagnostic. Pin the original successful verification
+receipt bytes; compare actual per-version modules, provider asset references and
+reviewed public assets. Reject missing evidence and unknown configuration; never
+infer code identity from messages, UUIDs, ETags or dashboard source. Emit only safe
+IDs, fingerprints and fixed outcomes. No raw provider payloads/modules/settings
+may enter logs or artifacts. Keep both Firebase activation flags false.
+
+Stage 2 remains unactivated until Stage 1 establishes trusted production provenance.
+Do not modify forward-release guards, policies, automatic/manual publishing or
+credentials merely to make a diagnostic pass. See
+`docs/production-provenance-diagnostic.md` for the pending receipt-based permanent
+design and owner-run procedure. Continue committing/pushing tested feature branches;
+the owner creates/merges PRs and separately approves workflow execution.

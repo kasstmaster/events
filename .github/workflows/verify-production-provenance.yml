@@ -1,0 +1,62 @@
+name: Verify Events application provenance (read only)
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Enter VERIFY_READ_ONLY after reviewing this workflow
+        required: true
+        default: NOT_APPROVED
+  workflow_call:
+    inputs:
+      confirm:
+        type: string
+        required: true
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        required: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: events-production
+  cancel-in-progress: false
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Require explicit owner approval
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          OWNER: ${{ github.actor }}
+          REPOSITORY: ${{ github.repository }}
+        run: test "$CONFIRM" = VERIFY_READ_ONLY && test "$OWNER" = kasstmaster && test "$REPOSITORY" = kasstmaster/events
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Download exact previously verified release receipt
+        uses: actions/download-artifact@v7
+        with:
+          artifact-ids: "14280212512"
+          merge-multiple: true
+          path: ${{ runner.temp }}/gather-provenance-anchor
+          repository: kasstmaster/events
+          run-id: "43939613620"
+          github-token: ${{ github.token }}
+      - name: Compare code bytes, asset reference, public assets and preserved inventory
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/production-provenance-diagnostic.mjs
+      - name: Upload sanitized diagnostic only (never a release authorization)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: events-provenance-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: production-provenance-report.json
+          if-no-files-found: warn
+          retention-days: 29

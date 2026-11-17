@@ -7,6 +7,9 @@ on:
       - .github/workflows/validate-manual-release.yml
       - scripts/manual-events-release*.mjs
       - scripts/cloudflare-metadata-check*.mjs
+      - scripts/production-provenance-diagnostic*.mjs
+      - .github/workflows/verify-production-provenance.yml
+      - docs/production-provenance-diagnostic.md
       - .github/workflows/check-cloudflare-auth.yml
       - .github/workflows/inspect-events-settings.yml
       - docs/manual-events-release.md
@@ -28,6 +31,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node --test scripts/manual-events-release.test.mjs scripts/cloudflare-metadata-check.test.mjs
+      - run: node --test scripts/production-provenance-diagnostic.test.mjs
       - name: Install isolated read-only AnyList adapter
         run: npm ci --ignore-scripts --prefix integrations/anylist
       - name: Check AnyList transport and protobuf decoding

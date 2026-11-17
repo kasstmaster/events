@@ -292,3 +292,8 @@ official testing verifier. A separate genuine reCAPTCHA check cannot send messag
 Production flags/data stay unchanged. Run `npm run test:firebase:isolated` for the
 fully offline regression; the real-provider runner is manual opt-in and never runs
 in CI. It cannot claim verification of the normal real-captcha-to-SMS delivery chain.
+
+The [staged production provenance diagnostic](docs/production-provenance-diagnostic.md)
+compares exact historical/current Worker module bytes, assets and runtime inventory
+using read-only operations. It requires separate owner approval to run. The permanent
+deployment correction remains unactivated until that evidence is verified.
