@@ -359,6 +359,17 @@ async function load({ background = false } = {}) {
           ).household;
       }
     }
+    const legacyHouseholdPath =
+      !session.role && location.pathname.match(/^\/h\/([A-Za-z0-9_-]+)$/);
+    if (legacyHouseholdPath)
+      publicHousehold = await api(
+        `/api/public/households/${legacyHouseholdPath[1]}`,
+      );
+    if (
+      !background &&
+      (await passwordless.routeSignIn(session, publicHousehold))
+    )
+      return;
     if (session.role) {
       data = await api(
         session.role === "admin-pending"
@@ -378,10 +389,6 @@ async function load({ background = false } = {}) {
       }
       if (session.role === "guest") templates = await api("/api/templates");
       else if (session.role === "host") templates = data.templates;
-    } else {
-      const match = location.pathname.match(/^\/h\/([A-Za-z0-9_-]+)$/);
-      if (match)
-        publicHousehold = await api(`/api/public/households/${match[1]}`);
     }
     const familyData =
       session.role === "family"
@@ -1126,7 +1133,11 @@ function render(target = $("#app"), example = false) {
     (state.settingsOpen || state.view === "settings")
   ) {
     const list = target.querySelector("#main .browse-rows");
-    if (list && role === "host" && state.passwordless?.firebase)
+    if (
+      list &&
+      role === "host" &&
+      (state.passwordless?.firebaseEnabled || state.passwordless?.firebase)
+    )
       list.insertAdjacentHTML(
         "beforeend",
         row({

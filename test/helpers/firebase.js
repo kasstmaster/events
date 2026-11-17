@@ -61,7 +61,7 @@ export function token(
     sign("RSA-SHA256", Buffer.from(data), privateKey).toString("base64url")
   );
 }
-export async function firebaseFixture(t) {
+export async function firebaseFixture(t, { householdHosts = new Set() } = {}) {
   const project = "gather-test-" + randomUUID().slice(0, 8);
   const env = {
     FIREBASE_AUTH_ENABLED: "true",
@@ -75,6 +75,7 @@ export async function firebaseFixture(t) {
   const f = await application(t, env, {
     origin: "https://gather.ilymmd.com",
     firebaseFetcher,
+    householdHosts,
   });
   const host = await f.host("Alpha"),
     ready = ensurePersonalProfile(f.store, {

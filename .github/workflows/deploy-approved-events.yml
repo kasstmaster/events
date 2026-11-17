@@ -85,6 +85,7 @@ jobs:
           node test/passwordless-mobile.js
           node test/persistent-sessions-mobile.js
           node test/firebase-mobile.js
+          node test/firebase-routing-mobile.js
       - uses: actions/upload-artifact@v6
         if: failure()
         with:

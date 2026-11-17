@@ -281,5 +281,85 @@ test(
       },
     );
     assert.equal(recovery.status, 200);
+    const runtimeCookie = firebaseSetup.headers.get("set-cookie").split(";")[0];
+    assert.equal(
+      (
+        await firebaseRuntime.dispatchFetch(origin + "/api/admin/approvals", {
+          method: "POST",
+          headers: {
+            Origin: origin,
+            Cookie: runtimeCookie,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email: "host@example.test" }),
+        })
+      ).status,
+      201,
+    );
+    assert.equal(
+      (
+        await firebaseRuntime.dispatchFetch(origin + "/api/register", {
+          method: "POST",
+          headers: { Origin: origin, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: "host@example.test",
+            password: "Synthetic-runtime-password",
+            name: "Alpha",
+          }),
+        })
+      ).status,
+      201,
+    );
+    async function householdRequest(path, method = "GET", data) {
+      const signed = await forwardRequest(
+        new Request("https://alpha.ilymmd.com" + path, {
+          method,
+          headers: {
+            Origin: "https://alpha.ilymmd.com",
+            ...(data ? { "Content-Type": "application/json" } : {}),
+          },
+          body: data ? JSON.stringify(data) : undefined,
+        }),
+        env,
+      );
+      return firebaseRuntime.dispatchFetch(signed.url, signed);
+    }
+    const householdConfig = await (
+      await householdRequest("/api/passwordless/config")
+    ).json();
+    assert.equal(householdConfig.firebase, null);
+    assert.equal(householdConfig.firebaseOrigin, origin);
+    assert.equal(
+      (
+        await householdRequest("/api/firebase/start", "POST", {
+          first: "Unknown",
+          phone: "+15005550123",
+        })
+      ).status,
+      403,
+    );
+    const route = await householdRequest(
+      "/api/firebase/routing/start",
+      "POST",
+      {},
+    );
+    assert.equal(route.status, 200);
+    const destination = new URL((await route.json()).url);
+    assert.equal(destination.origin, origin);
+    const reference = destination.hash.slice("#login-context=".length);
+    const contextRequest = await firebaseRuntime.dispatchFetch(
+      origin + "/api/firebase/routing/context",
+      {
+        method: "POST",
+        headers: { Origin: origin, "Content-Type": "application/json" },
+        body: JSON.stringify({ reference }),
+      },
+    );
+    assert.equal(contextRequest.status, 200);
+    assert.equal((await contextRequest.json()).entry, "alpha");
+    assert.match(
+      contextRequest.headers.get("set-cookie"),
+      /HttpOnly; Secure; SameSite=Strict/,
+    );
   },
 );

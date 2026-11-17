@@ -1,3 +1,4 @@
+import { firebaseRoutingAPI } from "./firebase-routing.js";
 import {
   firebaseAPI,
   firebaseEnabled,
@@ -457,7 +458,7 @@ export function createHandler({
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader(
       "Content-Security-Policy",
-      firebaseEnabled(env)
+      firebaseEnabled(env) && origin === "https://gather.ilymmd.com"
         ? "default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.google.com https://www.recaptcha.net; frame-src https://www.google.com https://www.recaptcha.net https://" +
             firebaseSettings.authDomain +
             "; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.gstatic.com; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
@@ -794,6 +795,24 @@ export function createHandler({
           410,
           "Outbound messaging is no longer available. Use manual invitations or Recover Account.",
         );
+      if (
+        await firebaseRoutingAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          session,
+          body,
+          json,
+          env,
+          origin,
+          selected,
+          householdHosts,
+          canonicalOrigin,
+        })
+      )
+        return;
       if (
         await firebaseAPI({
           path,

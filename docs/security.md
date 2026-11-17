@@ -233,3 +233,12 @@ Recovery requires restricted fresh-password administrator review plus fresh veri
 replacement-phone ownership, with affected sessions/mappings revoked and non-secret
 audits. No names/Household IDs/QR grant access. Existing strong administrator and
 controlled legacy access are retained until approved migration/device acceptance.
+
+Central Firebase routing restricts SDK configuration and verification endpoints to
+Gather's fixed authentication origin. Navigation contexts expire, bind to an
+HttpOnly central-browser cookie and are consumed once; they do not grant account
+access. Recheck current claims, invitations and permissions before the existing
+single-use handoff. Explicit cross-origin owner enrollment additionally confirms
+current owner password and live source-session authority. Retain current device
+identity/revocation and origin-bound cookies. Failed PWA handoff cannot auto-loop
+or trigger another SMS; native-device behavior still needs acceptance testing.

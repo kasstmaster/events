@@ -220,6 +220,7 @@ export function accountForOrigin(store, subject, selected) {
       fail(403, "This account cannot access that household.");
     return {
       ...subject,
+      guest: subject.role === "guest" ? subject.guest : null,
       entryHousehold: selected?.id || subject.household || "universal",
     };
   }
@@ -553,7 +554,9 @@ export async function passwordlessAPI(ctx) {
   if (path === "/api/passwordless/config" && method === "GET") {
     json(res, {
       enabled: passwordlessEnabled(env),
-      firebase: firebaseConfig(env),
+      firebase: origin === GATHER_ORIGIN ? firebaseConfig(env) : null,
+      firebaseEnabled: firebaseEnabled(env),
+      firebaseOrigin: GATHER_ORIGIN,
       enrollmentAvailable: true,
       universal: universalEnabled(env),
       pwa: universalEnabled(env) && env.GATHER_PWA_ENABLED === "true",
