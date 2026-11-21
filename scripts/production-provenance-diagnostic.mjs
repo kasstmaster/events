@@ -12,10 +12,10 @@ import {
 } from "./automatic-events-release.mjs";
 import { safeSettings, activeDeployment } from "./manual-events-release.mjs";
 
-export const ACTIVE = "6ad2eca8-f6fe-44e0-8683-a448a613d4ab";
+export const ACTIVE = "3f5968c5-8813-4a77-adfa-d46c4d480e92";
 export const BASE = "b43cd66d-43de-44a5-bdb2-f62c4c2ba371";
 export const COMMIT = "39bf57fd6b3f1a3e11176d1aeadbbdc31aa31138";
-export const MAIN = "c5e402a9fc5ce3803830aebf9526a59f1a28f789";
+export const MAIN = "391978f209f99e3b0f3b0e17653cf755a5595538";
 export const RECEIPT_HASH =
   "63a8f799a09320c77f8cca31ee41eab4c4f6c979ae5ca12f0a250acd5bae9dd0";
 const SCRIPT = `/accounts/${ACCOUNT}/workers/scripts/events`;
@@ -43,6 +43,8 @@ import {
   verifyAssetBytes,
   assetRouting,
   ProvenanceError,
+  protectedRuntime,
+  FIREBASE_NAMES,
 } from "./application-provenance.mjs";
 
 export function compareApplication(previous, active) {
@@ -55,31 +57,7 @@ export function compareApplication(previous, active) {
 export function checkConfiguration(raw, receipt) {
   const normalized = safeSettings(raw);
   runtimeOverlay(raw); // Reject unsupported settings/binding schemas.
-  const expected = new Map([
-    ["FIREBASE_PROJECT_ID", (v) => v === "gather-58a79"],
-    ["FIREBASE_AUTH_DOMAIN", (v) => v === "gather-58a79.firebaseapp.com"],
-    [
-      "FIREBASE_API_KEY",
-      (v) => typeof v === "string" && /^AIza[A-Za-z0-9_-]{35}$/.test(v),
-    ],
-    ["FIREBASE_AUTH_ENABLED", (v) => v === "false"],
-    ["FIREBASE_ACTIVATION_APPROVED", (v) => v === "false"],
-  ]);
-  need(
-    new Set(raw.bindings.map((b) => b.name)).size === raw.bindings.length,
-    "DUPLICATE_BINDING",
-  );
-  for (const [name, check] of expected) {
-    const binding = raw.bindings.find((b) => b.name === name);
-    need(
-      binding?.type === "plain_text" && check(binding.text),
-      "FIREBASE_CONFIGURATION_NOT_APPROVED",
-    );
-  }
-  const restored = {
-    ...raw,
-    bindings: raw.bindings.filter((b) => !expected.has(b.name)),
-  };
+  const restored = protectedRuntime(raw);
   need(
     fingerprint(safeSettings(restored)) ===
       fingerprint(receipt.preserved.settings),
@@ -174,14 +152,18 @@ export async function diagnose({
     const deploymentBefore = activeDeployment(
       await get(`${SCRIPT}/deployments`),
     );
-    need(deploymentBefore.version_id === ACTIVE, "ACTIVE_VERSION_CHANGED");
     need(
       /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(
         deploymentBefore.id,
-      ),
+      ) &&
+        /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(
+          deploymentBefore.version_id,
+        ),
       "DEPLOYMENT_ID_INVALID",
     );
     safe.deployment_id = deploymentBefore.id;
+    safe.observed_active_version = deploymentBefore.version_id;
+    need(deploymentBefore.version_id === ACTIVE, "ACTIVE_VERSION_CHANGED");
     pass("single-active-version");
     const current = await get(`${SCRIPT}/versions/${ACTIVE}`);
     need(
@@ -272,6 +254,16 @@ export async function diagnose({
       error instanceof DiagnosticError || error instanceof ProvenanceError
         ? error.code
         : "UNSUPPORTED_OR_UNREADABLE_EVIDENCE";
+    if (
+      error instanceof ProvenanceError &&
+      FIREBASE_NAMES.includes(error.field) &&
+      ["missing-binding", "wrong-binding-type", "invalid-value"].includes(
+        error.reason,
+      )
+    ) {
+      safe.blocker_field = error.field;
+      safe.blocker_reason = error.reason;
+    }
     log(`STOP ${safe.blocker}`);
   }
   return safe;

@@ -252,6 +252,9 @@ test("end-to-end diagnostic is GET-only, checks both origins, emits no raw value
   assert.equal(report.purpose, "diagnostic-only-not-release-authorization");
   assert.equal(report.checks.length, 10);
   assert.equal(report.asset_count, 1);
+  assert.equal(report.active_version, "3f5968c5-8813-4a77-adfa-d46c4d480e92");
+  assert.equal(report.observed_active_version, ACTIVE);
+  assert.equal(report.deployment_id, "11111111-1111-4111-8111-111111111111");
   const output = JSON.stringify({ report, logs: f.logs });
   for (const value of [
     "synthetic-token",
@@ -263,6 +266,52 @@ test("end-to-end diagnostic is GET-only, checks both origins, emits no raw value
   ])
     assert.ok(!output.includes(value));
   assert.equal(f.calls.filter((u) => u.endsWith("/app.js")).length, 2);
+});
+
+test("corrected Firebase activation text passes; failures identify only the fixed field and category", async () => {
+  const good = fixture();
+  assert.equal(
+    (await diagnose(good.options)).status,
+    "verified-diagnostic-only",
+  );
+  for (const reason of [
+    "missing-binding",
+    "wrong-binding-type",
+    "invalid-value",
+  ]) {
+    const f = fixture();
+    const field = "FIREBASE_ACTIVATION_APPROVED";
+    const binding = f.current.bindings.find((b) => b.name === field);
+    if (reason === "missing-binding")
+      f.current.bindings = f.current.bindings.filter((b) => b !== binding);
+    else if (reason === "wrong-binding-type") binding.type = "json";
+    else binding.text = "synthetic-private-typo-value";
+    const report = await diagnose(f.options);
+    assert.equal(report.status, "blocked");
+    assert.equal(report.blocker, "FIREBASE_CONFIGURATION_NOT_APPROVED");
+    assert.equal(report.blocker_field, field);
+    assert.equal(report.blocker_reason, reason);
+    assert.ok(
+      !JSON.stringify({ report, logs: f.logs }).includes(
+        "synthetic-private-typo-value",
+      ),
+    );
+  }
+});
+
+test("a further dashboard version is reported but never silently adopted by the pinned diagnostic", async () => {
+  const f = fixture();
+  f.payloads.get(
+    `/accounts/${ACCOUNT}/workers/scripts/events/deployments`,
+  ).deployments[0].versions[0].version_id =
+    "6ad2eca8-f6fe-44e0-8683-a448a613d4ab";
+  const report = await diagnose(f.options);
+  assert.equal(report.blocker, "ACTIVE_VERSION_CHANGED");
+  assert.equal(
+    report.observed_active_version,
+    "6ad2eca8-f6fe-44e0-8683-a448a613d4ab",
+  );
+  assert.ok(!report.checks.includes("actual-module-bytes"));
 });
 test("unknown active version, unrecognized baseline release, changed migration, routes or code fail closed", async () => {
   const script = `/accounts/${ACCOUNT}/workers/scripts/events`;

@@ -20,9 +20,10 @@ import {
   downloadEvidence,
   loadEvidence,
 } from "./select-release-evidence.mjs";
+import { validateForward } from "./automatic-events-release.mjs";
 const COMMIT = "39bf57fd6b3f1a3e11176d1aeadbbdc31aa31138",
   BASE = "b43cd66d-43de-44a5-bdb2-f62c4c2ba371",
-  ACTIVE = "6ad2eca8-f6fe-44e0-8683-a448a613d4ab";
+  ACTIVE = "3f5968c5-8813-4a77-adfa-d46c4d480e92";
 const health =
   "All reviewed public assets match on canonical and representative household origin; setup closed.";
 const version = (id) => ({
@@ -48,6 +49,34 @@ const receipt = () => ({
   verified_at: "2026-11-16T22:53:37.000Z",
   health,
   preserved: {},
+});
+test("permanent application identity accepts successive configuration UUIDs only with the same evidence and strict Git ancestry", () => {
+  const previous = version(BASE);
+  for (const id of ["6ad2eca8-f6fe-44e0-8683-a448a613d4ab", ACTIVE]) {
+    const current = version(id);
+    current.annotations = { "workers/message": "dashboard configuration edit" };
+    const resolved = resolveApplication(receipt(), previous, current, manifest);
+    assert.equal(resolved.commit, COMMIT);
+    assert.doesNotThrow(() =>
+      validateForward(
+        { version_id: id, release: resolved.commit },
+        "391978f209f99e3b0f3b0e17653cf755a5595538",
+      ),
+    );
+    assert.throws(
+      () =>
+        validateForward({ version_id: id, release: resolved.commit }, COMMIT),
+      /already-active/,
+    );
+    assert.throws(
+      () =>
+        validateForward(
+          { version_id: id, release: resolved.commit },
+          "f".repeat(40),
+        ),
+      /newer or unrelated/,
+    );
+  }
 });
 test("historical asset proof comes from the verified receipt plus complete committed inventory, independently of current responses", () => {
   assert.equal(historicalAssets(receipt(), manifest), fingerprint(manifest));

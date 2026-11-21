@@ -124,7 +124,10 @@ gh workflow run check-cloudflare-auth.yml --repo kasstmaster/events \
 
 Codex has not executed this command. It uses only the existing GitHub-held credential.
 The diagnostic is pinned to active version
-`6ad2eca8-f6fe-44e0-8683-a448a613d4ab`. If that changes, stop and review the new state.
+`3f5968c5-8813-4a77-adfa-d46c4d480e92`, following the owner-reported correction
+to the activation flag. The previously inspected `6ad2eca8-f6fe-44e0-8683-a448a613d4ab`
+is not adopted as the current deployment. If the active version changes again, the
+report includes the observed UUID and deployment ID but still fails closed.
 The diagnostic still verifies the original receipt bytes, migration lineage,
 full historical manifest, current module/asset bytes and all later configuration,
 routing, cron, service and stability checks. Its output is sanitized IDs, hashes,
@@ -133,7 +136,10 @@ counts and fixed outcomes only, never raw code, bindings, URLs or credentials.
 Share only the sanitized diagnostic artifact. `verified-diagnostic-only` does not
 publish or authorize a release by itself. Missing historical receipt/modules/asset
 routing metadata, incomplete manifests, altered bytes or unexpected configuration
-produce an explicit blocker, not success. Do not change credentials or weaken
+produce an explicit blocker, not success. Firebase failures additionally report only
+the allowlisted field name and `missing-binding`, `wrong-binding-type` or
+`invalid-value`; no configured value is emitted. Diagnostic and release validation
+share the same Firebase validator. Do not change credentials or weaken
 checks to obtain a green result.
 
 Then create the PR, wait for validation and review/merge it yourself. **Merging can
@@ -149,3 +155,11 @@ node --test scripts/application-provenance.test.mjs \
   scripts/automatic-events-release.test.mjs \
   scripts/manual-events-release.test.mjs scripts/cloudflare-metadata-check.test.mjs
 ```
+
+The pinned diagnostic version is an investigation target only. The permanent
+automatic guard discovers the active UUID each run and compares its application
+identity against trusted successful release evidence; it has no per-dashboard-version
+allowlist. A configuration-only transition from the previously inspected version to
+the new version is covered by regression tests, including the real Git ancestry
+check. Running this branch's read-only diagnostic is still required to verify the
+owner-reported configuration correction and all later checks on production.

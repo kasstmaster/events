@@ -247,10 +247,19 @@ export function protectedRuntime(raw) {
   };
   for (const name of FIREBASE_NAMES) {
     const b = byName.get(name);
-    need(
-      b?.type === "plain_text" && values[name](b.text),
-      "FIREBASE_CONFIGURATION_NOT_APPROVED",
-    );
+    const reason = !b
+      ? "missing-binding"
+      : b.type !== "plain_text"
+        ? "wrong-binding-type"
+        : !values[name](b.text)
+          ? "invalid-value"
+          : null;
+    if (reason) {
+      const error = new ProvenanceError("FIREBASE_CONFIGURATION_NOT_APPROVED");
+      error.field = name;
+      error.reason = reason;
+      throw error;
+    }
   }
   return {
     ...raw,
