@@ -12,10 +12,10 @@ import {
 } from "./automatic-events-release.mjs";
 import { safeSettings, activeDeployment } from "./manual-events-release.mjs";
 
-export const ACTIVE = "6ad2eca8-f6fe-44e0-8683-a448a613d4ab";
+export const ACTIVE = "3f5968c5-8813-4a77-adfa-d46c4d480e92";
 export const BASE = "b43cd66d-43de-44a5-bdb2-f62c4c2ba371";
 export const COMMIT = "39bf57fd6b3f1a3e11176d1aeadbbdc31aa31138";
-export const MAIN = "c5e402a9fc5ce3803830aebf9526a59f1a28f789";
+export const MAIN = "391978f209f99e3b0f3b0e17653cf755a5595538";
 export const RECEIPT_HASH =
   "63a8f799a09320c77f8cca31ee41eab4c4f6c979ae5ca12f0a250acd5bae9dd0";
 const SCRIPT = `/accounts/${ACCOUNT}/workers/scripts/events`;
@@ -35,105 +35,29 @@ const need = (condition, code) => {
   if (!condition) throw new DiagnosticError(code);
 };
 
-// Hash ALL returned modules, including maps, WASM and asset routing modules.
-// An opaque ETag, message, author or version UUID is never code evidence.
-export function moduleIdentity(version, expectedID) {
-  need(version?.id === expectedID, "MODULE_VERSION_MISMATCH");
-  need(
-    Array.isArray(version.modules) &&
-      version.modules.length > 0 &&
-      version.modules.length <= 1000,
-    "MODULE_BYTES_UNAVAILABLE",
-  );
-  const names = new Set();
-  let total = 0;
-  const modules = version.modules
-    .map((m) => {
-      need(
-        typeof m.name === "string" &&
-          m.name.length > 0 &&
-          m.name.length <= 1024 &&
-          !names.has(m.name),
-        "MODULE_INVENTORY_INVALID",
-      );
-      names.add(m.name);
-      need(
-        typeof m.content_type === "string" &&
-          typeof m.content_base64 === "string",
-        "MODULE_BYTES_UNAVAILABLE",
-      );
-      const bytes = Buffer.from(m.content_base64, "base64");
-      need(
-        bytes.toString("base64") === m.content_base64,
-        "MODULE_ENCODING_INVALID",
-      );
-      total += bytes.length;
-      need(total <= 25000000, "MODULE_BYTES_TOO_LARGE");
-      return { name: m.name, type: m.content_type, sha256: sha(bytes) };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
-  need(
-    typeof version.main_module === "string" && names.has(version.main_module),
-    "ENTRYPOINT_UNAVAILABLE",
-  );
-  return {
-    fingerprint: fingerprint({ main_module: version.main_module, modules }),
-    count: modules.length,
-  };
-}
+export { moduleIdentity } from "./application-provenance.mjs";
+import {
+  moduleIdentity,
+  approvedManifest,
+  historicalAssets,
+  verifyAssetBytes,
+  assetRouting,
+  ProvenanceError,
+  protectedRuntime,
+  FIREBASE_NAMES,
+} from "./application-provenance.mjs";
 
 export function compareApplication(previous, active) {
   const before = moduleIdentity(previous, BASE),
     after = moduleIdentity(active, ACTIVE);
   need(before.fingerprint === after.fingerprint, "APPLICATION_CODE_MISMATCH");
-  // The API returns the uploaded asset token/reference and config. Require exact
-  // equality, in addition to fetching every reviewed public asset below. Never
-  // decode/log/store this token. If the provider omits/rotates it, stop for review.
-  need(
-    typeof previous.assets?.jwt === "string" &&
-      previous.assets.jwt.length > 0 &&
-      typeof active.assets?.jwt === "string",
-    "ASSET_REFERENCE_UNAVAILABLE",
-  );
-  need(
-    fingerprint(previous.assets) === fingerprint(active.assets),
-    "ASSET_REFERENCE_MISMATCH",
-  );
-  return {
-    code_sha256: before.fingerprint,
-    module_count: before.count,
-    asset_reference_sha256: fingerprint(previous.assets),
-  };
+  return { code_sha256: before.fingerprint, module_count: before.count };
 }
 
 export function checkConfiguration(raw, receipt) {
   const normalized = safeSettings(raw);
   runtimeOverlay(raw); // Reject unsupported settings/binding schemas.
-  const expected = new Map([
-    ["FIREBASE_PROJECT_ID", (v) => v === "gather-58a79"],
-    ["FIREBASE_AUTH_DOMAIN", (v) => v === "gather-58a79.firebaseapp.com"],
-    [
-      "FIREBASE_API_KEY",
-      (v) => typeof v === "string" && /^AIza[A-Za-z0-9_-]{35}$/.test(v),
-    ],
-    ["FIREBASE_AUTH_ENABLED", (v) => v === "false"],
-    ["FIREBASE_ACTIVATION_APPROVED", (v) => v === "false"],
-  ]);
-  need(
-    new Set(raw.bindings.map((b) => b.name)).size === raw.bindings.length,
-    "DUPLICATE_BINDING",
-  );
-  for (const [name, check] of expected) {
-    const binding = raw.bindings.find((b) => b.name === name);
-    need(
-      binding?.type === "plain_text" && check(binding.text),
-      "FIREBASE_CONFIGURATION_NOT_APPROVED",
-    );
-  }
-  const restored = {
-    ...raw,
-    bindings: raw.bindings.filter((b) => !expected.has(b.name)),
-  };
+  const restored = protectedRuntime(raw);
   need(
     fingerprint(safeSettings(restored)) ===
       fingerprint(receipt.preserved.settings),
@@ -228,14 +152,18 @@ export async function diagnose({
     const deploymentBefore = activeDeployment(
       await get(`${SCRIPT}/deployments`),
     );
-    need(deploymentBefore.version_id === ACTIVE, "ACTIVE_VERSION_CHANGED");
     need(
       /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(
         deploymentBefore.id,
-      ),
+      ) &&
+        /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(
+          deploymentBefore.version_id,
+        ),
       "DEPLOYMENT_ID_INVALID",
     );
     safe.deployment_id = deploymentBefore.id;
+    safe.observed_active_version = deploymentBefore.version_id;
+    need(deploymentBefore.version_id === ACTIVE, "ACTIVE_VERSION_CHANGED");
     pass("single-active-version");
     const current = await get(`${SCRIPT}/versions/${ACTIVE}`);
     need(
@@ -249,7 +177,15 @@ export async function diagnose({
     const previousModules = await get(`${MODULES}${BASE}?include=modules`);
     const currentModules = await get(`${MODULES}${ACTIVE}?include=modules`);
     Object.assign(safe, compareApplication(previousModules, currentModules));
-    pass("actual-module-bytes-and-asset-reference");
+    pass("actual-module-bytes");
+    safe.historical_asset_manifest_sha256 = historicalAssets(receipt, manifest);
+    safe.historical_asset_count = Object.keys(manifest).length;
+    pass("historical-complete-manifest");
+    need(
+      assetRouting(previousModules) === assetRouting(currentModules),
+      "ASSET_ROUTING_CONFIGURATION_MISMATCH",
+    );
+    pass("worker-first-asset-routing");
     const settingsBefore = await get(`${SCRIPT}/settings`);
     Object.assign(safe, checkConfiguration(settingsBefore, receipt));
     pass("bindings-runtime-and-disabled-firebase");
@@ -295,42 +231,11 @@ export async function diagnose({
       cron_sha256: fingerprint(receipt.preserved.crons),
     });
     pass("routes-cron-service-and-previews");
-    const paths = Object.entries(manifest || {});
-    need(
-      paths.length > 0 &&
-        paths.length <= 500 &&
-        paths.every(
-          ([p, h]) =>
-            /^public\/[A-Za-z0-9_./-]+$/.test(p) &&
-            !p.includes("..") &&
-            /^[a-f0-9]{64}$/.test(h),
-        ),
-      "ASSET_MANIFEST_INVALID",
-    );
-    for (const origin of ORIGINS)
-      for (const [path, hash] of paths) {
-        let response;
-        try {
-          response = await fetcher(
-            origin + "/" + (path === "public/index.html" ? "" : path.slice(7)),
-            {
-              method: "GET",
-              redirect: "error",
-              signal: AbortSignal.timeout(20000),
-            },
-          );
-        } catch {
-          throw new DiagnosticError("PUBLIC_ASSET_READ_FAILED");
-        }
-        need(response.ok, "PUBLIC_ASSET_READ_FAILED");
-        const bytes = await response.arrayBuffer();
-        need(
-          bytes.byteLength <= 8000000 && sha(Buffer.from(bytes)) === hash,
-          "PUBLIC_ASSET_BYTES_MISMATCH",
-        );
-      }
+    await verifyAssetBytes(manifest, fetcher);
     safe.asset_manifest_sha256 = fingerprint(manifest);
-    safe.asset_count = paths.length;
+    safe.asset_count = Object.keys(manifest).length;
+    safe.asset_evidence =
+      "historical-verification-receipt-and-complete-live-byte-comparison";
     pass("all-reviewed-public-asset-bytes");
     need(
       fingerprint(activeDeployment(await get(`${SCRIPT}/deployments`))) ===
@@ -346,9 +251,19 @@ export async function diagnose({
     safe.status = "verified-diagnostic-only";
   } catch (error) {
     safe.blocker =
-      error instanceof DiagnosticError
+      error instanceof DiagnosticError || error instanceof ProvenanceError
         ? error.code
         : "UNSUPPORTED_OR_UNREADABLE_EVIDENCE";
+    if (
+      error instanceof ProvenanceError &&
+      FIREBASE_NAMES.includes(error.field) &&
+      ["missing-binding", "wrong-binding-type", "invalid-value"].includes(
+        error.reason,
+      )
+    ) {
+      safe.blocker_field = error.field;
+      safe.blocker_reason = error.reason;
+    }
     log(`STOP ${safe.blocker}`);
   }
   return safe;
@@ -372,9 +287,7 @@ export async function main() {
       }).trim();
     git("merge-base", "--is-ancestor", COMMIT, MAIN);
     git("merge-base", "--is-ancestor", MAIN, "HEAD");
-    const manifest = JSON.parse(
-      git("show", `${COMMIT}:.github/release/approved-application.json`),
-    ).appearance;
+    const manifest = approvedManifest(COMMIT);
     report = await diagnose({ receipt, manifest });
   } catch (error) {
     report = {

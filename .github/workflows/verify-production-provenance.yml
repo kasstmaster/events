@@ -48,7 +48,7 @@ jobs:
           repository: kasstmaster/events
           run-id: "43939613620"
           github-token: ${{ github.token }}
-      - name: Compare code bytes, asset reference, public assets and preserved inventory
+      - name: Compare module bytes, historical asset attestation, complete assets and inventory
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/production-provenance-diagnostic.mjs

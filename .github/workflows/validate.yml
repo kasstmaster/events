@@ -129,5 +129,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node scripts/automatic-events-release.mjs source
-      - run: node --test scripts/automatic-events-release.test.mjs scripts/manual-events-release.test.mjs scripts/cloudflare-metadata-check.test.mjs
+      - run: node --test scripts/automatic-events-release.test.mjs scripts/manual-events-release.test.mjs scripts/cloudflare-metadata-check.test.mjs scripts/application-provenance.test.mjs scripts/production-provenance-diagnostic.test.mjs
       - run: npx wrangler deploy --dry-run --name events --config wrangler.jsonc --outdir test-results/validation-dry-run

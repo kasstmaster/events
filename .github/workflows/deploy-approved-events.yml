@@ -27,7 +27,7 @@ jobs:
       - run: node scripts/automatic-events-release.mjs source
       - run: npm run format:check
       - run: npm test
-      - run: node --test scripts/automatic-events-release.test.mjs scripts/manual-events-release.test.mjs scripts/cloudflare-metadata-check.test.mjs
+      - run: node --test scripts/automatic-events-release.test.mjs scripts/manual-events-release.test.mjs scripts/cloudflare-metadata-check.test.mjs scripts/application-provenance.test.mjs scripts/production-provenance-diagnostic.test.mjs
       - run: npm ci --ignore-scripts --prefix integrations/anylist
       - run: node --test integrations/anylist/reader.test.js integrations/anylist/writer.test.js
       - run: npm run test:cloudflare
@@ -122,6 +122,15 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node scripts/automatic-events-release.mjs source
+      - name: Select evidence from the latest successful owner-merged release
+        id: evidence
+        env:
+          ACTIONS_GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/select-release-evidence.mjs
+      - name: Download selected trusted verification receipt
+        env:
+          ACTIONS_GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/select-release-evidence.mjs download
       - name: Verify latest owner merge and capture stable production checkpoint
         id: preflight
         env:
@@ -156,5 +165,5 @@ jobs:
         with:
           name: events-verification-${{ github.run_id }}-${{ github.run_attempt }}
           path: recovery/*.json
-          if-no-files-found: warn
-          retention-days: 29
+          if-no-files-found: error
+          retention-days: 90

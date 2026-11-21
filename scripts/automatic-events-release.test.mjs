@@ -25,6 +25,25 @@ import {
   NAMESPACE,
   INITIAL_VERSION,
 } from "./automatic-events-release.mjs";
+import {
+  moduleIdentity,
+  protectedRuntime,
+  fingerprint as proofFingerprint,
+} from "./application-provenance.mjs";
+import { safeSettings } from "./manual-events-release.mjs";
+const PREVIOUS = "a".repeat(40);
+const syntheticModules = (id) => ({
+  id,
+  main_module: "worker.js",
+  modules: [
+    {
+      name: "worker.js",
+      content_type: "application/javascript+module",
+      content_base64: Buffer.from("synthetic-worker").toString("base64"),
+    },
+  ],
+  assets: { config: { run_worker_first: true } },
+});
 const RELEASE = "b".repeat(40),
   VERSION = "12345678-1234-1234-1234-123456789abc";
 const hash = (x) => createHash("sha256").update(x).digest("hex");
@@ -246,6 +265,13 @@ const settings = () => ({
       text: "synthetic-private-value",
     },
     { name: "PRIVATE_SECRET", type: "secret_text" },
+    ...Object.entries({
+      FIREBASE_PROJECT_ID: "gather-58a79",
+      FIREBASE_AUTH_DOMAIN: "gather-58a79.firebaseapp.com",
+      FIREBASE_API_KEY: "AIza" + "x".repeat(35),
+      FIREBASE_AUTH_ENABLED: "false",
+      FIREBASE_ACTIVATION_APPROVED: "false",
+    }).map(([name, text]) => ({ name, type: "plain_text", text })),
   ],
 });
 async function fixture(fn) {
@@ -353,6 +379,18 @@ async function fixture(fn) {
           state.version === INITIAL_VERSION ? "previous-release" : RELEASE;
         if (state.drift) result.observability.enabled = false;
         if (state.wrongNamespace) result.bindings[1].namespace_id = "wrong";
+        if (state.firebaseKey)
+          result.bindings.find((b) => b.name === "FIREBASE_API_KEY").text =
+            state.firebaseKey;
+        if (state.firebaseEnabled)
+          result.bindings.find((b) => b.name === "FIREBASE_AUTH_ENABLED").text =
+            "true";
+        if (state.extraConfig)
+          result.bindings.push({
+            name: "UNKNOWN_FLAG",
+            type: "plain_text",
+            text: "new",
+          });
       } else if (u.pathname.endsWith("/deployments"))
         result = {
           deployments: [
@@ -363,12 +401,19 @@ async function fixture(fn) {
             },
           ],
         };
-      else if (u.pathname.includes("/versions/"))
+      else if (u.pathname.includes("/workers/workers/events/versions/")) {
+        result = syntheticModules(u.pathname.split("/").at(-1));
+        if (state.modifiedModule)
+          result.modules[0].content_base64 =
+            Buffer.from("altered code").toString("base64");
+        if (state.workerFirstFalse)
+          result.assets.config.run_worker_first = false;
+      } else if (u.pathname.includes("/versions/"))
         result = {
           resources: { script_runtime: { migration_tag: "events-v1" } },
           annotations:
             state.version === INITIAL_VERSION
-              ? {}
+              ? { "workers/message": PREVIOUS }
               : { "workers/message": RELEASE },
         };
       else if (u.pathname.endsWith("/schedules"))
@@ -400,11 +445,49 @@ async function fixture(fn) {
         enabled: state.openSetup,
       });
     if (state.healthFailures-- > 0) return new Response("stale");
+    if (state.alteredAsset) return new Response("altered asset");
     return new Response(
       u.pathname === "/" ? "approved-index" : "approved-style",
     );
   };
+  const priorRaw = settings();
+  priorRaw.placement = {};
+  priorRaw.annotations["workers/tag"] = state.versionTag;
+  const priorApplication = {
+    schema: 1,
+    commit: PREVIOUS,
+    code_sha256: moduleIdentity(
+      syntheticModules(INITIAL_VERSION),
+      INITIAL_VERSION,
+    ).fingerprint,
+    asset_manifest_sha256: proofFingerprint(p.appearance),
+    asset_count: Object.keys(p.appearance).length,
+    protected_runtime_sha256: runtimeSettingsFingerprint(
+      protectedRuntime(priorRaw),
+    ),
+    protected_settings_sha256: proofFingerprint(
+      safeSettings(protectedRuntime(priorRaw)),
+    ),
+  };
+  const anchor = {
+    release: PREVIOUS,
+    version_id: INITIAL_VERSION,
+    verified_at: new Date().toISOString(),
+    health:
+      "All reviewed public assets match on canonical and representative household origin; setup closed.",
+    application: priorApplication,
+    preserved: {
+      settings: safeSettings(priorRaw),
+      runtime_digest: runtimeSettingsFingerprint(priorRaw),
+      routes_digest: proofFingerprint([]),
+      domains_digest: proofFingerprint([]),
+      crons: ["*/5 * * * *"],
+      environment: "production",
+    },
+  };
   const options = {
+    evidence: { receipt: anchor },
+    manifestLoader: () => p.appearance,
     env,
     root,
     policy: p,
@@ -457,6 +540,31 @@ test("checkpoint precedes a single exact publish; verification checks all assets
     );
     assert.equal(v.release, RELEASE);
     assert.equal(v.version_id, VERSION);
+    assert.equal(v.application.commit, RELEASE);
+    assert.equal(v.application.asset_count, 2);
+    assert.match(v.application.code_sha256, /^[a-f0-9]{64}$/);
+  }));
+test("permanent provenance permits public configuration rotation but blocks activation, unknown settings, code and asset drift", () =>
+  fixture(async ({ state, options, preflight }) => {
+    state.firebaseKey = "AIza" + "z".repeat(35);
+    await preflight();
+    for (const [field, pattern] of [
+      ["firebaseEnabled", /FIREBASE_CONFIGURATION/],
+      ["extraConfig", /Unapproved runtime/],
+      ["modifiedModule", /CODE_RECEIPT_MISMATCH/],
+      ["workerFirstFalse", /ASSET_ROUTING_UNPROVEN/],
+      ["alteredAsset", /ASSET_BYTES_MISMATCH/],
+    ]) {
+      state[field] = true;
+      await assert.rejects(run("preflight", options), pattern);
+      state[field] = false;
+    }
+    delete options.evidence.receipt.health;
+    await assert.rejects(
+      run("preflight", options),
+      /HISTORICAL_ASSET_ATTESTATION_MISSING/,
+    );
+    assert.equal(state.publishes, 0);
   }));
 test("branch protection, stale main and merge identity fail before publishing", () =>
   fixture(async ({ state, options }) => {
@@ -497,7 +605,10 @@ test("failed artifact upload, altered checkpoint and prepublish runtime drift ne
     await assert.rejects(run("publish", options), /changed after upload/);
     await preflight();
     state.drift = true;
-    await assert.rejects(run("publish", options), /changed after checkpoint/);
+    await assert.rejects(
+      run("publish", options),
+      /changed after checkpoint|Unapproved runtime/,
+    );
     assert.equal(state.publishes, 0);
   }));
 test("namespace mismatch, open setup, enabled previews and raw provider failures stop safely", () =>
@@ -1027,7 +1138,7 @@ test("artifact visibility waits cannot bypass changed production or a newer main
       };
       await assert.rejects(
         run("publish", options),
-        /changed after checkpoint|latest main/,
+        /changed after checkpoint|latest main|Unapproved runtime/,
       );
       assert.equal(state.publishes, 0);
     });
