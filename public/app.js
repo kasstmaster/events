@@ -303,6 +303,23 @@ async function load({ background = false } = {}) {
       render();
       return;
     }
+    const publicReference = location.pathname.match(
+      /^\/event\/([A-Za-z0-9_-]{43})$/,
+    )?.[1];
+    if (publicReference) {
+      const data = await api(`/api/public/events/${publicReference}`);
+      if (generation !== loadGeneration || (background && isEditing())) return;
+      state.visitor = { reference: publicReference };
+      state.platformUI = data.ui;
+      Object.assign(state, {
+        data,
+        session: { role: "visitor" },
+        publicHousehold: null,
+        event: data.events[0].id,
+      });
+      renderRefresh(background);
+      return;
+    }
     const passwordlessConfig = await api("/api/passwordless/config");
     await passwordless.initialize(passwordlessConfig);
     const [context, platform, session] = await Promise.all([
@@ -527,6 +544,8 @@ function toolbar(event) {
       ...(event ? [{ action: "print", label: "Print", icon: "print" }] : []),
     ]);
   const role = state.session.role;
+  if (role === "visitor")
+    return bottom([{ action: "print", label: "Print", icon: "print" }]);
   if (
     role === "guest" &&
     state.data?.personal?.account.needsUsername &&
@@ -911,6 +930,8 @@ function render(target = $("#app"), example = false) {
   else if (state.view === "firebase-enrollment") content = passwordless.page();
   else if (role === "admin-pending" || state.view === "passwordless-security")
     content = passwordless.securityPage();
+  else if (role === "visitor" && state.view === "recipient-access")
+    content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C("Household ID")}</h1><form data-form="recipient-access">${field(H("Household ID"), "householdID", "", "text", 'required maxlength="64" autocomplete="off"')}<p class="form-error" role="alert"></p><div class="row"><button>${C("Continue")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
   else if (role && state.view === "rsvp-page")
     content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C(state.manualRSVP?.hostFamily ? "RSVP for your family" : state.manualRSVP ? "Record guest RSVP" : "Will you join us?")}</h1><form data-form="rsvp">${state.rsvpMarkup}<p class="form-error" role="alert"></p><div class="row"><button>${C("RSVP")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
   else if (state.view === "rsvp-cards") content = rsvpCards.page();
@@ -2133,6 +2154,16 @@ async function submit(form) {
     await saved("Household notes saved.");
     return;
   }
+  if (kind === "recipient-access") {
+    const result = await api(
+      `/api/public/events/${state.visitor.reference}/access`,
+      { method: "POST", data: { householdID: value.householdID } },
+    );
+    state.visitor.grant = result.grant;
+    state.data.events = [result.event];
+    rsvp(result.event);
+    return;
+  }
   if (kind === "rsvp") {
     const e = state.manualRSVP || selectedEvent(),
       returnEvent = state.event,
@@ -2143,14 +2174,19 @@ async function submit(form) {
       if (key.startsWith("claim:")) claims[key.slice(6)] = Number(val);
     }
     await api(
-      state.manualRSVP
-        ? e.hostFamily
-          ? `/api/host/events/${e.id}/family-rsvp`
-          : `/api/host/events/${e.id}/rsvp/${state.manualRSVPGuest}`
-        : `/api/${state.session.role === "host" ? "personal" : "guest"}/events/${e.id}/rsvp`,
+      state.session.role === "visitor"
+        ? `/api/public/events/${state.visitor.reference}/rsvp`
+        : state.manualRSVP
+          ? e.hostFamily
+            ? `/api/host/events/${e.id}/family-rsvp`
+            : `/api/host/events/${e.id}/rsvp/${state.manualRSVPGuest}`
+          : `/api/${state.session.role === "host" ? "personal" : "guest"}/events/${e.id}/rsvp`,
       {
         method: "PUT",
         data: {
+          ...(state.session.role === "visitor"
+            ? { grant: state.visitor.grant }
+            : {}),
           version: state.editingResponse.version,
           guestEntry: e.guestEntry,
           partyVersions: e.partyVersions,
@@ -3209,6 +3245,12 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "rsvp") {
+      if (state.session.role === "visitor") {
+        state.view = "recipient-access";
+        render();
+        window.scrollTo(0, 0);
+        return;
+      }
       if (
         state.session.role === "host" &&
         !selectedEvent()?.invitingHousehold

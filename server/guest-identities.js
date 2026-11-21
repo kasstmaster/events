@@ -1,3 +1,5 @@
+import { isolatedAddressBook } from "./recipient-isolation.js";
+import { recipientHouseholdID } from "./public-invitations.js";
 import { registeredMethod, recipientBlocked } from "./personal-accounts.js";
 import { addressEvent } from "./address-rsvp.js";
 import { accessFor, accessCandidates } from "./guest-access.js";
@@ -58,6 +60,12 @@ export function identityFor(store, guest, household) {
   return store.get("guest-identity", link.identity, "platform");
 }
 export function guestContact(store, guest, household, previous) {
+  if (isolatedAddressBook(store, household))
+    return {
+      ...guest,
+      inviteCode: recipientHouseholdID(store, household, guest.id).code,
+      linked: false,
+    };
   identityFor(store, guest, household);
   const credential = accessFor(
     store,
@@ -84,6 +92,7 @@ export function guestRelations(store, identity) {
     )
     .filter(
       (link) =>
+        !isolatedAddressBook(store, link.household) &&
         !store.one(
           "SELECT household FROM household_deletions WHERE household=?",
           link.household,
@@ -102,6 +111,7 @@ export function authenticateGuest(store, input) {
     suffix = compareName(text(input.suffix || "", 30));
   const candidates = accessCandidates(store, code).filter(
     (link) =>
+      !isolatedAddressBook(store, link.household) &&
       !link.record.parent &&
       compareName(link.record.first) === first &&
       compareName(link.record.last) === last,
@@ -246,6 +256,7 @@ function distance(a, b, limit = 2) {
   return previous[b.length];
 }
 export function matchingGuests(store, household, input) {
+  if (isolatedAddressBook(store, household)) return [];
   const first = compareName(text(input.first, 80, true)),
     last = compareName(text(input.last, 80, true)),
     suffix = compareName(input.suffix);
@@ -348,6 +359,8 @@ export function matchingGuests(store, household, input) {
   return results;
 }
 export function requestGuestLink(store, household, guest, ticket) {
+  if (isolatedAddressBook(store, household))
+    fail(403, "This Address Book is independent.");
   const match = store.get("guest-match", ticket, household);
   if (
     !match ||

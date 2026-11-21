@@ -1,3 +1,9 @@
+import {
+  groupFor,
+  publicInvitationsEnabled,
+  publicEventReference,
+  recipientHouseholdID,
+} from "./public-invitations.js";
 import { resolveRSVPReference } from "./invitation-routing.js";
 export { resolveRSVPReference } from "./invitation-routing.js";
 import { Buffer } from "node:buffer";
@@ -54,7 +60,10 @@ export async function rsvpCardsAPI(ctx) {
     ),
     resolve = path.match(/^\/api\/invitations\/([A-Za-z0-9_-]{43})\/resolve$/);
   if (!match && !resolve) return false;
-  if (!universalEnabled(env)) fail(404, "Page not found.");
+  const publicMode = publicInvitationsEnabled(env);
+  if (!publicMode && !universalEnabled(env)) fail(404, "Page not found.");
+  if (resolve && publicMode)
+    fail(404, "Use the event link on your invitation.");
   if (resolve && method === "GET") {
     store.limit("rsvp-reference:" + req.socket.remoteAddress, 100, 60000);
     json(res, resolveRSVPReference(store, resolve[1], session, householdHosts));
@@ -89,10 +98,24 @@ export async function rsvpCardsAPI(ctx) {
   if (input.card && (!source || source.event !== event.id))
     fail(400, "Choose this event's invitation card.");
   const groups = new Map();
-  for (const id of input.guestIds) {
+  const selectedGroups = publicMode
+    ? new Set(
+        input.guestIds.map((id) => groupFor(store, session.household, id).key),
+      )
+    : null;
+  const recipientIDs = publicMode
+    ? event.invited.filter((id) =>
+        selectedGroups.has(groupFor(store, session.household, id).key),
+      )
+    : input.guestIds;
+  if (publicMode && recipientIDs.length > 200)
+    fail(400, "Choose a smaller household batch.");
+  for (const id of recipientIDs) {
     const guest = store.get("guest", id, session.household);
     if (!guest) fail(400, "Recipient unavailable.");
-    const key = guest.address || guest.parent || guest.id;
+    const key = publicMode
+      ? groupFor(store, session.household, guest.id).key
+      : guest.address || guest.parent || guest.id;
     if (!groups.has(key))
       groups.set(key, {
         id: guest.parent || guest.id,
@@ -123,13 +146,38 @@ export async function rsvpCardsAPI(ctx) {
               .join(" "),
           )
           .join(" & ");
-      const ref = referenceFor(store, session.household, event, group);
-      return { reference: ref, name, guestIds: group.guests };
+      const ref = publicMode
+        ? publicEventReference(store, session.household, event.id)
+        : referenceFor(store, session.household, event, group);
+      const primary = group.people.find((p) => !p.parent) || group.people[0];
+      return {
+        reference: ref,
+        name,
+        guestIds: group.guests,
+        ...(publicMode
+          ? {
+              publicInvitation: true,
+              householdID: recipientHouseholdID(
+                store,
+                session.household,
+                primary.id,
+              ).code,
+              invitedNames: group.people.map((p) =>
+                [p.first, ...(p.parent ? [] : [p.last]), p.suffix]
+                  .filter(Boolean)
+                  .join(" "),
+              ),
+            }
+          : {}),
+      };
     }),
   );
   const cards = [];
   for (const recipient of entries) {
-    const url = GATHER_ORIGIN + "/invite/" + recipient.reference;
+    const url =
+      GATHER_ORIGIN +
+      (publicMode ? "/event/" : "/invite/") +
+      recipient.reference;
     const qr = await QRCode.toDataURL(url, {
       errorCorrectionLevel: "M",
       margin: 4,
@@ -156,7 +204,7 @@ export async function rsvpCardsAPI(ctx) {
           y: 20,
           width: 550,
           height: 70,
-          fontSize: 28,
+          fontSize: publicMode ? 16 : 28,
           font:
             source?.elements.find((e) => e.field !== "qr")?.font || "Georgia",
           align: "center",
@@ -173,12 +221,14 @@ export async function rsvpCardsAPI(ctx) {
         },
         {
           field: "text",
-          text: "Scan to RSVP",
+          text: publicMode
+            ? "Household ID: " + recipient.householdID
+            : "Scan to RSVP",
           x: 300,
           y: 330,
           width: 550,
           height: 60,
-          fontSize: 27,
+          fontSize: publicMode ? 16 : 27,
           font:
             source?.elements.find((e) => e.field !== "qr")?.font || "Georgia",
           align: "center",
@@ -189,7 +239,9 @@ export async function rsvpCardsAPI(ctx) {
     const context = {
       household: { name: house.name },
       event,
-      recipient: { name: recipient.name },
+      recipient: {
+        name: publicMode ? recipient.invitedNames.join(" · ") : recipient.name,
+      },
     };
     cards.push({
       ...recipient,

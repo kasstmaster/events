@@ -841,11 +841,12 @@ export class Store {
       "admin",
     );
   }
-  async register(input, initialize = null) {
+  async register(input, initialize = null, authorize = null) {
     const address = email(input.email),
       name = text(input.name, 100, true),
       password = await hashPassword(input.password);
     return this.transaction(() => {
+      authorize?.(address);
       if (
         !this.one("SELECT email FROM approvals WHERE email=?", address) ||
         this.one("SELECT id FROM users WHERE email=?", address)

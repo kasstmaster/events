@@ -119,7 +119,11 @@ export function rsvpCardsUI({ state, api, button, escape, render, field }) {
                 (item) =>
                   '<section class="pair">' +
                   (action === "rsvp-cards-print" && item.invitation
-                    ? '<div class="invitation">' + item.invitation + "</div>"
+                    ? '<div class="invitation">' +
+                      item.invitation +
+                      (item.publicInvitation
+                        ? '</div></section><section class="pair">'
+                        : "</div>")
                     : "") +
                   '<div class="enclosure">' +
                   item.svg +

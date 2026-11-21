@@ -1,3 +1,9 @@
+import { isolatedAddressBook } from "./recipient-isolation.js";
+import {
+  hostSignupAPI,
+  hostSignupEnabled,
+  persistentHostSession,
+} from "./host-signup.js";
 import { firebaseRoutingAPI } from "./firebase-routing.js";
 import {
   firebaseAPI,
@@ -16,6 +22,7 @@ import {
   centralMemberForActor,
 } from "./central-membership.js";
 import { handoffAPI } from "./auth-handoff.js";
+import { publicInvitationsAPI } from "./public-invitations.js";
 import { rsvpCardsAPI } from "./rsvp-cards.js";
 import { gatherAppAPI } from "./gather-app.js";
 import {
@@ -432,6 +439,7 @@ export function createHandler({
   householdHosts = new Set(),
   canonicalOrigin = origin,
   firebaseFetcher,
+  hostVerificationSender,
 } = {}) {
   const firebaseSettings = firebaseConfig(env);
   if (new URL(origin).origin !== origin)
@@ -494,7 +502,7 @@ export function createHandler({
         fail(404, "This household address is unavailable.");
       if (method === "GET" && !path.startsWith("/api/")) {
         const entry =
-          (/^\/(?:invite\/[A-Za-z0-9_-]{43}|[a-z0-9][a-z0-9-]{1,61}[a-z0-9])$/.test(
+          (/^\/(?:(?:invite|event)\/[A-Za-z0-9_-]{43}|[a-z0-9][a-z0-9-]{1,61}[a-z0-9])$/.test(
             path,
           )
             ? files.get("/")
@@ -534,6 +542,22 @@ export function createHandler({
       }
       if (method !== "GET" && req.headers.origin !== origin)
         fail(403, "Please use the application’s own page to submit changes.");
+      // Public invitation capabilities deliberately ignore any host/legacy guest cookie.
+      if (
+        path.startsWith("/api/public/events/") &&
+        (await publicInvitationsAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          env,
+          selected,
+          body,
+          json,
+        }))
+      )
+        return;
       if (path === "/api/integrations/anylist/import" && method === "POST") {
         if (
           householdHostname ||
@@ -650,6 +674,17 @@ export function createHandler({
             403,
             "Use a temporary sign-in link or administrator-assisted recovery.",
           );
+        if (
+          hostSignupEnabled(env) &&
+          account.role === "host" &&
+          !account.passwordless &&
+          !platformAdministrator(store, account) &&
+          store.one(
+            "SELECT id FROM users WHERE id=? AND role='host'",
+            account.user,
+          )
+        )
+          return persistentHostSession(store, account, origin);
         return store.newSession(account, origin);
       };
       const requireRole = (role) => {
@@ -727,6 +762,40 @@ export function createHandler({
           selected,
           json,
           readAsset,
+        })
+      )
+        return;
+      if (
+        await publicInvitationsAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          env,
+          session,
+          selected,
+          requireRole,
+          body,
+          json,
+        })
+      )
+        return;
+      if (
+        await hostSignupAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          env,
+          session,
+          selected,
+          body,
+          json,
+          origin,
+          cookie,
+          hostVerificationSender,
         })
       )
         return;
@@ -1204,6 +1273,11 @@ export function createHandler({
         return;
       }
       if (path === "/api/register" && method === "POST") {
+        if (hostSignupEnabled(env))
+          fail(
+            403,
+            "Use your administrator-issued signup invitation and verify email ownership.",
+          );
         if (selected) fail(403, "Create host accounts on the main platform.");
         const input = await body(req);
         authLimit("register", String(input.email).toLowerCase());
@@ -1461,7 +1535,7 @@ export function createHandler({
                 ? accountProjection(store, session)
                 : null,
             receivedEvents:
-              session.role === "host"
+              session.role === "host" && !isolatedAddressBook(store, household)
                 ? invitationsForIdentity(
                     store,
                     privateIdentity(store, session),
@@ -1691,7 +1765,8 @@ export function createHandler({
                 key ? version(req) : undefined,
               );
               if (kind === "guest") {
-                identityFor(store, saved, household);
+                if (!isolatedAddressBook(store, household))
+                  identityFor(store, saved, household);
                 if (input.matchTicket)
                   requestGuestLink(store, household, saved, input.matchTicket);
                 const contact = guestContact(store, saved, household, existing);

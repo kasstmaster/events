@@ -1,3 +1,45 @@
+## Current owner instruction: preserve design; stage host-owned invitations
+
+The consolidated owner ticket supplied on November 20, 2026 supersedes the older
+14-ticket/Firebase/Twilio/central guest-account plan below. Its title does NOT
+permit a redesign. Preserve all approved layouts, typography, colors, spacing,
+buttons, toolbars, themes and responsive behavior. Reuse the existing event,
+full-page RSVP and card renderers. Do not modernize unrelated UI or global CSS.
+
+The target model is host-only Google or verified email/password authentication,
+admin-issued one-time expiring registration invitations, independent host Address
+Books, and public event links with strong host-scoped recipient Household IDs for
+RSVP. Guests must eventually have no accounts, sessions, inbox, recovery or PWA;
+private member content needs separate revocable per-person grants. Historical
+records must survive. Old central matching/guest-auth instructions below describe
+legacy compatibility, not permission to expand or reactivate that model.
+
+The first implementation is deliberately staged, NOT a completed cutover:
+`PUBLIC_INVITATIONS_ENABLED` and `HOST_SIGNUP_INVITATIONS_ENABLED` are absent/off
+by default. Do not enable them or prepare production Address Books as part of a
+source task. Google onboarding, verification-mail production transport/UI,
+complete guest-auth retirement and wedding private-page migration remain pending.
+Do not claim the old authorization paths have been retired yet. See
+`docs/host-owned-invitations.md` for implemented boundaries and remaining work.
+
+Address Book preparation uses an explicit fingerprinted additive checkpoint and
+policy marker, never deletion/unlinking of historical records. No startup backfill,
+new Worker/namespace, destructive migration or production data operation is allowed.
+Do not expose this low-level cutover helper as an unrestricted administrative API.
+
+Run existing browser/appearance regressions and the new anonymous RSVP tests.
+`test/approved-design-mobile.js` compares synthetic Home/Event/Address Book pixels
+against approved main assets at phone and desktop widths; its historical commit
+is a TEST baseline, never an application deployment pin. Keep CI history available
+for this comparison. Update only the asset manifest when functional JavaScript
+changes; do not weaken deployment provenance or approval safeguards.
+
+Continue the permanent handoff: one feature branch, validate, commit AND push;
+owner creates/reviews/merges the PR. Do not create/merge PRs, deploy, alter live
+configuration/credentials/DNS/data, activate authentication or send live messages.
+Legacy Firebase tests remain offline compatibility regressions during this staged
+transition and do not authorize Firebase activation or real SMS.
+
 # Permanent development rules
 
 These instructions apply to every change in this repository.

@@ -36,6 +36,8 @@ jobs:
         group: [navigation, editors, accounts]
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -103,6 +105,12 @@ jobs:
       - name: Isolated Firebase harness (offline transport only)
         if: matrix.group == 'accounts'
         run: node --test scripts/firebase-test/browser.test.mjs
+      - name: Public invitation phone, tablet and desktop regression
+        if: matrix.group == 'accounts'
+        run: node test/public-invitations-mobile.js
+      - name: Preserve approved Home, Event and Address Book pixels
+        if: matrix.group == 'accounts'
+        run: node test/approved-design-mobile.js
       - name: Browser failure screenshots
         if: ${{ failure() }}
         uses: actions/upload-artifact@v6

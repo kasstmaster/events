@@ -1,3 +1,4 @@
+import { isolatedAddressBook } from "./recipient-isolation.js";
 import { revokeFirebaseMappings } from "./firebase-auth.js";
 import {
   centralMemberForActor,
@@ -380,6 +381,7 @@ export function personalContacts(store, identity) {
   });
 }
 function approved(profile, household, store) {
+  if (isolatedAddressBook(store, household)) return false;
   const keys = recipientKeys(store, household);
   return (
     !keys.some((key) => profile.blocked.includes(key)) &&
@@ -522,6 +524,7 @@ function guestRelationsIncludingChildren(store, identity) {
     )
     .filter(
       (r) =>
+        !isolatedAddressBook(store, r.household) &&
         !store.one(
           "SELECT household FROM household_deletions WHERE household=?",
           r.household,
@@ -538,6 +541,7 @@ function guestRelationsIncludingChildren(store, identity) {
     );
 }
 export function autoAssociateContact(store, guest, household) {
+  if (isolatedAddressBook(store, household)) return;
   if (store.get("managed-contact", guest.id, household)) return;
   const address =
     guest.address && store.get("address", guest.address, household);
