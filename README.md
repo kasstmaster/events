@@ -292,6 +292,9 @@ official testing verifier. A separate genuine reCAPTCHA check cannot send messag
 Production flags/data stay unchanged. Run `npm run test:firebase:isolated` for the
 fully offline regression; the real-provider runner is manual opt-in and never runs
 in CI. It cannot claim verification of the normal real-captcha-to-SMS delivery chain.
+Its separate `--scenario host` run checks a synthetic owner's own-household host
+access and guest-only access at an inviter, including real profile restart and
+revocation. Both scenarios use new temporary databases and the same shared auth code.
 
 The [staged production provenance diagnostic](docs/production-provenance-diagnostic.md)
 compares exact historical/current Worker module bytes, complete historical asset

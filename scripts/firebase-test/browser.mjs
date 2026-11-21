@@ -158,6 +158,26 @@ export async function showEvent(page) {
   if (await open.count()) await open.first().click();
   await page.getByRole("button", { name: "RSVP", exact: true }).waitFor();
 }
+export async function openHousehold(page, record, role, invitation = false) {
+  await page.goto(
+    record.origin + (invitation ? "/invite/" + record.reference : ""),
+  );
+  // A central account may briefly render while an authorized handoff completes.
+  // Verify the destination origin AND its server-side role before testing controls.
+  await page.waitForFunction(
+    async ({ origin, role }) => {
+      if (location.origin !== origin) return false;
+      try {
+        return (await (await fetch("/api/session")).json()).role === role;
+      } catch {
+        return false;
+      }
+    },
+    { origin: record.origin, role },
+    { timeout: 30000 },
+  );
+  await showEvent(page);
+}
 export async function checks(page, fixture) {
   const [primary, secondary] = fixture.records;
   const api = async (path, { method = "GET", data } = {}) =>
@@ -173,47 +193,89 @@ export async function checks(page, fixture) {
       { path, method, data },
     );
   const session = await api("/api/session");
-  requireTest(session.body.role === "guest", "GUEST_MATCH_FAILED");
-  requireTest((await api("/api/host")).status === 403, "HOST_PERMISSION_LEAK");
+  const isHost = fixture.scenario === "host";
+  requireTest(
+    session.body.role === (isHost ? "host" : "guest"),
+    "ACCOUNT_ROLE_MISMATCH",
+  );
+  requireTest(
+    (await api("/api/host")).status === (isHost ? 200 : 403),
+    "HOST_PERMISSION_LEAK",
+  );
+  requireTest(
+    (await api("/api/admin")).status === 403,
+    "ADMIN_PERMISSION_LEAK",
+  );
   const privateProfile = await api("/api/personal");
   requireTest(
-    privateProfile.body.person.first === "Firebase" &&
-      privateProfile.body.person.last === "Test Guest",
+    privateProfile.body.person.first === fixture.actor.first &&
+      privateProfile.body.person.last === fixture.actor.last,
     "GUEST_MATCH_FAILED",
   );
   requireTest(
     fixture.store
-      .list("person-account", "platform")
-      .filter((p) => p.firebaseEnrolled).length === 1 &&
-      fixture.store.get("person-account", fixture.identity, "platform")
-        ?.firebaseEnrolled,
+      .list("firebase-account", "platform")
+      .filter((m) => !m.revoked && m.identity === fixture.identity).length ===
+      1 &&
+      (isHost ||
+        (fixture.store
+          .list("person-account", "platform")
+          .filter((p) => p.firebaseEnrolled).length === 1 &&
+          fixture.store.get("person-account", fixture.identity, "platform")
+            ?.firebaseEnrolled)),
     "ACCOUNT_COUNT_INVALID",
   );
   for (const record of [primary, secondary]) {
-    await page.goto(record.origin);
-    await page.waitForURL((url) => url.origin === record.origin, {
-      timeout: 30000,
-    });
-    await showEvent(page);
-    requireTest(
-      (await api("/api/session")).body.role === "guest",
-      "HOUSEHOLD_HANDOFF_FAILED",
+    await openHousehold(
+      page,
+      record,
+      isHost && record === primary ? "host" : "guest",
+      isHost && record === secondary,
     );
     requireTest(
-      (await api("/api/host")).status === 403,
+      (await api("/api/session")).body.role ===
+        (isHost && record === primary ? "host" : "guest"),
+      record === primary
+        ? "PRIMARY_HANDOFF_FAILED"
+        : "SECONDARY_HANDOFF_FAILED",
+    );
+    requireTest(
+      (await api("/api/host")).status ===
+        (isHost && record === primary ? 200 : 403),
       "HOST_PERMISSION_LEAK",
     );
   }
-  await page.goto(primary.origin);
-  await showEvent(page);
-  const rsvp = await api("/api/guest/events/" + primary.event.id + "/rsvp", {
+  const recipient = isHost ? secondary : primary;
+  await openHousehold(page, recipient, "guest", isHost);
+  requireTest(
+    (
+      await api("/api/host/events", {
+        method: "POST",
+        data: { title: "Unauthorized" },
+      })
+    ).status === 403,
+    "HOST_WRITE_PERMISSION_LEAK",
+  );
+  const rsvp = await api("/api/guest/events/" + recipient.event.id + "/rsvp", {
     method: "PUT",
-    data: { version: 0, attendance: { [primary.guest.id]: "yes" }, claims: {} },
+    data: {
+      version: 0,
+      attendance: { [recipient.guest.id]: "yes" },
+      claims: {},
+    },
   });
   requireTest(rsvp.status === 200, "ISOLATED_RSVP_FAILED");
   requireTest(
-    fixture.store.list("response", secondary.host.household).length === 0,
+    fixture.store.list(
+      "response",
+      (isHost ? primary : secondary).host.household,
+    ).length === 0,
     "RSVP_CONTEXT_LEAK",
+  );
+  await openHousehold(page, primary, isHost ? "host" : "guest");
+  requireTest(
+    (await api("/api/session")).body.role === (isHost ? "host" : "guest"),
+    "RETURN_ROLE_MISMATCH",
   );
   const cookies = await page.context().cookies();
   const primaryCookie = cookies.find(

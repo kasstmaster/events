@@ -324,6 +324,13 @@ harness tests mock Google only; manual real SDK/reCAPTCHA/code checks require ow
 interaction. See docs/isolated-firebase-test.md. Commit and push for owner review;
 never create/merge PRs, deploy or activate production.
 
+The harness defaults to a new invited guest. Its explicit host scenario uses a new
+temporary database with an approved synthetic owner and independently seeded verified
+central phone association; never infer host authority from an entered number or
+upgrade the guest fixture. Wait for the destination origin and server role before
+checking cross-household permissions. Both scenarios retain fictional-only transport,
+private config/code entry, profile restart, revocation and cleanup protections.
+
 ## Application identity across configuration versions
 
 Use `scripts/application-provenance.mjs` and the trusted-release evidence selector

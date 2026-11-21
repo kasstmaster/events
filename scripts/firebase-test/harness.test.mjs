@@ -12,7 +12,7 @@ import {
   sdkShim,
 } from "./policy.mjs";
 import { isolatedFixture } from "./fixture.mjs";
-import { cleanupStale } from "./run.mjs";
+import { cleanupStale, parseArguments } from "./run.mjs";
 import { PREFIX } from "./fixture.mjs";
 import { spawnSync } from "node:child_process";
 const config = () =>
@@ -235,6 +235,56 @@ test("manual real-provider runner is opt-in and prints no private configuration 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /USAGE_REAL_FICTIONAL_CONFIG_REQUIRED/);
   assert.equal(result.stdout, "");
+});
+test("scenario selection is explicit, defaults to guest, and cannot select a production runtime or accept a code", () => {
+  const args = ["--real-fictional", "--config", "/private/config.json"];
+  assert.deepEqual(parseArguments(args), {
+    configPath: args[2],
+    scenario: "guest",
+  });
+  assert.equal(
+    parseArguments([...args, "--scenario", "host"]).scenario,
+    "host",
+  );
+  for (const extra of [
+    ["--scenario", "production"],
+    ["--code", "123456"],
+    ["--scenario", "host", "--code", "123456"],
+  ])
+    assert.throws(() => parseArguments([...args, ...extra]));
+});
+test("host scenario seeds only an isolated approved owner and never upgrades the guest scenario", async () => {
+  await assert.rejects(
+    isolatedFixture(config(), { scenario: "production" }),
+    /SCENARIO_INVALID/,
+  );
+  for (const scenario of ["guest", "host"]) {
+    const f = await isolatedFixture(config(), { scenario });
+    try {
+      assert.equal(
+        f.actor.last,
+        scenario === "host" ? "Test Host" : "Test Guest",
+      );
+      const contact = f.store.get("guest-auth-contact", f.identity, "platform");
+      assert.equal(!!contact?.verified, scenario === "host");
+      assert.equal(
+        f.entry,
+        scenario === "host" ? f.records[0].origin : f.invitation,
+      );
+      for (const record of f.records)
+        assert.equal(
+          f.store.one(
+            "SELECT identity FROM guest_identity_links WHERE household=? AND guest=?",
+            record.host.household,
+            record.guest.id,
+          ).identity,
+          f.identity,
+        );
+    } finally {
+      await f.close();
+    }
+    await assert.rejects(access(f.directory));
+  }
 });
 
 test("stale cleanup removes only marked owned dead-process directories", async (t) => {

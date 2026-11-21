@@ -11,7 +11,7 @@ import {
   CENTRAL,
 } from "./policy.mjs";
 import { isolatedFixture, PREFIX } from "./fixture.mjs";
-import { attachBrowser, checks, showEvent } from "./browser.mjs";
+import { attachBrowser, checks, showEvent, openHousehold } from "./browser.mjs";
 export async function cleanupStale() {
   let removed = 0;
   for (const name of await readdir(tmpdir())) {
@@ -48,19 +48,29 @@ export async function cleanupStale() {
   }
   return removed;
 }
+export function parseArguments(args) {
+  requireTest(
+    (args.length === 3 || args.length === 5) &&
+      args[0] === "--real-fictional" &&
+      args[1] === "--config",
+    "USAGE_REAL_FICTIONAL_CONFIG_REQUIRED",
+  );
+  const scenario = args.length === 5 ? args[4] : "guest";
+  requireTest(
+    (args.length === 3 || args[3] === "--scenario") &&
+      ["guest", "host"].includes(scenario),
+    "SCENARIO_INVALID",
+  );
+  return { configPath: args[2], scenario };
+}
 export async function runInteractive(args = process.argv.slice(2)) {
   if (args.length === 1 && args[0] === "--cleanup-stale") {
     console.log("Removed owned stale test directories:", await cleanupStale());
     return;
   }
-  requireTest(
-    args.length === 3 &&
-      args[0] === "--real-fictional" &&
-      args[1] === "--config",
-    "USAGE_REAL_FICTIONAL_CONFIG_REQUIRED",
-  );
+  const { configPath, scenario } = parseArguments(args);
   const repository = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-  const config = await readPrivateConfig(args[2], repository);
+  const config = await readPrivateConfig(configPath, repository);
   requireTest(
     process.platform !== "linux" || !!process.env.DISPLAY,
     "INTERACTIVE_DESKTOP_REQUIRED",
@@ -107,7 +117,7 @@ export async function runInteractive(args = process.argv.slice(2)) {
   const timer = setTimeout(interrupt, 20 * 60000);
   timer.unref();
   try {
-    fixture = await isolatedFixture(config);
+    fixture = await isolatedFixture(config, { scenario });
     requireTest(!cancelled, "USER_CANCELLED");
     const executablePath =
       process.env.CHROMIUM_PATH ||
@@ -142,25 +152,25 @@ export async function runInteractive(args = process.argv.slice(2)) {
       "reCAPTCHA-only check passed. Authentication now uses Firebase's official fictional-number app-verification mode.",
     );
     console.log(
-      "In Gather, enter First Name Firebase, Last Name Test Guest, your approved fictional number, and its configured code. Type the code ONLY in the browser.",
+      `In Gather, enter First Name ${fixture.actor.first}, Last Name ${fixture.actor.last}, your approved fictional number, and its configured code. Type the code ONLY in the browser.`,
     );
-    await page.goto(fixture.invitation);
+    await page.goto(fixture.entry);
     await page.waitForFunction(
-      async () => {
+      async (role) => {
         try {
-          return (await (await fetch("/api/session")).json()).role === "guest";
+          return (await (await fetch("/api/session")).json()).role === role;
         } catch {
           return false;
         }
       },
-      {},
+      scenario === "host" ? "host" : "guest",
       { timeout: 600000 },
     );
     await showEvent(page);
     const initial = await checks(page, fixture);
     requireTest(initial.sendCount === 1, "UNEXPECTED_SEND_COUNT");
     console.log(
-      "Guest matching, invitation access, two-household handoff, permissions and isolated RSVP checks passed.",
+      "Account matching, own/invited-household permissions, handoff and isolated RSVP checks passed.",
     );
     await page.reload();
     await showEvent(page);
@@ -177,8 +187,11 @@ export async function runInteractive(args = process.argv.slice(2)) {
       report: (code) => console.log("Blocked isolated-test request:", code),
     });
     page = context.pages()[0] || (await context.newPage());
-    await page.goto(fixture.records[0].origin);
-    await showEvent(page);
+    await openHousehold(
+      page,
+      fixture.records[0],
+      scenario === "host" ? "host" : "guest",
+    );
     requireTest(
       fixture.policy.sends === initial.sendCount,
       "RESTART_REQUESTED_ANOTHER_CODE",
@@ -216,7 +229,7 @@ export async function runInteractive(args = process.argv.slice(2)) {
     await page.getByLabel("First Name", { exact: true }).waitFor();
     requireTest(fixture.policy.sends === 1, "SIGN_OUT_REQUESTED_ANOTHER_CODE");
     console.log(
-      "PASS: fictional Firebase verification, guest/invitation authority, multi-household sessions, persistent restart and device revocation. No production Gather data was used.",
+      "PASS: fictional Firebase verification, account/invitation authority, multi-household sessions, persistent restart and device revocation. No production Gather data was used.",
     );
     console.log(
       "Provider fictional-user records may remain in Firebase; this runner never deletes Firebase users.",

@@ -49,6 +49,16 @@ event and contact reference to that same invited identity provide the multiple-h
 checks. There is only one invited adult identity, with the first approved fictional
 number. No real names, accounts, contacts or invitations are imported.
 
+The default `guest` scenario checks a newly authorized invitee. The separate `host`
+scenario creates a different temporary database/profile and an approved synthetic
+owner named **Firebase Test Host**, with a pre-established verified central phone
+association. This is test-fixture data, not proof that a typed phone grants hosting.
+It verifies host authority in that owner's household, guest-only authority when
+invited to the second household, denial of guest host writes and administrator
+access, an event-scoped RSVP, and return to the owner's host authority. No host
+authority is added to the guest scenario. Existing production accounts are never
+used or changed.
+
 The runner exercises signup through that synthetic invitation, guest matching,
 both household session handoffs, guest denial of host APIs, one isolated RSVP,
 refresh, closing/reopening Chromium with the same private profile, and device sign-out
@@ -132,6 +142,29 @@ npm run test:firebase:real -- --real-fictional --config "$HOME/.config/gather/fi
    during those automatic steps. No further code should be needed.
 6. A sanitized PASS/STOP result is printed. Reports contain stage codes only, not
    phone numbers, codes, tokens, cookies, URLs or request/response bodies.
+
+Then run the host scenario using the same private configuration and fictional
+number/code. It creates fresh temporary Gather data rather than reusing the guest
+database or credentials:
+
+```sh
+npm run test:firebase:real -- --real-fictional --config "$HOME/.config/gather/firebase-test.private.json" --scenario host
+```
+
+Complete the separate reCAPTCHA-only check again. Enter First Name `Firebase`,
+Last Name `Test Host`, and the approved fictional number/code only in the isolated
+window. The owner household entry redirects to central Firebase authentication,
+then returns through the existing shared handoff. The runner verifies the destination
+origin and server-side role before testing each household; a briefly rendered central
+account page cannot count as a completed handoff. It repeats the real browser-profile
+restart and device sign-out/revocation checks without requesting a second code.
+Each scenario normally uses one fictional code request and cleans up independently.
+
+This adds real-provider **host sign-in acceptance**, not a new enrollment flow.
+New-owner phone enrollment, administrator recovery and native installed Safari/PWA
+behavior retain their separate acceptance requirements; existing automated tests
+cover those server/browser boundaries with synthetic providers. Neither scenario
+activates production Firebase or proves normal real-SMS delivery.
 
 The manual runner is explicit opt-in and is never run by GitHub Actions. CI runs
 only the offline regression with synthetic Google responses and synthetic signed

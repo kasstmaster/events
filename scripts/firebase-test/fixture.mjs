@@ -9,6 +9,7 @@ import { Store } from "../../server/node-store.js";
 import { createHandler } from "../../server/handler.js";
 import { identityFor } from "../../server/guest-identities.js";
 import { referenceFor } from "../../server/rsvp-cards.js";
+import { ensurePersonalProfile } from "../../server/personal-accounts.js";
 import {
   CENTRAL,
   PROJECT,
@@ -19,8 +20,13 @@ import {
 export const PREFIX = "gather-fictional-firebase-";
 export async function isolatedFixture(
   config,
-  { policy = new NetworkPolicy(config) } = {},
+  { policy = new NetworkPolicy(config), scenario = "guest" } = {},
 ) {
+  requireTest(["guest", "host"].includes(scenario), "SCENARIO_INVALID");
+  const actor = {
+    first: "Firebase",
+    last: scenario === "host" ? "Test Host" : "Test Guest",
+  };
   const directory = await mkdtemp(join(tmpdir(), PREFIX));
   await chmod(directory, 0o700);
   await writeFile(
@@ -152,15 +158,51 @@ export async function isolatedFixture(
     }
     for (const record of records)
       record.guest = await seed(record, "/api/host/guests", {
-        first: "Firebase",
-        last: "Test Guest",
+        first: actor.first,
+        last: actor.last,
         phone: config.fictionalPhoneNumbers[0],
       });
-    const identity = identityFor(
+    let identity = identityFor(
       store,
       records[0].guest,
       records[0].host.household,
     ).id;
+    if (scenario === "host") {
+      // Synthetic fixture only: establish a pre-existing, independently verified
+      // owner association using the same shared profile model as auth tests.
+      // This never enrolls/claims a production account or derives host authority
+      // from a typed phone. Registration approval above establishes the owner.
+      const ready = ensurePersonalProfile(store, {
+        ...records[0].host,
+        role: "host",
+      });
+      identity = ready.identity;
+      store.put(
+        "personal-household",
+        ready.profile.id,
+        "platform",
+        {
+          ...ready.profile,
+          members: ready.profile.members.map((m) =>
+            m.identity === identity
+              ? { ...m, ...actor, phone: config.fictionalPhoneNumbers[0] }
+              : m,
+          ),
+        },
+        ready.profile.version,
+      );
+      store.put("guest-auth-contact", identity, "platform", {
+        phone: config.fictionalPhoneNumbers[0],
+        verified: true,
+        verifiedAt: Date.now(),
+      });
+      store.run(
+        "UPDATE guest_identity_links SET identity=? WHERE household=? AND guest=?",
+        identity,
+        records[0].host.household,
+        records[0].guest.id,
+      );
+    }
     store.run(
       "UPDATE guest_identity_links SET identity=? WHERE household=? AND guest=?",
       identity,
@@ -189,11 +231,17 @@ export async function isolatedFixture(
       store,
       records,
       identity,
+      scenario,
+      actor,
       sites,
       policy,
       close,
       profile: join(directory, "browser-profile"),
       invitation: CENTRAL + "/invite/" + records[0].reference,
+      entry:
+        scenario === "host"
+          ? records[0].origin
+          : CENTRAL + "/invite/" + records[0].reference,
     };
   } catch (error) {
     await close();
