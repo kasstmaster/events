@@ -52,6 +52,7 @@ export function persistentHostSession(
   origin,
   deviceId,
   firebase,
+  adminFallback = false,
 ) {
   const user = store.one(
     "SELECT * FROM users WHERE id=? AND role='host'",
@@ -68,6 +69,7 @@ export function persistentHostSession(
       persistentProof({
         deviceId,
         provider: "host-account",
+        ...(adminFallback ? { adminFallback: true } : {}),
         user: user.id,
         stamp: hostAccountStamp(user),
         ...(firebase
