@@ -168,6 +168,14 @@ export async function hostAuthAPI(ctx) {
         store,
         { user: user.id, household: user.household, role: "host" },
         origin,
+        undefined,
+        {
+          key,
+          project: verified.project,
+          uid: verified.uid,
+          email: verified.email,
+          authTime: verified.authTime,
+        },
       ),
     );
     auditAccount(store, user.id, user.id, "host-firebase-sign-in");
