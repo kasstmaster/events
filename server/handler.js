@@ -1,3 +1,4 @@
+import { validFirebaseHostSession } from "./firebase-host-admin.js";
 import { hostFirebaseEnabled, hostFirebaseConfig } from "./firebase-host.js";
 import { weddingImportAPI } from "./wedding-import.js";
 import { eventPagesAPI, eventPages, pageMetadata } from "./event-pages.js";
@@ -747,6 +748,25 @@ export function createHandler({
             ))
         )
           session = null;
+      }
+      // Revalidate Firebase authority on every existing host session before
+      // servicing private data, session renewal, or cross-origin handoff.
+      // Firebase disable/delete/revoke overrides the long-lived Gather cookie.
+      if (hostFirebaseEnabled(env) && session?.role === "host") {
+        const proof = store.get("passwordless-session", session.token, "platform");
+        const fallback = proof?.adminFallback === true &&
+          store.get("platform-access", session.user, "platform")?.email ===
+            store.one("SELECT email FROM users WHERE id=?", session.user)?.email;
+        if (!fallback) {
+          const active = await validFirebaseHostSession(store, session, env, {
+            fetcher: firebaseFetcher || fetch,
+          });
+          if (!active) {
+            revokeUserSessions(store, session.user);
+            session = null;
+            cookie(res, null);
+          }
+        }
       }
       if (
         session?.role === "family" &&
