@@ -77,6 +77,14 @@ export function hostAuthUI({
     intent = "login",
     provider = "password",
   ) {
+    if (location.origin !== central()) {
+      location.assign(
+        intent === "signup"
+          ? central() + "/host-signup#invite=" + encodeURIComponent(invite)
+          : central() + "/signin",
+      );
+      return false;
+    }
     const { auth, sdk } = await firebase();
     if (provider === "google") {
       await sdk.signInWithPopup(auth, new sdk.GoogleAuthProvider());
