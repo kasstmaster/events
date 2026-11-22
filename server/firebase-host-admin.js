@@ -3,7 +3,8 @@ import { fail } from "./model.js";
 import { hostFirebaseConfig, hostFirebaseKey } from "./firebase-host.js";
 
 const tokenCache = new Map();
-const encode = (data) => Buffer.from(JSON.stringify(data)).toString("base64url");
+const encode = (data) =>
+  Buffer.from(JSON.stringify(data)).toString("base64url");
 
 /**
  * This account lookup is authoritative for every existing Gather host session.
@@ -53,10 +54,9 @@ export async function firebaseHostAccountStatus(
     ].join(".");
     let signature;
     try {
-      signature = createSign("RSA-SHA256").update(payload).sign(
-        secret.replace(/\\n/g, "\n"),
-        "base64url",
-      );
+      signature = createSign("RSA-SHA256")
+        .update(payload)
+        .sign(secret.replace(/\\n/g, "\n"), "base64url");
     } catch {
       fail(503, "Firebase host session verification is unavailable.");
     }
@@ -115,7 +115,8 @@ export async function firebaseHostAccountStatus(
     fail(503, "Firebase host session verification is unavailable.");
 
   const accounts = (await response.json()).users;
-  const user = Array.isArray(accounts) && accounts.length === 1 ? accounts[0] : null;
+  const user =
+    Array.isArray(accounts) && accounts.length === 1 ? accounts[0] : null;
   if (
     !user ||
     user.localId !== uid ||

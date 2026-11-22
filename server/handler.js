@@ -753,10 +753,16 @@ export function createHandler({
       // servicing private data, session renewal, or cross-origin handoff.
       // Firebase disable/delete/revoke overrides the long-lived Gather cookie.
       if (hostFirebaseEnabled(env) && session?.role === "host") {
-        const proof = store.get("passwordless-session", session.token, "platform");
-        const fallback = proof?.adminFallback === true &&
+        const proof = store.get(
+          "passwordless-session",
+          session.token,
+          "platform",
+        );
+        const fallback =
+          proof?.adminFallback === true &&
           store.get("platform-access", session.user, "platform")?.email ===
-            store.one("SELECT email FROM users WHERE id=?", session.user)?.email;
+            store.one("SELECT email FROM users WHERE id=?", session.user)
+              ?.email;
         if (!fallback) {
           const active = await validFirebaseHostSession(store, session, env, {
             fetcher: firebaseFetcher || fetch,

@@ -46,7 +46,13 @@ export function validHostSession(store, session, proof) {
     )
   );
 }
-export function persistentHostSession(store, account, origin, deviceId, firebase) {
+export function persistentHostSession(
+  store,
+  account,
+  origin,
+  deviceId,
+  firebase,
+) {
   const user = store.one(
     "SELECT * FROM users WHERE id=? AND role='host'",
     account.user,
@@ -64,11 +70,15 @@ export function persistentHostSession(store, account, origin, deviceId, firebase
         provider: "host-account",
         user: user.id,
         stamp: hostAccountStamp(user),
-        ...(firebase ? { firebase: {
-          ...firebase,
-          user: user.id,
-          household: user.household,
-        } } : {}),
+        ...(firebase
+          ? {
+              firebase: {
+                ...firebase,
+                user: user.id,
+                household: user.household,
+              },
+            }
+          : {}),
         adminRestricted: true,
       }),
     );

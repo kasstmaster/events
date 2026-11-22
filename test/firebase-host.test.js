@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, createSign } from "node:crypto";
-import { firebaseHostAccountStatus, validFirebaseHostSession } from "../server/firebase-host-admin.js";
+import {
+  firebaseHostAccountStatus,
+  validFirebaseHostSession,
+} from "../server/firebase-host-admin.js";
 import {
   hostFirebaseEnabled,
   hostFirebaseConfig,
@@ -133,7 +136,10 @@ const privileged = {
   ...env,
   HOST_FIREBASE_ADMIN_CLIENT_EMAIL:
     "firebase-lookup@gather-58a79.iam.gserviceaccount.com",
-  HOST_FIREBASE_ADMIN_PRIVATE_KEY: privateKey.export({ type: "pkcs8", format: "pem" }),
+  HOST_FIREBASE_ADMIN_PRIVATE_KEY: privateKey.export({
+    type: "pkcs8",
+    format: "pem",
+  }),
 };
 const identity = {
   project: "gather-58a79",
@@ -145,32 +151,55 @@ function adminFetcher(account = {}) {
   return async (url, options) => {
     if (url === "https://oauth2.googleapis.com/token") {
       const params = new URLSearchParams(options.body);
-      assert.equal(params.get("grant_type"), "urn:ietf:params:oauth:grant-type:jwt-bearer");
+      assert.equal(
+        params.get("grant_type"),
+        "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      );
       assert.equal(params.get("assertion").split(".").length, 3);
-      return { ok: true, json: async () => ({ access_token: "synthetic-only", token_type: "Bearer", expires_in: 3600 }) };
+      return {
+        ok: true,
+        json: async () => ({
+          access_token: "synthetic-only",
+          token_type: "Bearer",
+          expires_in: 3600,
+        }),
+      };
     }
-    assert.equal(url, "https://identitytoolkit.googleapis.com/v1/projects/gather-58a79/accounts:lookup");
+    assert.equal(
+      url,
+      "https://identitytoolkit.googleapis.com/v1/projects/gather-58a79/accounts:lookup",
+    );
     assert.equal(options.headers.Authorization, "Bearer synthetic-only");
-    assert.deepEqual(JSON.parse(options.body), { localId: ["firebase-host-uid"] });
+    assert.deepEqual(JSON.parse(options.body), {
+      localId: ["firebase-host-uid"],
+    });
     return {
       ok: true,
       json: async () => ({
-        users: account.deleted ? [] : [{
-          localId: "firebase-host-uid",
-          email: "host@example.test",
-          emailVerified: true,
-          disabled: false,
-          validSince: String(seconds - 3600),
-          ...account,
-        }],
+        users: account.deleted
+          ? []
+          : [
+              {
+                localId: "firebase-host-uid",
+                email: "host@example.test",
+                emailVerified: true,
+                disabled: false,
+                validSince: String(seconds - 3600),
+                ...account,
+              },
+            ],
       }),
     };
   };
 }
 test("Firebase host sessions are checked against active account status", async () => {
-  assert.equal(await firebaseHostAccountStatus(privileged, identity, {
-    fetcher: adminFetcher(), now: () => now,
-  }), true);
+  assert.equal(
+    await firebaseHostAccountStatus(privileged, identity, {
+      fetcher: adminFetcher(),
+      now: () => now,
+    }),
+    true,
+  );
 });
 test("revoked, disabled, deleted, changed or unverified Firebase accounts cannot retain Gather sessions", async () => {
   for (const account of [
@@ -181,21 +210,31 @@ test("revoked, disabled, deleted, changed or unverified Firebase accounts cannot
     { emailVerified: false },
     { localId: "wrong-user" },
   ]) {
-    assert.equal(await firebaseHostAccountStatus(privileged, identity, {
-      fetcher: adminFetcher(account), now: () => now,
-    }), false);
+    assert.equal(
+      await firebaseHostAccountStatus(privileged, identity, {
+        fetcher: adminFetcher(account),
+        now: () => now,
+      }),
+      false,
+    );
   }
 });
 test("Firebase host session account verification fails closed on missing admin credentials", async () => {
   await assert.rejects(
-    firebaseHostAccountStatus(env, identity, { fetcher: adminFetcher(), now: () => now }),
+    firebaseHostAccountStatus(env, identity, {
+      fetcher: adminFetcher(),
+      now: () => now,
+    }),
     /not configured/,
   );
 });
 test("Firebase host session account verification fails closed on provider errors", async () => {
   await assert.rejects(
     firebaseHostAccountStatus(privileged, identity, {
-      fetcher: async () => { throw Error("offline"); }, now: () => now,
+      fetcher: async () => {
+        throw Error("offline");
+      },
+      now: () => now,
     }),
     /unavailable/,
   );
@@ -211,24 +250,48 @@ test("Firebase Gather sessions require the exact approved user, mapping and Fire
     provider: "host-account",
     user: "approved-host",
     firebase: {
-      ...identity, ...mapping,
+      ...identity,
+      ...mapping,
       key: hostFirebaseKey(identity.project, identity.uid),
     },
   };
   const store = {
     get(kind, key) {
-      if (kind === "passwordless-session") return { ...proof, firebase: { ...proof.firebase } };
+      if (kind === "passwordless-session")
+        return { ...proof, firebase: { ...proof.firebase } };
       if (kind === "host-firebase-account") return mapping;
     },
   };
-  const session = { token: "sess", user: "approved-host", household: "home", role: "host" };
-  assert.equal(await validFirebaseHostSession(store, session, privileged, {
-    fetcher: adminFetcher(), now: () => now,
-  }), true);
-  assert.equal(await validFirebaseHostSession(store, { ...session, user: "wrong" }, privileged, {
-    fetcher: adminFetcher(), now: () => now,
-  }), false);
-  assert.equal(await validFirebaseHostSession({ get: () => null }, session, privileged, {
-    fetcher: adminFetcher(), now: () => now,
-  }), false);
+  const session = {
+    token: "sess",
+    user: "approved-host",
+    household: "home",
+    role: "host",
+  };
+  assert.equal(
+    await validFirebaseHostSession(store, session, privileged, {
+      fetcher: adminFetcher(),
+      now: () => now,
+    }),
+    true,
+  );
+  assert.equal(
+    await validFirebaseHostSession(
+      store,
+      { ...session, user: "wrong" },
+      privileged,
+      {
+        fetcher: adminFetcher(),
+        now: () => now,
+      },
+    ),
+    false,
+  );
+  assert.equal(
+    await validFirebaseHostSession({ get: () => null }, session, privileged, {
+      fetcher: adminFetcher(),
+      now: () => now,
+    }),
+    false,
+  );
 });
