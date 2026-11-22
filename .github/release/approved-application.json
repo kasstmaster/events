@@ -65,6 +65,7 @@
     "server/features.js",
     "server/firebase-auth.js",
     "server/firebase-enrollment.js",
+    "server/firebase-host-admin.js",
     "server/firebase-host.js",
     "server/firebase-routing.js",
     "server/gather-app.js",
