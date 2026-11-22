@@ -304,25 +304,44 @@ test("existing household host connects Firebase and loses every Gather session w
     if (url.includes("/jwk/"))
       return { ok: true, json: async () => ({ keys: [jwk] }) };
     if (url === "https://oauth2.googleapis.com/token")
-      return { ok: true, json: async () => ({
-        access_token: "integration-only", token_type: "Bearer", expires_in: 3600,
-      }) };
+      return {
+        ok: true,
+        json: async () => ({
+          access_token: "integration-only",
+          token_type: "Bearer",
+          expires_in: 3600,
+        }),
+      };
     if (url.includes("/v1/projects/gather-58a79/accounts:lookup"))
-      return { ok: true, json: async () => ({ users: [{
-        localId: "firebase-host-uid",
-        email: "alpha@example.test",
-        emailVerified: true,
-        disabled: actual.disabled,
-        validSince: String(liveNow - 3600),
-      }] }) };
+      return {
+        ok: true,
+        json: async () => ({
+          users: [
+            {
+              localId: "firebase-host-uid",
+              email: "alpha@example.test",
+              emailVerified: true,
+              disabled: actual.disabled,
+              validSince: String(liveNow - 3600),
+            },
+          ],
+        }),
+      };
     if (url.includes("/v1/accounts:lookup?key="))
-      return { ok: true, json: async () => ({ users: [{
-        localId: "firebase-host-uid",
-        email: "alpha@example.test",
-        emailVerified: true,
-        disabled: false,
-        validSince: String(liveNow - 3600),
-      }] }) };
+      return {
+        ok: true,
+        json: async () => ({
+          users: [
+            {
+              localId: "firebase-host-uid",
+              email: "alpha@example.test",
+              emailVerified: true,
+              disabled: false,
+              validSince: String(liveNow - 3600),
+            },
+          ],
+        }),
+      };
     throw Error("Unexpected identity provider endpoint: " + url);
   };
   const f = await application(t, privileged, { firebaseFetcher: provider });
@@ -346,13 +365,23 @@ test("existing household host connects Firebase and loses every Gather session w
     (await f.request("/api/session", { cookie: result.cookie })).body.role,
     "host",
   );
-  assert.equal(f.store.household(original.household.id).id, original.household.id);
+  assert.equal(
+    f.store.household(original.household.id).id,
+    original.household.id,
+  );
   actual.disabled = true;
   const blocked = await f.request("/api/host", { cookie: result.cookie });
-  assert.notEqual(blocked.status, 200, "a disabled Firebase host must not retain Gather authorization");
+  assert.notEqual(
+    blocked.status,
+    200,
+    "a disabled Firebase host must not retain Gather authorization",
+  );
   assert.equal(
     (await f.request("/api/session", { cookie: result.cookie })).body.role,
     null,
   );
-  assert.ok(f.store.household(original.household.id), "household data survives disabled sign-in");
+  assert.ok(
+    f.store.household(original.household.id),
+    "household data survives disabled sign-in",
+  );
 });
