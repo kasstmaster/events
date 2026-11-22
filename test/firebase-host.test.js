@@ -51,7 +51,7 @@ function token(overrides = {}) {
 const fetcher = async (url, options = {}) => {
   if (url.includes("/jwk/"))
     return { ok: true, json: async () => ({ keys: [jwk] }) };
-  assert.match(url, /identitytoolkit\\.googleapis\\.com/);
+  assert.ok(url.includes("identitytoolkit.googleapis.com"));
   assert.equal(options.method, "POST");
   return {
     ok: true,
