@@ -319,7 +319,7 @@ export function hostAuthUI({
         });
         location.assign(result.url);
       }
-      if (config.firebase && ["host-login", "host-connect-firebase"].includes(kind)) {
+      if (config.firebase && screen !== "admin" && ["host-login", "host-connect-firebase"].includes(kind)) {
         await firebaseSignIn(values, kind === "host-connect-firebase" ? "connect" : "login");
         return true;
       }
@@ -442,7 +442,9 @@ export function hostAuthUI({
         screen = "connect"; render(); return true;
       }
       if (config.firebase && action === "host-admin-screen") {
-        screen = "admin"; render(); return true;
+        screen = "admin";
+        render();
+        return true;
       }
       if (action === "host-login-screen") {
         screen = "login";
