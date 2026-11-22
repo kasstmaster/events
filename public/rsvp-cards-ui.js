@@ -24,9 +24,11 @@ export function rsvpCardsUI({ state, api, button, escape, render, field }) {
     image.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
     return image.decode().then(() => {
       const canvas = document.createElement("canvas");
-      canvas.width = 600;
-      canvas.height = 420;
-      canvas.getContext("2d").drawImage(image, 0, 0, 600, 420);
+      canvas.width = items[index]?.width || 600;
+      canvas.height = items[index]?.height || 420;
+      canvas
+        .getContext("2d")
+        .drawImage(image, 0, 0, canvas.width, canvas.height);
       canvas.toBlob((blob) => {
         if (blob) save(blob);
       }, "image/png");
@@ -53,7 +55,7 @@ export function rsvpCardsUI({ state, api, button, escape, render, field }) {
       render();
     },
     page() {
-      return ui`${topbar({ title: C("QR RSVP cards"), back: "rsvp-cards-close" })}<section class="panel"><p>Each selected household receives a separate RSVP enclosure. Its QR opens sign-in and never authenticates the person holding the card.</p><form data-form="rsvp-cards">${state.data.guests
+      return ui`${topbar({ title: C("QR RSVP cards"), back: "rsvp-cards-close" })}<section class="panel"><p>${state.hostOnly ? "Each household receives a separate invitation and QR enclosure. The QR opens the event directly; its Household ID is used only for RSVP. Large households receive clearly numbered continuation cards." : "Each selected household receives a separate RSVP enclosure. Its QR opens sign-in and never authenticates the person holding the card."}</p><form data-form="rsvp-cards">${state.data.guests
         .filter((g) => event()?.invited.includes(g.id))
         .map(
           (g) =>
@@ -119,7 +121,11 @@ export function rsvpCardsUI({ state, api, button, escape, render, field }) {
                 (item) =>
                   '<section class="pair">' +
                   (action === "rsvp-cards-print" && item.invitation
-                    ? '<div class="invitation">' + item.invitation + "</div>"
+                    ? '<div class="invitation">' +
+                      item.invitation +
+                      (item.publicInvitation
+                        ? '</div></section><section class="pair">'
+                        : "</div>")
                     : "") +
                   '<div class="enclosure">' +
                   item.svg +

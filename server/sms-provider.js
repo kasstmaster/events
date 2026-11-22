@@ -1,4 +1,6 @@
+import { hostOnlyMode } from "./host-model.js";
 export const smsEnabled = (env) =>
+  !hostOnlyMode(env) &&
   env.SMS_ENABLED === "true" &&
   !!(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_FROM);
 // Shared one-shot transport for reminders and RSVP confirmations. No raw provider diagnostics.

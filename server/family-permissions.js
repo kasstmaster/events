@@ -1,3 +1,4 @@
+import { isolatedAddressBook } from "./recipient-isolation.js";
 import {
   centralMemberForActor,
   centralWorkspaceMembers,
@@ -6,7 +7,9 @@ import { fail, text } from "./model.js";
 export function familyMember(store, session) {
   if (!session || !["host", "family"].includes(session.role))
     fail(403, "Family access is not available.");
-  const central = centralMemberForActor(store, session);
+  const central = isolatedAddressBook(store, session.household)
+    ? null
+    : centralMemberForActor(store, session);
   if (central) return central;
   const original = store.one(
     "SELECT id,email FROM users WHERE household=? AND role='host'",
@@ -24,6 +27,29 @@ export function familyMember(store, session) {
   );
   if (member?.disabled || (session.role === "family" && !member))
     fail(403, "This family account is unavailable.");
+  const approved = store.get(
+    "host-membership",
+    session.user,
+    session.household,
+  );
+  if (session.role === "host" && approved?.enabled === false)
+    fail(403, "Host membership is unavailable.");
+  if (
+    session.role === "host" &&
+    approved?.enabled &&
+    approved.adult &&
+    store.one(
+      "SELECT id FROM users WHERE id=? AND household=? AND role='host'",
+      session.user,
+      session.household,
+    )
+  )
+    return {
+      id: session.user,
+      household: session.household,
+      name: member?.name || original?.email || "Host",
+      role: session.user === owner ? "owner" : "administrator",
+    };
   return {
     id: session.user,
     household: session.household,

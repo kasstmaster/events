@@ -1,3 +1,5 @@
+import { isolatedAddressBook } from "./recipient-isolation.js";
+import { ensureHostRoster } from "./host-roster.js";
 import {
   revokeUserSessions,
   revokeHouseholdSessions,
@@ -75,7 +77,9 @@ export function membersView(store, household) {
       disabled: 0,
       version: 1,
     });
-  for (const central of centralWorkspaceMembers(store, household)) {
+  for (const central of isolatedAddressBook(store, household)
+    ? []
+    : centralWorkspaceMembers(store, household)) {
     const index = members.findIndex((m) => m.id === central.id);
     if (index >= 0) members[index] = { ...members[index], ...central };
     else members.push(central);
@@ -83,7 +87,10 @@ export function membersView(store, household) {
   return members.map((m) => {
     const link = store.get("family-profile-member", m.id, household);
     const profile =
-      link && store.get("personal-household", link.profile, "platform");
+      link &&
+      (link.profile === "host-roster"
+        ? store.get("host-family-roster", "family:" + household, household)
+        : store.get("personal-household", link.profile, "platform"));
     const person = profile?.members.find(
       (p) => p.id === link.member && !p.archived,
     );
@@ -384,7 +391,10 @@ export async function familyAPI(ctx) {
       if (input.profileMember) {
         if (session.role !== "host")
           fail(403, "Only the host manages the family profile.");
-        const { profile } = ensurePersonalProfile(store, session);
+        const local = isolatedAddressBook(store, household);
+        const profile = local
+          ? { ...ensureHostRoster(store, household), id: "host-roster" }
+          : ensurePersonalProfile(store, session).profile;
         if (profile.version !== Number(input.profileVersion))
           fail(409, "Family information changed. Refresh before trying again.");
         profileMember = profile.members.find(
@@ -392,7 +402,7 @@ export async function familyAPI(ctx) {
         );
         if (!profileMember || profile.sourceHousehold !== household)
           fail(400, "Choose a member of your family.");
-        if (registeredMethod(store, profileMember.identity))
+        if (!local && registeredMethod(store, profileMember.identity))
           fail(403, "This person already has a registered sign-in.");
         if (!!profileMember.parent !== (role === "kid"))
           fail(

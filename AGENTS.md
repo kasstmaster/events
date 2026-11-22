@@ -1,12 +1,59 @@
+## Current owner instruction: preserve design; host-owned replacement
+
+The consolidated owner ticket supplied on November 20, 2026 supersedes the older
+14-ticket/Firebase/Twilio/central guest-account plan below. Its title does NOT
+permit a redesign. Preserve all approved layouts, typography, colors, spacing,
+buttons, toolbars, themes and responsive behavior. Reuse the existing event,
+full-page RSVP and card renderers. Do not modernize unrelated UI or global CSS.
+
+The target model is host-only Google or verified email/password authentication,
+admin-issued one-time expiring registration invitations, independent host Address
+Books, and public event links with strong host-scoped recipient Household IDs for
+RSVP. Guests must eventually have no accounts, sessions, inbox, recovery or PWA;
+private member content needs separate revocable per-person grants. Historical
+records must survive. Old central matching/guest-auth instructions below describe
+legacy compatibility, not permission to expand or reactivate that model.
+
+The replacement now includes Google/verified email authentication, host-only
+revocable persistent sessions and origin handoff, explicit adult memberships,
+restricted administration/recovery, independent Address Books/local rosters,
+public RSVP/cards, private event pages and an owner-reviewed wedding import.
+`HOST_ONLY_MODEL_ENABLED` AND `HOST_ONLY_MODEL_ACTIVATION_APPROVED` remain absent/off.
+Keep all production features disabled until reviewed transition/provider/device
+acceptance. Google/email production credentials and the complete authoritative
+saved wedding export remain external prerequisites, not permission to fabricate
+content or activate providers. Old Firebase/guest APIs are retired in replacement
+mode; retain historical records and flag-off recovery regressions. The real Firebase
+test command refuses execution. See `docs/host-owned-invitations.md`.
+
+Address Book preparation uses an explicit fingerprinted additive checkpoint and
+policy marker, never deletion/unlinking of historical records. No startup backfill,
+new Worker/namespace, destructive migration or production data operation is allowed.
+The reviewed transition API requires current system-admin password, the unchanged
+plan fingerprint, explicit adult approvals and typed confirmation. Never weaken it.
+
+Run existing browser/appearance regressions and the new anonymous RSVP tests.
+`test/approved-design-mobile.js` compares synthetic Home/Event/Address Book pixels
+against approved main assets at phone and desktop widths; its historical commit
+is a TEST baseline, never an application deployment pin. Keep CI history available
+for this comparison. Update only the asset manifest when functional JavaScript
+changes; do not weaken deployment provenance or approval safeguards.
+
+Continue the permanent handoff: one feature branch, validate, commit AND push;
+owner creates/reviews/merges the PR. Do not create/merge PRs, deploy, alter live
+configuration/credentials/DNS/data, activate authentication or send live messages.
+Legacy Firebase tests remain offline compatibility regressions during this staged
+transition and do not authorize Firebase activation or real SMS.
+
 # Permanent development rules
 
 These instructions apply to every change in this repository.
 
 1. **Repository boundary.** Modify only `kasstmaster/events`. Other repositories, including `kasstmaster/themeyersgatherings` and `kasstmaster/themeyersevents-data`, are strictly read-only references. Never change their files, branches, settings, workflows, data or deployments.
-2. **One shared application.** All hosts, households and events use the same server, components, event builder/page, guest sign-in, RSVP flow and design system. Extend existing shared functions; never create host-specific or event-specific implementations. Features and fixes must benefit everyone without overwriting individual content or settings.
+2. **One shared application.** All hosts, households and events use the same server, components, event builder/page, RSVP flow and design system. Extend existing shared functions; never create host-specific or event-specific implementations. Features and fixes must benefit everyone without overwriting individual content or settings.
 3. **Customization is data.** Persist names, event content, images, invitations, menus, invitation-template choices and ordered optional registries as household/event records. Resolve design as platform defaults → household settings → event overrides. Household guest login uses household settings only. New/default events inherit household settings, including custom home formatting; preserve explicitly customized event appearance transactionally when household modes change. Editing an event must not alter household defaults or sibling events. Registry buttons belong directly below the guest RSVP button; omit the section when empty.
 4. **Enforce authorization on the server.** Keep administrator, host and guest roles separate. Scope every private read/write to the authenticated household. Guests see their explicitly invited events, invited adults/children sharing their selected address for that event, those party attendance answers, their own menu items and permitted aggregate totals. Never expose other-address guests, private contact/address records or unrelated responses through guest/public endpoints. UI visibility is not authorization.
-5. **Authentication and privacy.** Only administrator-approved emails may register hosts. Hash passwords with a supported password KDF; keep expiring sessions server-side with secure cookie protections. Never hardcode credentials or commit private data, database files, session tokens or passwords. Never send automated emails or introduce email-dependent flows. Guest sign-in requires names and a four-digit address invite code. Preserve leading zeroes. Codes are random and shared only by entries explicitly assigned to the same household-scoped address record; no-address guests receive an individual fallback. Moving an entry assigns the destination address code and revokes its old credential/session access without changing identity, invitations or responses. Retired four-digit codes are reserved, with a hard 10,000-group capacity and fail-closed exhaustion. Legacy individual code aliases are valid only until the entry moves. Reveal optional suffixes only after code-qualified recognition. Keep child/adult association and attempt limits. Legacy unregistered shared identities require explicit host selection and guest code-authenticated approval before cross-host linking. Registered self-managed accounts may associate automatically only on an unambiguous exact name and matching phone or address. Once registered, the old name plus a host-created code cannot authenticate that person; require the private registered username or host email. Keep host contacts/notes and relationships separate; preserve global identities and other relationships on host removal; removed-address codes cannot authenticate someone through another relationship. See docs/family-workspace.md for reversible linking and legacy rollout.
+5. **Authentication and privacy.** Only administrator-approved emails may register hosts. Hash passwords with a supported password KDF; keep expiring sessions server-side with secure cookie protections. Never hardcode credentials or commit private data, database files, session tokens or passwords. In replacement mode, email may be used only for independent host ownership verification/password recovery; never event notifications. The following guest sign-in rules are legacy flag-off compatibility only. Guest sign-in requires names and a four-digit address invite code. Preserve leading zeroes. Codes are random and shared only by entries explicitly assigned to the same household-scoped address record; no-address guests receive an individual fallback. Moving an entry assigns the destination address code and revokes its old credential/session access without changing identity, invitations or responses. Retired four-digit codes are reserved, with a hard 10,000-group capacity and fail-closed exhaustion. Legacy individual code aliases are valid only until the entry moves. Reveal optional suffixes only after code-qualified recognition. Keep child/adult association and attempt limits. Legacy unregistered shared identities require explicit host selection and guest code-authenticated approval before cross-host linking. Registered self-managed accounts may associate automatically only on an unambiguous exact name and matching phone or address. Once registered, the old name plus a host-created code cannot authenticate that person; require the private registered username or host email. Keep host contacts/notes and relationships separate; preserve global identities and other relationships on host removal; removed-address codes cannot authenticate someone through another relationship. See docs/family-workspace.md for reversible linking and legacy rollout.
 6. **Central persistence and sync.** The shared server and centralized SQLite storage are authoritative, not browser local storage. Node.js 24 uses local SQLite; Cloudflare uses a separate SQLite-backed Durable Object and the same shared application rules. Keep storage chunking transactional and Unicode-safe. Keep all devices synchronized and preserve data across sessions/restarts. Require record versions for host writes and per-adult/event RSVP versions; transact capacity checks and reservations. Reject stale writes without erasing drafts. Do not adopt background refreshes behind an unsaved editor. A multi-replica database change must preserve tenant boundaries and transactional guarantees.
 7. **RSVP integrity.** Invite each adult/child explicitly. Children belong to a designated adult and do not sign in separately. Count each invited person individually. Keep invitations, RSVPs and claims event-specific. Adults may RSVP for explicitly invited people sharing their address, retaining separate per-adult response versions. Blank/omitted choices preserve existing attendance and menu claims; never turn a skipped person into a decline or erase their answer. Group writes must be atomic and reject stale affected responses. Prevent overclaiming, release items on decline and preserve existing claims when targets shrink. Close every guest RSVP edit after the UTC calendar deadline; preserve saved responses and claims. Keep removal behavior consistent with README. Complete named attendance/claim dashboards are host-only.
 8. **Mobile first.** Every feature, form, modal, menu and fixed toolbar must work on phones with readable sizes, touch targets, safe-area spacing and accessible labels. Keep keyboards and scrolling from obscuring controls. Also verify tablet/desktop layouts and print behavior. Extend the shared controls instead of duplicating them.

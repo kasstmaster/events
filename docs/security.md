@@ -1,3 +1,23 @@
+## Host-owned replacement security boundary
+
+The consolidated ticket supersedes the legacy central guest/Firebase design below
+when both replacement flags are enabled. See [host-owned invitations](host-owned-invitations.md)
+for activation/cutover safeguards and provider prerequisites. Host authentication
+requires Google identity verification or independently verified email plus an
+administrator-issued one-use invitation. Adult manager approval is explicit.
+Persistent device credentials rotate and remain immediately revocable; system-admin
+elevation is separately password protected and short-lived. OAuth email equality
+never silently links an existing password account.
+
+Independent host books retain historical central rows but cannot use them for
+matching/propagation/authority. Public event data is allowlisted; RSVP uses strong
+host/event/recipient capabilities and the existing transactional engine. Individual
+private pages require separate hashed, revocable grants and current authorization.
+Old guest/Firebase/messaging routes cannot be alternative authentication paths in
+replacement mode. Production flags, schemas, migrations and data remain unchanged.
+Tests use only synthetic data and mocked providers; actual provider/native-device
+acceptance and authoritative wedding export remain external prerequisites.
+
 # Security boundaries and release prerequisites
 
 This is a new application in `kasstmaster/events`. It does not read, migrate, write to or deploy the existing Meyers Gatherings site or its private data repository. The reference informed adult-level RSVPs, child association, declined attendance, menu claims and deadline behavior; its codebase was not copied.

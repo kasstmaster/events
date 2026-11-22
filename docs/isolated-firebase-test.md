@@ -1,3 +1,9 @@
+> Retired by the consolidated host-owned invitation model. The
+> `npm run test:firebase:real` command now refuses execution. Do not activate
+> Firebase or use the historical live-provider instructions below for this ticket.
+> Offline synthetic tests remain only for flag-off recovery compatibility.
+> See [the replacement implementation](host-owned-invitations.md).
+
 # Isolated real-Firebase phone verification
 
 This runner uses the existing Firebase SDK, Gather server, SQLite store, account

@@ -1,3 +1,9 @@
+> Current consolidated model: [Host-owned invitations and host authentication](docs/host-owned-invitations.md).
+> The replacement is implemented behind two absent/default-off flags. Hosts alone
+> have accounts; guests use public event links and host-local Household IDs. Legacy
+> guest/Firebase sections below describe flag-off recovery, not the replacement.
+> No production activation or wedding data import has occurred.
+
 # Gather · shared event hosting
 
 A mobile-first application for independent hosts and households. Every household and event uses the same server, event builder, guest page, RSVP flow, and design controls. Differences are persisted as data in one centralized SQLite database. No emails are sent.

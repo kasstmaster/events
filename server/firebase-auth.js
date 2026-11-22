@@ -1,3 +1,4 @@
+import { hostOnlyMode } from "./host-model.js";
 import { boundLoginContext, enrollmentSession } from "./firebase-routing.js";
 import { GATHER_ORIGIN } from "./gather-flags.js";
 import { auditAccount } from "./account-management.js";
@@ -16,6 +17,7 @@ import {
 } from "./passwordless.js";
 import { persistentProof } from "./device-sessions.js";
 export const firebaseEnabled = (env) =>
+  !hostOnlyMode(env) &&
   env.FIREBASE_AUTH_ENABLED === "true" &&
   env.FIREBASE_ACTIVATION_APPROVED === "true";
 const P = "platform";

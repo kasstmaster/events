@@ -146,9 +146,16 @@ export function editorToolbar({
   return ui`<div class="appearance-categories" role="toolbar" aria-label="${H(categoryLabel)}">${categories}</div>${contentActions}${actions ? ui`<div class="appearance-actions" role="toolbar" aria-label="${H(actionLabel)}">${actions}</div>` : ""}${controls ? ui`<div class="appearance-controls" role="group" aria-label="${H(controlLabel)}">${controls}</div>` : ""}`;
 }
 
-export function addressBookDescription(canInvite = false) {
+export function addressBookDescription(canInvite = false, independent = false) {
+  if (independent)
+    return ui`<p class="small" data-address-book-description>${C("Your Address Book contains contacts maintained only for this household. Other hosts have separate Address Books.")} ${canInvite ? C("Select contacts to invite or uninvite them from your events.") : ""}</p>`;
   return ui`<p class="small" data-address-book-description>${C("Your Address Book contains contacts and household information shared with you.")} ${canInvite ? C("Select contacts to invite or uninvite them from your events.") : C("Shared information updates according to each household’s sharing choices.")}</p>`;
 }
-export function addressBookHome(button, action, canInvite = false) {
-  return ui`<section class="panel" data-home-card="contacts" aria-label="${H("Address Book")}">${addressBookDescription(canInvite)}${button(action, H("Address Book"))}</section>`;
+export function addressBookHome(
+  button,
+  action,
+  canInvite = false,
+  independent = false,
+) {
+  return ui`<section class="panel" data-home-card="contacts" aria-label="${H("Address Book")}">${addressBookDescription(canInvite, independent)}${button(action, H("Address Book"))}</section>`;
 }

@@ -95,6 +95,7 @@ export function accountControls({
   document.addEventListener(
     "click",
     async (event) => {
+      if (state.hostOnly) return;
       const target = event.target.closest("[data-action]");
       if (!target) return;
       const action = target.dataset.action;
@@ -159,6 +160,7 @@ export function accountControls({
   document.addEventListener(
     "submit",
     async (event) => {
+      if (state.hostOnly) return;
       const form = event.target,
         kind = form.dataset.form;
       if (

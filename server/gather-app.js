@@ -1,3 +1,4 @@
+import { hostOnlyMode } from "./host-model.js";
 import { universalEnabled, activeEntry } from "./passwordless.js";
 import { fail } from "./model.js";
 export async function gatherAppAPI(ctx) {
@@ -6,12 +7,18 @@ export async function gatherAppAPI(ctx) {
   if (!path.startsWith("/api/app/")) return false;
   if (
     method !== "GET" ||
-    !universalEnabled(env) ||
-    env.GATHER_PWA_ENABLED !== "true"
+    (!hostOnlyMode(env) &&
+      (!universalEnabled(env) || env.GATHER_PWA_ENABLED !== "true"))
   )
     fail(404, "Page not found.");
   if (path === "/api/app/manifest") {
-    const household = selected;
+    if (hostOnlyMode(env) && ctx.session?.role !== "host")
+      fail(404, "Page not found.");
+    const household =
+      selected ||
+      (hostOnlyMode(env) && ctx.session?.household
+        ? store.household(ctx.session.household)
+        : null);
     json(res, {
       id: "/",
       name: household?.name || "Gather",
@@ -22,7 +29,10 @@ export async function gatherAppAPI(ctx) {
       background_color: household?.design?.background || "#f3eee8",
       theme_color: household?.design?.toolbarSurface || "#294d42",
       icons: [192, 512].map((size) => ({
-        src: "/api/app/icon?size=" + size,
+        src:
+          "/api/app/icon?size=" +
+          size +
+          (hostOnlyMode(env) ? "&v=" + (household?.version || 0) : ""),
         sizes: household?.logo ? "any" : size + "x" + size,
         type:
           household?.logo?.match(/^data:(image\/(?:png|jpeg|webp));/)?.[1] ||
@@ -38,7 +48,12 @@ export async function gatherAppAPI(ctx) {
       new URL(ctx.req.url, origin).searchParams.get("size") === "192"
         ? 192
         : 512;
-    const logo = selected?.logo;
+    const logo = (
+      selected ||
+      (hostOnlyMode(env) && ctx.session?.household
+        ? store.household(ctx.session.household)
+        : null)
+    )?.logo;
     if (
       logo &&
       /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(logo)

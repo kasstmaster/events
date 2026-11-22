@@ -1,3 +1,4 @@
+import { validHostSession } from "./host-signup.js";
 import {
   firebaseEnabled,
   firebaseConfig,
@@ -451,6 +452,8 @@ export async function runPasswordlessMessages(
 export function validPasswordlessSession(store, session) {
   const record = store.get("passwordless-session", session.token, P);
   if (!record) return true;
+  if (record.provider === "host-account")
+    return validHostSession(store, session, record);
   const subject = subjectByKey(store, record.subject),
     verified = subject && passwordlessContact(store, subject);
   return (
@@ -710,10 +713,12 @@ export async function passwordlessAPI(ctx) {
     store.transaction(() => {
       const currentProof = store.get("passwordless-session", session.token, P);
       const identity =
-        currentProof?.identity ||
-        (["host", "guest"].includes(session.role)
-          ? privateIdentity(store, session)
-          : null);
+        currentProof?.provider === "host-account"
+          ? null
+          : currentProof?.identity ||
+            (["host", "guest"].includes(session.role)
+              ? privateIdentity(store, session)
+              : null);
       const primaryUser =
         session.user ||
         (identity && personalAccount(store, identity)?.hostUser);

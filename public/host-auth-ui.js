@@ -1,0 +1,365 @@
+import { topbar } from "./browse-ui.js";
+import { takeHostFragment } from "./auth-bootstrap.js";
+import { ui, C, H } from "./ui-runtime.js";
+export function hostAuthUI({
+  state,
+  api,
+  field,
+  button,
+  escape,
+  render,
+  load,
+  fileData,
+  familyLogoChoice,
+  notify,
+}) {
+  const parameters = new URLSearchParams(takeHostFragment().slice(1));
+  let invite = parameters.get("invite") || "",
+    verification = parameters.get("verify") || "",
+    reset = parameters.get("reset") || "";
+  let transfer = parameters.get("host-transfer") || "",
+    request = parameters.get("host-transfer-request") || "",
+    source = parameters.get("host-transfer-start") || "",
+    completed = false;
+  let screen = reset
+      ? "reset"
+      : verification
+        ? "verify"
+        : invite
+          ? "signup"
+          : location.pathname === "/host-recovery"
+            ? "recover"
+            : "login",
+    message =
+      parameters.get("host") === "google-failed"
+        ? "Google sign-in could not be completed. Try again or use email and password."
+        : "";
+  addEventListener("gather-host-fragment", () => {
+    const next = new URLSearchParams(takeHostFragment().slice(1));
+    if (next.get("verify")) {
+      verification = next.get("verify");
+      screen = "verify";
+    } else if (next.get("reset")) {
+      reset = next.get("reset");
+      screen = "reset";
+    } else if (next.get("invite")) {
+      invite = next.get("invite");
+      screen = "signup";
+    }
+    if (state.hostOnly) load();
+  });
+  let config = {},
+    invitationContext = null,
+    hostPWA = false;
+  const central = () => config.centralOrigin || "https://gather.ilymmd.com";
+  async function navigateTransfer(data) {
+    const response = await api("/api/host-auth/handoff/" + data.action, {
+      method: "POST",
+      data: data.input,
+    });
+    location.replace(response.url);
+  }
+  return {
+    metadata(session, household) {
+      hostPWA = session?.role === "host";
+      let favicon = document.querySelector(
+        'link[rel="icon"][data-gather-host]',
+      );
+      if (!favicon) {
+        favicon = document.createElement("link");
+        favicon.rel = "icon";
+        favicon.dataset.gatherHost = "true";
+        document.head.append(favicon);
+      }
+      favicon.href = household?.logo || "/gather-192.png";
+      let manifest = document.querySelector('link[rel="manifest"]');
+      if (session?.role === "host") {
+        if (!manifest) {
+          manifest = document.createElement("link");
+          manifest.rel = "manifest";
+          document.head.append(manifest);
+        }
+        manifest.href = "/api/app/manifest?v=" + (household?.version || 0);
+        navigator.serviceWorker?.register("/gather-sw.js").catch(() => {});
+      } else {
+        manifest?.remove();
+        navigator.serviceWorker
+          ?.getRegistrations()
+          .then((registrations) => {
+            if (hostPWA) return;
+            for (const registration of registrations) {
+              const worker =
+                registration.active ||
+                registration.waiting ||
+                registration.installing;
+              if (
+                worker &&
+                new URL(worker.scriptURL).origin === location.origin &&
+                new URL(worker.scriptURL).pathname === "/gather-sw.js"
+              )
+                registration.unregister().catch(() => {});
+            }
+          })
+          .catch(() => {});
+      }
+    },
+    stepUpPage() {
+      return ui`${topbar({ title: C("Administrator verification"), back: "page-back" })}<section class="panel"><form data-form="host-admin-stepup">${field(H("Current system administrator password"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Open administrator tools</button></form></section>`;
+    },
+    accountPage() {
+      return ui`${topbar({ title: C("Host account"), back: "page-back" })}<section class="panel"><h1>Host account</h1>${field(H("Registered email"), "hostEmail", state.hostAccount?.email || "", "email", "readonly")}<form data-form="host-password">${field(H("Current password"), "currentPassword", "", "password", 'required autocomplete="current-password"')}${field(H("New password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Change password</button></form>${config.google && !state.session?.platformAdmin ? ui`<form data-form="host-connect-google">${field(H("Current password to connect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Connect Google</button></form>` : ""}${state.hostAccount?.googleConnected ? ui`<form data-form="host-disconnect-google">${field(H("Current password to disconnect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Disconnect Google and sign out devices</button></form>` : ""}<div class="row">${button("passwordless-revoke", H("Sign out other devices"))}${button("passwordless-revoke-all", H("Sign out all devices"))}${button("host-recovery", H("Recover host account"))}</div></section>`;
+    },
+    authEntry: () =>
+      ["/host-signup", "/host-recovery"].includes(location.pathname),
+    async initialize() {
+      config = await api("/api/host-auth/config");
+      if (invite && screen === "signup") {
+        try {
+          invitationContext = await api("/api/host-signup/context", {
+            method: "POST",
+            data: { invite },
+          });
+        } catch {
+          message = "Registration invitation unavailable or expired.";
+          screen = "login";
+          invite = "";
+        }
+      }
+    },
+    async route(session) {
+      if (source) {
+        const value = source;
+        source = "";
+        await navigateTransfer({ action: "prepare", input: { source: value } });
+        return true;
+      }
+      if (transfer) {
+        const [reference, token] = transfer.split(".");
+        transfer = "";
+        const redeemed = await api("/api/host-auth/handoff/redeem", {
+          method: "POST",
+          data: { request: reference, token },
+        });
+        location.replace(redeemed.next === "account" ? "/?account=1" : "/");
+        return true;
+      }
+      if (request && session.role === "host") {
+        const value = request;
+        request = "";
+        await navigateTransfer({
+          action: "authorize",
+          input: { request: value },
+        });
+        return true;
+      }
+      if (
+        parameters.get("host") === "complete" &&
+        session.role === "host" &&
+        !completed
+      ) {
+        completed = true;
+        return this.goHome(session);
+      }
+      return false;
+    },
+    async goHome(session = state.session) {
+      if (session?.role !== "host") return false;
+      const result = await api("/api/host-auth/home");
+      const target = new URL(result.home);
+      if (target.origin === location.origin) return false;
+      location.replace(
+        target.origin +
+          "/signin#host-transfer-start=" +
+          encodeURIComponent(location.origin),
+      );
+      return true;
+    },
+    page() {
+      const title =
+        screen === "signup"
+          ? "Create your host account"
+          : screen === "reset"
+            ? "Reset your host password"
+            : screen === "recover"
+              ? "Recover host sign-in"
+              : screen === "verify"
+                ? "Verify your email"
+                : "Host sign-in";
+      const household = state.publicHousehold;
+      return ui`<section class="auth"><p class="eyebrow">${household ? escape(household.name) : C("Welcome to Gather")}</p><h1>${C(title)}</h1>${household ? ui`<p class="muted">Open the event link on your invitation to RSVP. Only hosts sign in here.</p>` : ""}<div class="panel">${message ? ui`<p role="status">${escape(message)}</p>` : ""}${screen === "sent" ? ui`<p>Check your email, then open the verification link in this browser. No account has been created yet.</p>` : screen === "verify" ? ui`<form data-form="host-verify"><p>Finish verifying your email to create your host account.</p><p class="form-error" role="alert"></p><button>Verify and continue</button></form>` : screen === "reset" ? ui`<form data-form="host-reset">${field(H("New password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Reset password</button></form>` : screen === "recover" ? ui`<form data-form="host-recover">${field(H("Email address"), "email", "", "email", 'required autocomplete="email"')}<p class="form-error" role="alert"></p><button>Send recovery email</button></form>` : ui`<form data-form="${screen === "signup" ? "host-signup" : "host-login"}">${field(H("Email address"), "email", screen === "signup" ? invitationContext?.email || "" : "", "email", 'required maxlength="254" autocomplete="username"' + (screen === "signup" && invitationContext?.email ? " readonly" : ""))}${screen === "signup" ? field(H("Family household name"), "name", invitationContext?.household?.name || "", "text", 'required maxlength="100"' + (invitationContext?.household ? " readonly" : "")) : ""}${field(H("Password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="current-password"')}${screen === "signup" && !invitationContext?.household ? familyLogoChoice() : ""}<p class="form-error" role="alert"></p><button>${C(screen === "signup" ? "Verify email and create account" : "Sign in")}</button>${config.google ? button("host-google", H(screen === "signup" ? "Sign up with Google" : "Sign in with Google")) : ""}</form>`}</div>${screen !== "signup" ? button("host-recovery", H("Forgot password?"), "", "quiet") : ""}${screen !== "login" ? button("host-login-screen", H("Sign in"), "", "quiet") : ""}<p class="small">New host accounts require an administrator-issued registration link.</p></section>`;
+    },
+    async submit(form) {
+      const kind = form.dataset.form,
+        values = Object.fromEntries(new FormData(form));
+      if (
+        ![
+          "host-login",
+          "host-signup",
+          "host-verify",
+          "host-recover",
+          "host-reset",
+          "host-password",
+          "host-connect-google",
+          "host-disconnect-google",
+          "host-admin-stepup",
+        ].includes(kind)
+      )
+        return false;
+      if (kind === "host-admin-stepup") {
+        await api("/api/host-auth/admin/step-up", {
+          method: "POST",
+          data: values,
+        });
+        state.view = "home";
+        await load();
+      }
+      if (kind === "host-password") {
+        await api("/api/host-auth/password", { method: "POST", data: values });
+        state.view = "home";
+        await load();
+      }
+      if (kind === "host-disconnect-google") {
+        if (!confirm("Disconnect Google and revoke this host's sessions?"))
+          return true;
+        await api("/api/host-auth/google/disconnect", {
+          method: "POST",
+          data: { password: values.password, confirm: true },
+        });
+        state.view = "home";
+        await load();
+      }
+      if (kind === "host-connect-google") {
+        if (location.origin !== central()) {
+          location.replace(
+            central() +
+              "/signin#host-transfer-start=" +
+              encodeURIComponent(location.origin) +
+              "&host-settings=1",
+          );
+          return true;
+        }
+        const result = await api("/api/host-auth/google/start", {
+          method: "POST",
+          data: { intent: "connect", password: values.password },
+        });
+        location.assign(result.url);
+      }
+      if (kind === "host-login") {
+        await api("/api/host-auth/login", { method: "POST", data: values });
+        screen = "login";
+        history.replaceState(null, "", "/");
+        state.view = "home";
+        await load();
+        if (!request) await this.goHome();
+      }
+      if (kind === "host-signup") {
+        values.logo =
+          values.logoChoice === "upload"
+            ? await fileData(form.elements.registrationLogo)
+            : "";
+        await api("/api/host-signup/email", {
+          method: "POST",
+          data: { ...values, invite },
+        });
+        screen = "sent";
+        render();
+      }
+      if (kind === "host-verify") {
+        await api("/api/host-signup/complete", {
+          method: "POST",
+          data: { verification },
+        });
+        verification = "";
+        invite = "";
+        history.replaceState(null, "", "/");
+        state.view = "home";
+        await load();
+        await this.goHome();
+      }
+      if (kind === "host-recover") {
+        await api("/api/host-auth/recovery/start", {
+          method: "POST",
+          data: values,
+        });
+        message =
+          "If an eligible host account exists, a recovery email has been requested. System administrator recovery remains separately protected.";
+        screen = "login";
+        render();
+      }
+      if (kind === "host-reset") {
+        await api("/api/host-auth/recovery/complete", {
+          method: "POST",
+          data: { token: reset, password: values.password },
+        });
+        reset = "";
+        history.replaceState(null, "", "/signin");
+        message = "Password updated. Sign in again on each device.";
+        screen = "login";
+        state.view = "home";
+        await load();
+      }
+      return true;
+    },
+    async action(action, target) {
+      if (action === "passwordless-admin-open") {
+        state.settingsOpen = false;
+        state.view = "host-admin-stepup";
+        render();
+        return true;
+      }
+      if (["my-account", "personal-account", "host-account"].includes(action)) {
+        state.hostAccount = await api("/api/host-auth/account");
+        state.settingsOpen = false;
+        state.view = "host-account";
+        render();
+        return true;
+      }
+      if (action === "host-recovery") {
+        if (location.origin !== central()) {
+          location.assign(central() + "/host-recovery");
+          return true;
+        }
+        screen = "recover";
+        render();
+        return true;
+      }
+      if (action === "host-login-screen") {
+        screen = "login";
+        render();
+        return true;
+      }
+      if (action !== "host-google") return false;
+      if (location.origin !== central()) {
+        location.assign(central() + "/signin");
+        return true;
+      }
+      const form = target.closest("form"),
+        values = Object.fromEntries(new FormData(form));
+      if (screen === "signup") {
+        if (
+          !form.elements.email.reportValidity() ||
+          !form.elements.name.reportValidity()
+        )
+          return true;
+        values.logo =
+          values.logoChoice === "upload"
+            ? await fileData(form.elements.registrationLogo)
+            : "";
+      }
+      delete values.password;
+      const result = await api("/api/host-auth/google/start", {
+        method: "POST",
+        data: {
+          ...values,
+          invite,
+          intent: screen === "signup" ? "signup" : "login",
+        },
+      });
+      const destination = new URL(result.url);
+      if (destination.origin !== "https://accounts.google.com")
+        throw Error("Unsupported Google sign-in destination.");
+      location.assign(result.url);
+      return true;
+    },
+  };
+}

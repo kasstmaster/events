@@ -1,3 +1,8 @@
+import {
+  hostSignupEnabled,
+  validHostSession,
+  persistentHostSession,
+} from "./host-signup.js";
 import { validFirebaseSession } from "./firebase-auth.js";
 import { persistentProof } from "./device-sessions.js";
 import { validChildDeviceRecord } from "./passwordless.js";
@@ -26,7 +31,7 @@ export function accountHome(store, subject, hosts, fallback) {
 }
 export async function handoffAPI(ctx) {
   const {
-    path,
+    path: originalPath,
     method,
     req,
     res,
@@ -41,12 +46,17 @@ export async function handoffAPI(ctx) {
     newSession,
     cookie,
   } = ctx;
+  const native = originalPath.startsWith("/api/host-auth/");
+  const path = native
+    ? originalPath.replace("/api/host-auth/", "/api/passwordless/")
+    : originalPath;
   if (
     !path.startsWith("/api/passwordless/handoff") &&
     path !== "/api/passwordless/home"
   )
     return false;
-  if (!passwordlessEnabled(env)) fail(404, "Page not found.");
+  if (native ? !hostSignupEnabled(env) : !passwordlessEnabled(env))
+    fail(404, "Page not found.");
   const allowed = new Set([
     origin,
     ctx.canonicalOrigin || origin,
@@ -63,7 +73,12 @@ export async function handoffAPI(ctx) {
   if (path === "/api/passwordless/home" && method === "GET") {
     const record =
         session && store.get("passwordless-session", session.token, P),
-      subject = record && subjectByKey(store, record.subject);
+      subject =
+        native &&
+        record?.provider === "host-account" &&
+        validHostSession(store, session, record)
+          ? { role: "host", household: session.household }
+          : !native && record && subjectByKey(store, record.subject);
     if (!subject) fail(401, "Please sign in.");
     json(res, { home: accountHome(store, subject, householdHosts, origin) });
     return true;
@@ -87,7 +102,9 @@ export async function handoffAPI(ctx) {
       bindingHash: authHash(secret),
       state: "prepared",
       expires: Date.now() + 60000,
-      invitation: valid(input.invitation) ? input.invitation : "",
+      native,
+      next: native && input.next === "account" ? "account" : "home",
+      invitation: native ? "" : valid(input.invitation) ? input.invitation : "",
     });
     res.setHeader(
       "Set-Cookie",
@@ -96,7 +113,13 @@ export async function handoffAPI(ctx) {
         secret +
         "; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=60",
     );
-    json(res, { url: input.source + "/signin#transfer-request=" + request });
+    json(res, {
+      url:
+        input.source +
+        "/signin#" +
+        (native ? "host-transfer-request=" : "transfer-request=") +
+        request,
+    });
     return true;
   }
   if (!valid(input.request))
@@ -115,6 +138,20 @@ export async function handoffAPI(ctx) {
         !allowed.has(row.target)
       )
         fail(401, "App handoff expired. Sign in inside this app.");
+      if (row.native !== native)
+        fail(401, "App handoff expired. Sign in inside this app.");
+      if (native) {
+        const label = new URL(row.target).hostname.split(".")[0];
+        const target = householdHosts.has(new URL(row.target).hostname)
+          ? store.hostnameHousehold(label)
+          : null;
+        if (
+          record.provider !== "host-account" ||
+          !validHostSession(store, session, record) ||
+          (target && target.id !== session.household)
+        )
+          fail(403, "This household is not available to your account.");
+      }
       store.put(
         "auth-handoff",
         row.id,
@@ -123,6 +160,9 @@ export async function handoffAPI(ctx) {
           ...row,
           state: "authorized",
           tokenHash: authHash(token),
+          user: native ? session.user : undefined,
+          household: native ? session.household : undefined,
+          stamp: native ? record.stamp : undefined,
           subject: record.subject,
           contactStamp: record.contactStamp,
           childDeviceHash: record.childDeviceHash || "",
@@ -137,14 +177,65 @@ export async function handoffAPI(ctx) {
       return row.target;
     });
     json(res, {
-      url: target + "/signin#transfer=" + input.request + "." + token,
+      url:
+        target +
+        "/signin#" +
+        (native ? "host-transfer=" : "transfer=") +
+        input.request +
+        "." +
+        token +
+        (native &&
+        store.get("auth-handoff", input.request, P)?.next === "account"
+          ? "&host-settings=1"
+          : ""),
     });
     return true;
   }
   if (path === "/api/passwordless/handoff/redeem") {
     const result = store.transaction(() => {
-      const row = store.get("auth-handoff", input.request, P),
-        subject = row && subjectByKey(store, row.subject),
+      const row = store.get("auth-handoff", input.request, P);
+      if (native) {
+        const source =
+          row &&
+          store.one(
+            "SELECT * FROM sessions WHERE token=? AND expires>?",
+            row.sourceSession,
+            Date.now(),
+          );
+        if (
+          !row ||
+          row.native !== true ||
+          row.state !== "authorized" ||
+          row.expires <= Date.now() ||
+          row.target !== origin ||
+          row.bindingHash !== authHash(binding) ||
+          !valid(binding) ||
+          !valid(input.token) ||
+          row.tokenHash !== authHash(input.token) ||
+          !source ||
+          !validHostSession(store, source, row) ||
+          (selected && selected.id !== row.household)
+        )
+          fail(401, "App handoff expired. Sign in inside this app.");
+        store.put(
+          "auth-handoff",
+          row.id,
+          P,
+          { ...row, state: "consumed", tokenHash: "", bindingHash: "" },
+          row.version,
+        );
+        return {
+          auth: persistentHostSession(
+            store,
+            { user: source.user, household: source.household, role: "host" },
+            origin,
+            row.deviceId,
+          ),
+          next: row.next,
+          invitation: "",
+        };
+      }
+      const subject = row && subjectByKey(store, row.subject),
         verified = subject && passwordlessContact(store, subject);
       if (
         !row ||
@@ -197,7 +288,11 @@ export async function handoffAPI(ctx) {
       return { auth, invitation: row.invitation };
     });
     cookie(res, result.auth);
-    json(res, { ok: true, invitation: result.invitation });
+    json(res, {
+      ok: true,
+      invitation: result.invitation,
+      ...(native ? { next: result.next } : {}),
+    });
     return true;
   }
   fail(404, "Page not found.");

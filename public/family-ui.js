@@ -185,7 +185,7 @@ export function familyTools(ctx) {
     });
     let content = "";
     if (selected === "__settings__")
-      content = `<ul class="browse-rows">${row({ title: C("Notification settings"), action: "family-preferences", symbol: "settings" })}${row({ title: C("Change Password"), action: "family-password", symbol: "edit" })}${manager() ? row({ title: C("Family Members"), action: "family-members", symbol: "contacts" }) : ""}${ctx.appearanceSettings?.() || ""}${row({ title: C("Sign Out"), action: "logout", symbol: "logout" })}</ul>${ctx.householdDetails?.() || ""}`;
+      content = `<ul class="browse-rows">${state.hostOnly ? ctx.appearanceSettings?.() || "" : ""}${ctx.eventSettings?.() || ""}${row({ title: C("Notification settings"), action: "family-preferences", symbol: "settings" })}${row({ title: C("Change Password"), action: state.hostOnly && state.session.role === "host" ? "host-account" : "family-password", symbol: "edit" })}${manager() ? row({ title: C("Family Members"), action: "family-members", symbol: "contacts" }) : ""}${state.hostOnly ? "" : ctx.appearanceSettings?.() || ""}${row({ title: C("Sign Out"), action: "logout", symbol: "logout" })}</ul>${ctx.householdDetails?.() || ""}`;
     else if (search) {
       const found = ordered(
         d.records.filter((r) =>
@@ -502,7 +502,7 @@ export function familyTools(ctx) {
       )}<label class="check"><input type="checkbox" name="cancelled" ${r.cancelled ? "checked" : ""}>Cancel future reminders and occurrences</label><p>Assigned children can access this chore independently of the child-access checkboxes. Remove their assignment to revoke that access. Linked home records keep their own permissions.</p><p>Reminders are in-app only. Repeating chores keep separate occurrence history. DST times that do not exist or occur twice are skipped.</p>`;
     modal(
       r.id ? C("Edit household record") : C("Create household record"),
-      (r.id
+      (r.id || (state.hostOnly && section)
         ? ""
         : select(
             H("New item type"),

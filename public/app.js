@@ -1,3 +1,8 @@
+import { weddingImportUI } from "/wedding-import-ui.js";
+import { eventPagesUI } from "/event-pages-ui.js";
+import { recipientManagementUI } from "/recipient-management-ui.js";
+import { hostAdminUI } from "/host-admin-ui.js";
+import { hostAuthUI } from "/host-auth-ui.js";
 import { rsvpCardsUI } from "/rsvp-cards-ui.js";
 import { passwordlessUI } from "/passwordless-ui.js";
 import { accountControls, recoveryUI } from "/account-controls.js";
@@ -54,9 +59,16 @@ const escape = (value) =>
       ],
   );
 const fullName = (guest) =>
-  [guest.first, ...(guest.parent ? [] : [guest.last, guest.suffix])]
+  [
+    guest.first,
+    ...(guest.parent
+      ? state.hostOnly
+        ? [guest.suffix]
+        : []
+      : [guest.last, guest.suffix]),
+  ]
     .filter(Boolean)
-    .join(" ");
+    .join(" ") + (guest.plusOne && guest.first !== "+1" ? " · +1" : "");
 const state = {
   session: null,
   setup: null,
@@ -266,6 +278,7 @@ const isEditing = () =>
     "own-account",
   ].includes(state.view) ||
   state.view === "rsvp-page" ||
+  state.view === "event-pages-manage" ||
   !!state.familyMemberEditing ||
   !!state.eventLayoutDraft ||
   !!state.eventInviteDraft ||
@@ -303,14 +316,78 @@ async function load({ background = false } = {}) {
       render();
       return;
     }
+    const publicReference = location.pathname.match(
+      /^\/event\/([A-Za-z0-9_-]{43})$/,
+    )?.[1];
+    if (publicReference) {
+      const data = await api(`/api/public/events/${publicReference}`);
+      if (generation !== loadGeneration || (background && isEditing())) return;
+      state.visitor =
+        state.visitor?.reference === publicReference
+          ? state.visitor
+          : { reference: publicReference };
+      await extraPages.hydrate(data, publicReference);
+      if (data.hostOnly) {
+        state.hostOnly = true;
+        hostAuth.metadata({ role: "visitor" }, data.household);
+      }
+      state.platformUI = data.ui;
+      Object.assign(state, {
+        data,
+        session: { role: "visitor" },
+        publicHousehold: null,
+        event: data.events[0].id,
+      });
+      renderRefresh(background);
+      return;
+    }
     const passwordlessConfig = await api("/api/passwordless/config");
-    await passwordless.initialize(passwordlessConfig);
+    if (passwordlessConfig.hostOnly) {
+      const legacyReference = location.pathname.match(
+        /^\/invite\/([A-Za-z0-9_-]{43})$/,
+      )?.[1];
+      if (legacyReference) {
+        const direct = await api(`/api/public/invitations/${legacyReference}`);
+        location.replace(direct.path);
+        return;
+      }
+    }
+
+    state.hostOnly = passwordlessConfig.hostOnly === true;
+    if (state.hostOnly) await hostAuth.initialize();
+    else await passwordless.initialize(passwordlessConfig);
     const [context, platform, session] = await Promise.all([
       api("/api/public/context"),
       api("/api/interface"),
       api("/api/session"),
     ]);
     state.platformUI = platform.ui;
+    if (state.hostOnly && session.role !== "admin" && !session.platformAdmin) {
+      state.adminMode = false;
+      if (state.view.startsWith("admin-") && state.view !== "host-admin-stepup")
+        state.view = "home";
+    }
+    if (state.hostOnly && !session.role) {
+      state.view = "home";
+      state.settingsOpen = false;
+      state.adminMode = false;
+      state.event = null;
+    }
+    if (
+      state.hostOnly &&
+      [
+        "private-guest-sign-in",
+        "account-recovery",
+        "account-management",
+        "own-account",
+        "personal-account",
+        "personal-contacts",
+        "username-recovery",
+        "firebase-enrollment",
+      ].includes(state.view)
+    )
+      state.view = "home";
+    if (state.hostOnly && (await hostAuth.route(session))) return;
     if (state.preview) {
       const data = await api(state.preview.endpoint || "/api/admin/preview", {
         method: "POST",
@@ -367,6 +444,7 @@ async function load({ background = false } = {}) {
       );
     if (
       !background &&
+      !state.hostOnly &&
       (await passwordless.routeSignIn(session, publicHousehold))
     )
       return;
@@ -423,6 +501,17 @@ async function load({ background = false } = {}) {
           familyData || state.familyData,
         ]);
     if (familyData) state.familyData = familyData;
+    if (
+      state.hostOnly &&
+      session.role === "host" &&
+      new URLSearchParams(location.search).get("account") === "1"
+    ) {
+      state.hostAccount = await api("/api/host-auth/account");
+      state.view = "host-account";
+      history.replaceState(null, "", location.pathname);
+    }
+    if (state.hostOnly)
+      hostAuth.metadata(session, data?.household || publicHousehold);
     Object.assign(state, {
       session,
       data,
@@ -496,9 +585,11 @@ async function checkAddress(form) {
 }
 
 const householdShareUrl = () =>
+  (state.hostOnly && state.shareURL) ||
   state.data.household.shareUrl ||
   location.origin + "/h/" + state.data.household.slug;
 function authPage(designTarget) {
+  if (state.hostOnly) return hostAuth.page();
   if (state.view === "username-recovery") return personal.page();
   if (
     state.setup?.required ||
@@ -527,6 +618,8 @@ function toolbar(event) {
       ...(event ? [{ action: "print", label: "Print", icon: "print" }] : []),
     ]);
   const role = state.session.role;
+  if (role === "visitor")
+    return bottom([{ action: "print", label: "Print", icon: "print" }]);
   if (
     role === "guest" &&
     state.data?.personal?.account.needsUsername &&
@@ -692,7 +785,7 @@ function eventInformation(
 }
 function eventPage(event) {
   const own = event.response || { version: 0, attendance: {}, claims: {} };
-  const content = ui`<section class="event-hero">${event.icon ? ui`<img class="event-icon" data-event-edit="iconUpload" src="${escape(event.icon)}" alt="Event artwork">` : ""}<h1 data-event-edit="title">${escape(event.title)}</h1><p class="event-details" data-event-edit="description">${escape(event.description)}</p>${eventInformation(event)}</section><div class="row no-print" data-event-actions>${button("rsvp", C("RSVP"), "", "")}${(event.registries || []).length ? ui`<div class="registry-buttons" aria-label="Gift registries">${event.registries.map((r) => ui`<a class="button registry-button" href="${escape(r.url)}" target="_blank" rel="noopener noreferrer">${escape(r.title)}</a>`).join("")}</div>` : ""}${event.uploadURL ? ui`<a class="button" data-event-edit="uploadURL" href="${escape(event.uploadURL)}" target="_blank" rel="noopener noreferrer">Upload Photos & Videos</a>` : ""}${event.viewURL ? ui`<a class="button" data-event-edit="viewURL" href="${escape(event.viewURL)}" target="_blank" rel="noopener noreferrer">View Photos & Videos</a>` : ""}</div><div class="grid">${(event.information || []).some((run) => run.text.trim()) ? ui`<section class="panel" data-event-section="additional-information"><h2>Information</h2><div class="event-additional-content" data-event-edit="information" data-host-content>${renderInformation(event.information)}</div></section>` : ""}${event.menu.length ? ui`<section class="panel" data-event-section="menus"><p class="eyebrow">Something to share</p><h2>At the table</h2>${event.menu.length ? event.menu.map((item) => ui`<div class="menu-item" data-event-edit="table" data-menu-item="${escape(item.id)}"><div><strong>${escape(item.name)}</strong><div class="muted small">${item.kind === "drink" ? C("Drinks") : C("Potluck")}</div></div><span class="pill">${Math.max(0, item.quantity - (item.claimed || 0))} needed</span></div>`).join("") : M('<p class="muted">Just bring yourself. Your host hasn’t added any menu items yet.</p>')}</section>` : ""}${
+  const content = ui`<section class="event-hero">${event.icon ? ui`<img class="event-icon" data-event-edit="iconUpload" src="${escape(event.icon)}" alt="Event artwork">` : ""}<h1 data-event-edit="title">${escape(event.title)}</h1><p class="event-details" data-event-edit="description">${escape(event.description)}</p>${eventInformation(event)}</section><div class="row no-print" data-event-actions>${button("rsvp", C("RSVP"), "", "")}${(event.extraPages || []).map((p) => button("event-extra-page", escape(p.title), `data-id="${escape(p.id)}"`)).join("")}${state.hostOnly && state.session.role === "host" && !event.invitingHousehold ? button("event-pages-manage", H("Manage event pages")) : ""}${(event.registries || []).length ? ui`<div class="registry-buttons" aria-label="Gift registries">${event.registries.map((r) => ui`<a class="button registry-button" href="${escape(r.url)}" target="_blank" rel="noopener noreferrer">${escape(r.title)}</a>`).join("")}</div>` : ""}${event.uploadURL ? ui`<a class="button" data-event-edit="uploadURL" href="${escape(event.uploadURL)}" target="_blank" rel="noopener noreferrer">Upload Photos & Videos</a>` : ""}${event.viewURL ? ui`<a class="button" data-event-edit="viewURL" href="${escape(event.viewURL)}" target="_blank" rel="noopener noreferrer">View Photos & Videos</a>` : ""}</div><div class="grid">${(event.information || []).some((run) => run.text.trim()) ? ui`<section class="panel" data-event-section="additional-information"><h2>Information</h2><div class="event-additional-content" data-event-edit="information" data-host-content>${renderInformation(event.information)}</div></section>` : ""}${event.menu.length ? ui`<section class="panel" data-event-section="menus"><p class="eyebrow">Something to share</p><h2>At the table</h2>${event.menu.length ? event.menu.map((item) => ui`<div class="menu-item" data-event-edit="table" data-menu-item="${escape(item.id)}"><div><strong>${escape(item.name)}</strong><div class="muted small">${item.kind === "drink" ? C("Drinks") : C("Potluck")}</div></div><span class="pill">${Math.max(0, item.quantity - (item.claimed || 0))} needed</span></div>`).join("") : M('<p class="muted">Just bring yourself. Your host hasn’t added any menu items yet.</p>')}</section>` : ""}${
     own
       ? ui`<section class="panel" data-event-section="personal"><p class="eyebrow">Your plans</p><h2>Your RSVP & items</h2>${
           own.version && !own.uninvited
@@ -896,7 +989,44 @@ function render(target = $("#app"), example = false) {
   const role = state.session?.role;
   let content = "",
     event = null;
-  if (state.view === "account-recovery") content = recoveryQueue.page();
+  if (state.hostOnly && location.pathname === "/guest")
+    content = ui`<section class="auth"><h1>Open your event invitation</h1><p>Guest sign-in has been retired. Use the event link shared by your host. No guest account is required.</p></section>`;
+  else if (state.hostOnly && hostAuth.authEntry()) content = hostAuth.page();
+  else if (
+    state.hostOnly &&
+    state.view === "host-admin-stepup" &&
+    role === "host"
+  )
+    content = hostAuth.stepUpPage();
+  else if (
+    state.hostOnly &&
+    state.view === "admin-wedding-import" &&
+    (role === "admin" || state.session?.platformAdmin)
+  )
+    content = weddingImport.page();
+  else if (state.hostOnly && state.view === "share-event" && role === "host")
+    content = ui`${topbar({ title: C("Share Invitation"), back: "page-back" })}<section class="panel"><ul class="browse-rows">${state.data.events.map((e) => row({ title: escape(e.title), action: "share-event-select", id: e.id, symbol: "share" })).join("")}</ul></section>`;
+  else if (
+    ["event-extra-page", "event-pages-manage"].includes(state.view) &&
+    role
+  ) {
+    event = selectedEvent();
+    content = extraPages.page();
+  } else if (
+    state.hostOnly &&
+    ["recipient-security", "recipient-children"].includes(state.view) &&
+    role === "host"
+  )
+    content = recipients.page();
+  else if (state.hostOnly && state.view === "host-account" && role === "host")
+    content = hostAuth.accountPage();
+  else if (
+    state.hostOnly &&
+    ["admin-approvals", "admin-hosts"].includes(state.view) &&
+    (role === "admin" || state.session?.platformAdmin)
+  )
+    content = hostAdmin.page();
+  else if (state.view === "account-recovery") content = recoveryQueue.page();
   else if (
     ["account-management", "private-guest-sign-in", "own-account"].includes(
       state.view,
@@ -911,6 +1041,8 @@ function render(target = $("#app"), example = false) {
   else if (state.view === "firebase-enrollment") content = passwordless.page();
   else if (role === "admin-pending" || state.view === "passwordless-security")
     content = passwordless.securityPage();
+  else if (role === "visitor" && state.view === "recipient-access")
+    content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C("Household ID")}</h1><form data-form="recipient-access">${field(H("Household ID"), "householdID", "", "text", 'required maxlength="64" autocomplete="off"')}<p class="form-error" role="alert"></p><div class="row"><button>${C("Continue")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
   else if (role && state.view === "rsvp-page")
     content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C(state.manualRSVP?.hostFamily ? "RSVP for your family" : state.manualRSVP ? "Record guest RSVP" : "Will you join us?")}</h1><form data-form="rsvp">${state.rsvpMarkup}<p class="form-error" role="alert"></p><div class="row"><button>${C("RSVP")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
   else if (state.view === "rsvp-cards") content = rsvpCards.page();
@@ -1221,7 +1353,8 @@ function render(target = $("#app"), example = false) {
     state.settingsOpen ||
     state.view === "settings" ||
     state.view === "personal-family" ||
-    state.view === "personal-account"
+    state.view === "personal-account" ||
+    (state.hostOnly && state.view === "host-account")
   ) {
     const household = state.data?.household || state.publicHousehold;
     const settingsMode =
@@ -1326,7 +1459,7 @@ function familyLogoChoice() {
 }
 function householdDetailsFields() {
   const household = state.data.household;
-  return ui`${field(H("Family household name"), "householdName", household.name, "text", 'readonly maxlength="100"')}<p class="small muted">Only the administrator can change the household name.</p>${household.logo ? ui`<img class="family-logo-preview" src="${escape(household.logo)}" alt="Current family logo">` : ""}${field(H("Family logo / icon"), "familyLogo", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<p>You can ask Kassandra to create a family logo for you. This appears when guests choose an event; event artwork is separate.</p><label class="check"><input type="checkbox" name="removeLogo">Remove family logo</label>${field(H("Household IANA timezone"), "householdTimezone", household.timezone || "UTC")}`;
+  return ui`${field(H("Family household name"), "householdName", household.name, "text", 'readonly maxlength="100"')}<p class="small muted">Only the administrator can change the household name.</p>${household.logo ? ui`<img class="family-logo-preview" src="${escape(household.logo)}" alt="Current family logo">` : ""}${field(H("Family logo / icon"), "familyLogo", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<p>You can ask Kassandra to create a family logo for you. This appears when guests choose an event; event artwork is separate.</p><label class="check"><input type="checkbox" name="removeLogo">Remove family logo</label>${state.hostOnly ? "" : field(H("Household IANA timezone"), "householdTimezone", household.timezone || "UTC")}`;
 }
 function householdDetails() {
   modal(C("Details"), householdDetailsFields(), "household");
@@ -1352,6 +1485,7 @@ const guestMatchInput = (form) => ({
   existingId: state.editingGuest?.id,
 });
 async function findGuestMatches(form, force = false) {
+  if (state.hostOnly) return true;
   clearTimeout(guestMatchTimer);
   const input = guestMatchInput(form),
     fingerprint = JSON.stringify(input),
@@ -1377,6 +1511,11 @@ async function findGuestMatches(form, force = false) {
   return !matches.length;
 }
 function queueGuestMatches(form, delay = 600) {
+  if (state.hostOnly) {
+    clearTimeout(guestMatchTimer);
+    form.dataset.matchReviewed = "true";
+    return;
+  }
   clearTimeout(guestMatchTimer);
   form.dataset.matchReviewed = "false";
   form.dataset.matchFingerprint = "";
@@ -1394,18 +1533,30 @@ function queueGuestMatches(form, delay = 600) {
   );
 }
 function guestEditor(guest = {}) {
+  if (state.hostOnly && guest.parent) {
+    recipients
+      .action("recipient-children", { dataset: { id: guest.id } })
+      .catch((error) => notify(error.message));
+    return;
+  }
   state.editingGuest = guest;
-  const markup = ui`<div class="form-grid">${field(H("First name"), "first", guest.first, "text", 'required maxlength="80"')}<span data-guest-surname ${guest.parent ? "hidden" : ""}>${field(H("Last name"), "last", guest.last || "", "text", `${guest.parent ? "" : "required"} maxlength="80"`)}</span></div>${field(H("Suffix (optional)"), "suffix", guest.suffix, "text", 'maxlength="30"')}${field(H("Phone number (international)"), "phone", guest.phone || "", "tel", 'placeholder="+15551234567"')}${select(H("Adult or child"), "parent", [["", C("Adult")], ...state.data.guests.filter((g) => !g.parent && g.id !== guest.id).map((g) => [g.id, "Child of " + fullName(g)])], guest.parent || "")}${guestAddresses.markup(guest)}`;
+  const markup = ui`<div class="form-grid">${field(H("First name"), "first", guest.first, "text", 'required maxlength="80"')}<span data-guest-surname ${guest.parent ? "hidden" : ""}>${field(H("Last name"), "last", guest.last || "", "text", `${guest.parent || (state.hostOnly && guest.plusOne) ? "" : "required"} maxlength="80"`)}</span></div>${field(H("Suffix (optional)"), "suffix", guest.suffix, "text", 'maxlength="30"')}${field(H("Phone number (international)"), "phone", guest.phone || "", "tel", 'placeholder="+15551234567"')}${select(H("Adult or child"), "parent", [["", C("Adult")], ...state.data.guests.filter((g) => !g.parent && g.id !== guest.id).map((g) => [g.id, (state.hostOnly ? "Shared address · " : "Child of ") + fullName(g)])], guest.parent || "")}${guestAddresses.markup(guest)}${state.hostOnly ? ui`<label class="check"><input type="checkbox" name="plusOne" ${guest.plusOne ? "checked" : ""}>+1 guest</label>` : ""}`;
   render();
   const host = document.querySelector(
     `[data-contact-editor="${guest.id || "new"}"]`,
   );
   host.innerHTML = ui`<form data-form="guest" data-guest="${guest.id || "new"}"><h3>${guest.id ? C("Edit guest") : C("Add guest")}</h3>${markup}<div class="inline-identity"></div><p class="form-error" role="alert"></p><div class="row">${button("guest-cancel", H("Cancel"))}<button>${C("Save")}</button></div></form>`;
-  document
-    .querySelector(".inline-identity")
-    .insertAdjacentHTML(
+  if (!state.hostOnly)
+    document
+      .querySelector(".inline-identity")
+      .insertAdjacentHTML(
+        "beforeend",
+        ui`<h3>Shared guest identity</h3><p>Household ID belongs to the shared address and appears beside its title in Contacts.</p>${button("guest-find-matches", H("Check for a shared guest"))}<div id="guest-matches"></div>${guest.linked ? button("guest-unlink", H("Correct a mistaken shared link"), `data-id="${guest.id}"`) : ""}`,
+      );
+  if (state.hostOnly && guest.id)
+    host.insertAdjacentHTML(
       "beforeend",
-      ui`<h3>Shared guest identity</h3><p>Household ID belongs to the shared address and appears beside its title in Contacts.</p>${button("guest-find-matches", H("Check for a shared guest"))}<div id="guest-matches"></div>${guest.linked ? button("guest-unlink", H("Correct a mistaken shared link"), `data-id="${guest.id}"`) : ""}`,
+      ui`<div class="row">${button("recipient-children", H("Add / edit children"), `data-id="${escape(guest.id)}"`)}${button("recipient-security", H("Household ID"), `data-id="${escape(guest.id)}"`)}</div>`,
     );
   guestAddresses.mount();
   measureChrome();
@@ -1553,7 +1704,7 @@ function contactsPage() {
   const label = (key) =>
     grouped.find((group) => group.key === key)?.label ||
     String(C("No shared address"));
-  return ui`<div class="browse-shell address-book-shell">${topbar({ title: C("Address Book"), titleControl: contactInviteEventsOpen ? contactEventPicker() : "", back: "home", search: "contacts-search", plus: contactInviteEventsOpen ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: [], extra: "" })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search Address Book") : ""}<div class="address-book-content"><section class="panel address-book-panel">${addressBookDescription(true)}${contactsInviteTools()}${!contactInviteMode && state.session.role === "host" ? button("personal-contacts", H("Linked households")) : ""}<ul class="browse-rows" ${contactInviteSaving ? "inert" : ""}>${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
+  return ui`<div class="browse-shell address-book-shell">${topbar({ title: C("Address Book"), titleControl: contactInviteEventsOpen ? contactEventPicker() : "", back: "home", search: "contacts-search", plus: contactInviteEventsOpen ? [] : [{ action: "add-guest", label: "Add Guest" }], sort: [], extra: "" })}${contactSearchOpen ? searchBox("contacts", contactSearch, escape, "Search Address Book") : ""}<div class="address-book-content"><section class="panel address-book-panel">${addressBookDescription(true, state.hostOnly)}${contactsInviteTools()}${!state.hostOnly && !contactInviteMode && state.session.role === "host" ? button("personal-contacts", H("Linked households")) : ""}<ul class="browse-rows" ${contactInviteSaving ? "inert" : ""}>${state.editingGuest && !state.editingGuest.id ? ui`<li class="browse-row"><strong>${C("New guest")}</strong></li><li class="inline-contact" data-contact-editor="new"></li>` : ""}${
     entries
       .map(
         ([key, rows]) =>
@@ -1728,7 +1879,7 @@ function informationEditor(value = []) {
     )}</div><div data-information-links hidden><label>${C("Link URL or email")}<input type="text" maxlength="2048" aria-label="${H("Link URL or email")}"></label><div class="row"><button type="button" data-information-action="apply-link">${C("Apply link")}</button><button type="button" data-information-action="cancel-link">${C("Cancel link")}</button></div></div><div data-information-popups hidden><label>${C("Pop-up text")}<textarea maxlength="3000" rows="5" aria-label="${H("Pop-up text")}"></textarea></label><div class="row"><button type="button" data-information-action="apply-popup">${C("Apply pop-up")}</button><button type="button" data-information-action="remove-popup">${C("Remove pop-up")}</button><button type="button" data-information-action="cancel-popup">${C("Cancel pop-up")}</button></div></div><div class="information-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${H("Information text")}" data-information-input data-host-content>${renderInformation(value)}</div><p class="information-error" role="alert" data-information-error></p></fieldset>`;
 }
 function eventDetailsFields(e, existing = true) {
-  return ui`${field(H("Event title"), "title", e.title, "text", 'required maxlength="160" placeholder="Sunday around the table"')}${area(H("Description"), "description", e.description, 'maxlength="5000"')}${informationEditor(e.information)}<div class="form-grid">${field(H("Date"), "date", e.date, "date")}${field(H("Time · numbers or words"), "time", e.time, "text", 'maxlength="100" placeholder="Two O’Clock in the Afternoon"')}${field(H("RSVP deadline"), "deadline", e.deadline, "date")}</div>${area(H("Event address"), "eventAddress", e.address, 'maxlength="500"')}${field(H("Photo / video upload link (optional)"), "uploadURL", e.uploadURL || "", "url", 'maxlength="2048" placeholder="https://…"')}<p class="small muted">Use Dropbox File Requests, Google Drive, OneDrive, or another sharing service. Configure upload permissions at that destination. Clear the link to remove the guest upload button.</p>${field(H("Photo / video viewing link (optional)"), "viewURL", e.viewURL || "", "url", 'maxlength="2048" placeholder="https://…"')}${field(H("Event artwork / image"), "iconUpload", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input type="checkbox" name="removeIcon">Remove current image</label>${select(H("Invitation template"), "template", [["", C("Simple invitation")], ...state.templates.map((t) => [t.id, t.name])], e.template || "")}<fieldset><legend>Gift registries · optional</legend><p class="small muted">Guest buttons appear directly below RSVP, in this order.</p><div id="registry-rows">${(e.registries || []).map(registryRow).join("")}</div>${button("add-registry", H("＋ Add registry"))}</fieldset><fieldset><legend>Potluck & drinks</legend><label class="check"><input type="checkbox" name="customItemsEnabled" ${e.customItemsEnabled ? "checked" : ""}>Allow guests to enter custom menu items</label><label class="check"><input type="checkbox" name="saveCustomItems" ${e.saveCustomItems ? "checked" : ""}>Save custom items to future menus</label><div class="row">${select(H("Copy menu from"), "copyMenu", [["", C("Choose a past event")], ...state.data.events.filter((p) => p.id !== e.id).map((p) => [p.id, p.title])], "")}${button("copy-menu", H("Copy items"))}</div><fieldset><legend>Table templates</legend>${select(H("Table template"), "tableTemplate", [["", C("New table template")], ...(state.data.tableTemplates || []).map((t) => [t.id, t.name])], "")}${field(H("Table template name"), "tableTemplateName", "", "text", 'maxlength="160"')}<div class="row">${button("table-template-apply", H("Apply Table Template"))}${button("table-template-save", H("Save Table Template"))}${button("table-template-delete", H("Delete Table Template"))}</div><p class="small">Applying a template adds items to this draft. Save the event to keep them. Existing menu items and guest claims stay unchanged.</p></fieldset><div id="menu-rows">${e.menu.map(menuRow).join("")}</div>${button("add-menu", H("＋ Add item"))}</fieldset><fieldset><legend>Guests</legend><div data-invitation-values>${e.invited.map((id) => ui`<input type="hidden" name="invited" value="${id}">`).join("")}</div>${button("invite-guests", H("Invite guests"))}</fieldset>${existing ? ui`<hr>${button("delete-event", H("Delete event"), "", "danger")}` : ""}`;
+  return ui`${field(H("Event title"), "title", e.title, "text", 'required maxlength="160" placeholder="Sunday around the table"')}${area(H("Description"), "description", e.description, 'maxlength="5000"')}${informationEditor(e.information)}<div class="form-grid">${field(H("Date"), "date", e.date, "date")}${field(H("Time · numbers or words"), "time", e.time, "text", 'maxlength="100" placeholder="Two O’Clock in the Afternoon"')}${field(H("RSVP deadline"), "deadline", e.deadline, "date")}</div>${area(H("Event address"), "eventAddress", e.address, 'maxlength="500"')}${field(H("Photo / video upload link (optional)"), "uploadURL", e.uploadURL || "", "url", 'maxlength="2048" placeholder="https://…"')}<p class="small muted">Use Dropbox File Requests, Google Drive, OneDrive, or another sharing service. Configure upload permissions at that destination. Clear the link to remove the guest upload button.</p>${field(H("Photo / video viewing link (optional)"), "viewURL", e.viewURL || "", "url", 'maxlength="2048" placeholder="https://…"')}${field(H("Event artwork / image"), "iconUpload", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<label class="check"><input type="checkbox" name="removeIcon">Remove current image</label>${select(H("Invitation template"), "template", [["", C("Simple invitation")], ...state.templates.map((t) => [t.id, t.name])], e.template || "")}<fieldset><legend>Gift registries · optional</legend><p class="small muted">Guest buttons appear directly below RSVP, in this order.</p><div id="registry-rows">${(e.registries || []).map(registryRow).join("")}</div>${button("add-registry", H("＋ Add registry"))}</fieldset><fieldset><legend>Potluck & drinks</legend><label class="check"><input type="checkbox" name="customItemsEnabled" ${e.customItemsEnabled ? "checked" : ""}>Allow guests to enter custom menu items</label><label class="check"><input type="checkbox" name="saveCustomItems" ${e.saveCustomItems ? "checked" : ""}>Save custom items to future menus</label><div class="row">${select(H("Copy menu from"), "copyMenu", [["", C("Choose a past event")], ...state.data.events.filter((p) => p.id !== e.id).map((p) => [p.id, p.title])], "")}${button("copy-menu", H("Copy items"))}</div><fieldset><legend>Table templates</legend>${select(H("Table template"), "tableTemplate", [["", C("New table template")], ...(state.data.tableTemplates || []).map((t) => [t.id, t.name])], "")}${field(H("Table template name"), "tableTemplateName", "", "text", 'maxlength="160"')}<div class="row">${button("table-template-apply", H("Apply Table Template"))}${button("table-template-save", H("Save Table Template"))}${button("table-template-delete", H("Delete Table Template"))}</div><p class="small">Applying a template adds items to this draft. Save the event to keep them. Existing menu items and guest claims stay unchanged.</p></fieldset><div id="menu-rows">${e.menu.map(menuRow).join("")}</div>${button("add-menu", H("＋ Add item"))}</fieldset><fieldset ${state.hostOnly ? "hidden" : ""}><legend>Guests</legend><div data-invitation-values>${e.invited.map((id) => ui`<input type="hidden" name="invited" value="${id}">`).join("")}</div>${state.hostOnly ? "" : button("invite-guests", H("Invite guests"))}</fieldset>${existing && !state.hostOnly ? ui`<hr>${button("delete-event", H("Delete event"), "", "danger")}` : ""}`;
 }
 function eventEditor(existing, focus = "") {
   state.editingEvent = existing || {
@@ -1870,7 +2021,29 @@ async function copyHouseholdLink() {
     notify(C("Select the household link to copy it."));
   }
 }
-async function share() {
+async function share(event = selectedEvent()) {
+  if (state.hostOnly) {
+    if (!event) {
+      state.view = "share-event";
+      render();
+      return;
+    }
+    const prepared = await api(
+      `/api/host/events/${event.id}/public-invitation`,
+      { method: "POST", data: { version: event.version } },
+    );
+    const link = new URL(
+      prepared.path,
+      state.data.household.shareUrl || location.origin,
+    ).href;
+    state.shareURL = link;
+    const qr = "/api/host/qr?event=" + encodeURIComponent(event.id);
+    modal(
+      C("Share Invitation"),
+      ui`<p>${escape(event.title)}</p><img class="qr" src="${escape(qr)}" alt="Event QR code"><p class="share-link">${escape(link)}</p><div class="row">${button("copy-link", H("Copy link"))}${button("native-share", H("Share link"))}<a class="button secondary" href="${escape(qr)}" download="event-qr.svg">Download QR</a><a class="button secondary" href="${escape(link)}" target="_blank" rel="noopener">Open event</a></div><p class="small muted">Guests open this event without signing in. Share each recipient household's ID on its QR enclosure for RSVP.</p>`,
+    );
+    return;
+  }
   const link = householdShareUrl();
   modal(
     C("One link for every gathering"),
@@ -1908,6 +2081,11 @@ async function submit(form) {
     notify(C("Read-only preview: no guest data will be changed."));
     return;
   }
+  if (state.hostOnly && (await weddingImport.submit(form))) return;
+  if (await extraPages.submit(form)) return;
+  if (state.hostOnly && (await recipients.submit(form))) return;
+  if (state.hostOnly && (await hostAdmin.submit(form))) return;
+  if (state.hostOnly && (await hostAuth.submit(form))) return;
   if (kind === "rsvp-cards") return rsvpCards.submit(form);
   if (kind === "passwordless-step-up") return passwordless.stepUp(form);
   if (kind === "recovery-list" || kind === "recovery-action")
@@ -2075,6 +2253,7 @@ async function submit(form) {
           ? {
               ...value,
               addressDraft,
+              ...(state.hostOnly ? { plusOne: data.has("plusOne") } : {}),
               matchTicket: form.dataset.matchTicket || undefined,
             }
           : value,
@@ -2133,6 +2312,16 @@ async function submit(form) {
     await saved("Household notes saved.");
     return;
   }
+  if (kind === "recipient-access") {
+    const result = await api(
+      `/api/public/events/${state.visitor.reference}/access`,
+      { method: "POST", data: { householdID: value.householdID } },
+    );
+    state.visitor.grant = result.grant;
+    state.data.events = [result.event];
+    rsvp(result.event);
+    return;
+  }
   if (kind === "rsvp") {
     const e = state.manualRSVP || selectedEvent(),
       returnEvent = state.event,
@@ -2143,14 +2332,19 @@ async function submit(form) {
       if (key.startsWith("claim:")) claims[key.slice(6)] = Number(val);
     }
     await api(
-      state.manualRSVP
-        ? e.hostFamily
-          ? `/api/host/events/${e.id}/family-rsvp`
-          : `/api/host/events/${e.id}/rsvp/${state.manualRSVPGuest}`
-        : `/api/${state.session.role === "host" ? "personal" : "guest"}/events/${e.id}/rsvp`,
+      state.session.role === "visitor"
+        ? `/api/public/events/${state.visitor.reference}/rsvp`
+        : state.manualRSVP
+          ? e.hostFamily
+            ? `/api/host/events/${e.id}/family-rsvp`
+            : `/api/host/events/${e.id}/rsvp/${state.manualRSVPGuest}`
+          : `/api/${state.session.role === "host" ? "personal" : "guest"}/events/${e.id}/rsvp`,
       {
         method: "PUT",
         data: {
+          ...(state.session.role === "visitor"
+            ? { grant: state.visitor.grant }
+            : {}),
           version: state.editingResponse.version,
           guestEntry: e.guestEntry,
           partyVersions: e.partyVersions,
@@ -2477,6 +2671,20 @@ document.addEventListener("click", async (event) => {
       householdDetails();
       return;
     }
+    if (action === "event-settings-section" && state.hostOnly) {
+      const selectors = {
+        details: '[name="title"]',
+        food: '[name="customItemsEnabled"]',
+        registries: "#registry-rows",
+        photos: '[name="uploadURL"]',
+      };
+      const element = document.querySelector(
+        ".inline-event-details " + selectors[key],
+      );
+      element?.scrollIntoView({ block: "center" });
+      element?.focus({ preventScroll: true });
+      return;
+    }
     if (action === "event-details") {
       eventEditor(selectedEvent());
       return;
@@ -2782,6 +2990,11 @@ document.addEventListener("click", async (event) => {
       await saved("Guest link reviewed.");
       return;
     }
+    if (state.hostOnly && (await weddingImport.action(action, target))) return;
+    if (await extraPages.action(action, target)) return;
+    if (state.hostOnly && (await recipients.action(action, target))) return;
+    if (state.hostOnly && (await hostAdmin.action(action, target))) return;
+    if (state.hostOnly && (await hostAuth.action(action, target))) return;
     if (await rsvpCards.action(action, target)) return;
     if (await passwordless.action(action, target)) return;
     if (await personal.action(action, target)) return;
@@ -2807,7 +3020,7 @@ document.addEventListener("click", async (event) => {
     if (
       action === "home" &&
       state.session?.passwordless &&
-      (await passwordless.goHome())
+      (state.hostOnly ? await hostAuth.goHome() : await passwordless.goHome())
     )
       return;
     if (action === "home") {
@@ -3209,6 +3422,12 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "rsvp") {
+      if (state.session.role === "visitor") {
+        state.view = "recipient-access";
+        render();
+        window.scrollTo(0, 0);
+        return;
+      }
       if (
         state.session.role === "host" &&
         !selectedEvent()?.invitingHousehold
@@ -3234,6 +3453,10 @@ document.addEventListener("click", async (event) => {
     }
     if (action === "dashboard" || action === "refresh-dashboard") {
       await dashboard();
+      return;
+    }
+    if (state.hostOnly && action === "share-event-select") {
+      await share(state.data.events.find((e) => e.id === key));
       return;
     }
     if (action === "share-details") {
@@ -3654,6 +3877,29 @@ async function startAppearance(scope, globalOptions) {
 const family = familyTools({
   appearanceSettings: appearanceSettingsMarkup,
   householdDetails: inlineHouseholdDetails,
+  eventSettings: () =>
+    state.hostOnly && settingsAppearanceEvent()
+      ? [
+          ["details", "Event Details", "edit"],
+          ["food", "Food & Drinks", "menu"],
+          ["registries", "Registries", "gift"],
+          ["photos", "Photo & Video Sharing", "image"],
+        ]
+          .map(([id, title, symbol]) =>
+            row({
+              title: C(title),
+              action: "event-settings-section",
+              id,
+              symbol,
+            }),
+          )
+          .join("") +
+        row({
+          title: C("Delete Event"),
+          action: "delete-event",
+          symbol: "close",
+        })
+      : "",
   openFamilyProfile: async () => {
     state.familyData = await api("/api/family");
     state.data.personal = await api("/api/personal");
@@ -3679,6 +3925,63 @@ const family = familyTools({
 family.bind();
 const rsvpCards = rsvpCardsUI({ state, api, button, escape, render, field });
 const recoveryQueue = recoveryUI({ state, api, field, button, render });
+const extraPages = eventPagesUI({
+  state,
+  api,
+  field,
+  button,
+  select,
+  escape,
+  render,
+  load,
+  fileData,
+  informationEditor,
+  notify,
+});
+const recipients = recipientManagementUI({
+  state,
+  api,
+  field,
+  button,
+  select,
+  escape,
+  render,
+  load,
+  notify,
+});
+const hostAdmin = hostAdminUI({
+  select,
+  state,
+  api,
+  field,
+  button,
+  escape,
+  render,
+  notify,
+});
+const weddingImport = weddingImportUI({
+  state,
+  api,
+  field,
+  select,
+  button,
+  escape,
+  render,
+  notify,
+  directory: () => hostAdmin.directory(),
+});
+const hostAuth = hostAuthUI({
+  state,
+  api,
+  field,
+  button,
+  escape,
+  render,
+  load,
+  fileData,
+  familyLogoChoice,
+  notify,
+});
 const passwordless = passwordlessUI({
   escape,
   state,
@@ -3909,7 +4212,7 @@ function applyLayoutDOM(event, role, target = $("#app")) {
     if (role === "host" && hero && !state.adminMode) {
       const cards = document.createElement("div");
       cards.className = "home-workspace-cards";
-      cards.innerHTML = ui`${addressBookHome(button, "addresses", true)}<section class="panel" data-home-card="cards" aria-label="${H("Cards & Invites")}"><p>Create invitations, cards and reusable templates.</p>${button("cards", H("Open Cards & Invites"))}</section><section class="panel" data-home-card="family" aria-label="${H("Family Workspace")}"><p>Share lists, tasks, records and chores with your household.</p>${button("family-workspace", H("Open Family Workspace"))}</section>`;
+      cards.innerHTML = ui`${addressBookHome(button, "addresses", true, state.hostOnly)}<section class="panel" data-home-card="cards" aria-label="${H("Cards & Invites")}"><p>Create invitations, cards and reusable templates.</p>${button("cards", H(state.hostOnly ? "Cards & Invites" : "Open Cards & Invites"))}</section><section class="panel" data-home-card="family" aria-label="${H("Family Workspace")}"><p>Share lists, tasks, records and chores with your household.</p>${button("family-workspace", H(state.hostOnly ? "Family Workspace" : "Open Family Workspace"))}</section>`;
       if (events) events.before(cards);
       else hero.after(cards);
     }
@@ -3976,4 +4279,17 @@ document.addEventListener("change", (event) => {
   container.hidden = child;
   form.elements.last.required = !child;
   form.elements.last.disabled = child;
+});
+
+document.addEventListener("change", (event) => {
+  if (state.hostOnly && hostAdmin.search(event.target)) render();
+});
+
+document.addEventListener("change", (event) => {
+  if (state.hostOnly && event.target.name === "plusOne") {
+    const form = event.target.form;
+    form.elements.first.required = !event.target.checked;
+    form.elements.last.required =
+      !event.target.checked && !form.elements.parent.value;
+  }
 });
