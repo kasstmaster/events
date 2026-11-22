@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { createSign } from "node:crypto";
 import { fail } from "./model.js";
 import { hostFirebaseConfig, hostFirebaseKey } from "./firebase-host.js";
