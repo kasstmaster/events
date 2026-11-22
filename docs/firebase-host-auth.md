@@ -36,6 +36,7 @@ are retained for recovery and controlled transition; they are not deleted.
 ## Firebase Console prerequisites
 
 In existing project `gather-58a79`:
+
 1. Enable **Email/Password** and **Google** under Firebase Authentication
    sign-in providers; Phone may remain disabled and is never used for hosts.
 2. Configure Firebase Authentication authorized domains to include

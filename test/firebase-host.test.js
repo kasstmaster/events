@@ -56,28 +56,43 @@ const fetcher = async (url, options = {}) => {
   return {
     ok: true,
     json: async () => ({
-      users: [{
-        localId: "firebase-host-uid",
-        email: "host@example.test",
-        emailVerified: true,
-        disabled: false,
-        validSince: String(seconds - 3600),
-      }],
+      users: [
+        {
+          localId: "firebase-host-uid",
+          email: "host@example.test",
+          emailVerified: true,
+          disabled: false,
+          validSince: String(seconds - 3600),
+        },
+      ],
     }),
   };
 };
 
 test("host Firebase stays off unless both the model and provider are approved", () => {
-  assert.equal(hostFirebaseEnabled({ ...env, HOST_FIREBASE_ACTIVATION_APPROVED: "false" }), false);
-  assert.equal(hostFirebaseEnabled({ ...env, HOST_ONLY_MODEL_ENABLED: "false" }), false);
-  assert.equal(hostFirebaseConfig({ ...env, HOST_FIREBASE_ENABLED: "false" }), null);
+  assert.equal(
+    hostFirebaseEnabled({ ...env, HOST_FIREBASE_ACTIVATION_APPROVED: "false" }),
+    false,
+  );
+  assert.equal(
+    hostFirebaseEnabled({ ...env, HOST_ONLY_MODEL_ENABLED: "false" }),
+    false,
+  );
+  assert.equal(
+    hostFirebaseConfig({ ...env, HOST_FIREBASE_ENABLED: "false" }),
+    null,
+  );
   assert.equal(hostFirebaseConfig(env).projectId, "gather-58a79");
-  assert.notEqual(hostFirebaseKey("gather-58a79", "u1"), hostFirebaseKey("other", "u1"));
+  assert.notEqual(
+    hostFirebaseKey("gather-58a79", "u1"),
+    hostFirebaseKey("other", "u1"),
+  );
 });
 
 test("accepts an approved, freshly signed Firebase email/password identity", async () => {
   const claim = await verifyHostFirebaseToken(token(), env, {
-    fetcher, now: () => now,
+    fetcher,
+    now: () => now,
   });
   assert.equal(claim.email, "host@example.test");
   assert.equal(claim.uid, "firebase-host-uid");
@@ -93,7 +108,8 @@ test("rejects wrong project, unverified email, retired phone auth and stale sess
   ]) {
     await assert.rejects(
       verifyHostFirebaseToken(token(changes), env, {
-        fetcher, now: () => now,
+        fetcher,
+        now: () => now,
       }),
       /Host identity verification failed/,
     );
@@ -105,7 +121,8 @@ test("rejects forged JWT signatures even when the account lookup would accept", 
   forged[2] = Buffer.from("fake").toString("base64url");
   await assert.rejects(
     verifyHostFirebaseToken(forged.join("."), env, {
-      fetcher, now: () => now,
+      fetcher,
+      now: () => now,
     }),
     /Host identity verification failed/,
   );

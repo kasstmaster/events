@@ -62,7 +62,8 @@ export function hostAuthUI({
       import("https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js"),
       import("https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js"),
     ]);
-    const application = app.getApps().find((a) => a.name === "gather-host") ||
+    const application =
+      app.getApps().find((a) => a.name === "gather-host") ||
       app.initializeApp(config.firebase, "gather-host");
     const auth = sdk.getAuth(application);
     // The durable Gather session is HttpOnly; do not save Firebase credentials
@@ -71,33 +72,50 @@ export function hostAuthUI({
     firebaseClient = { auth, sdk };
     return firebaseClient;
   }
-  async function firebaseSignIn(values, intent = "login", provider = "password") {
+  async function firebaseSignIn(
+    values,
+    intent = "login",
+    provider = "password",
+  ) {
     const { auth, sdk } = await firebase();
     if (provider === "google") {
       await sdk.signInWithPopup(auth, new sdk.GoogleAuthProvider());
     } else if (intent === "signup") {
       try {
-        await sdk.createUserWithEmailAndPassword(auth, values.email, values.password);
+        await sdk.createUserWithEmailAndPassword(
+          auth,
+          values.email,
+          values.password,
+        );
       } catch (error) {
         if (error?.code !== "auth/email-already-in-use") throw error;
-        await sdk.signInWithEmailAndPassword(auth, values.email, values.password);
+        await sdk.signInWithEmailAndPassword(
+          auth,
+          values.email,
+          values.password,
+        );
       }
     } else {
       await sdk.signInWithEmailAndPassword(auth, values.email, values.password);
     }
     await sdk.reload(auth.currentUser);
     if (!auth.currentUser.emailVerified) {
-      if (intent === "signup") await sdk.sendEmailVerification(auth.currentUser);
+      if (intent === "signup")
+        await sdk.sendEmailVerification(auth.currentUser);
       firebasePendingRegistration = intent === "signup" ? values : null;
       screen = intent === "signup" ? "verify" : "login";
-      message = "Verify your email using Firebase, then return here to continue.";
+      message =
+        "Verify your email using Firebase, then return here to continue.";
       render();
       return false;
     }
     const data = {
-      intent, idToken: await auth.currentUser.getIdToken(true),
+      intent,
+      idToken: await auth.currentUser.getIdToken(true),
       ...(intent === "signup" ? { ...values, invite } : {}),
-      ...(intent === "connect" ? { currentPassword: values.currentPassword } : {}),
+      ...(intent === "connect"
+        ? { currentPassword: values.currentPassword }
+        : {}),
     };
     delete data.password;
     await api("/api/host-auth/firebase", { method: "POST", data });
@@ -115,8 +133,11 @@ export function hostAuthUI({
       const result = await api("/api/host-auth/home");
       const destination = new URL(result.home);
       if (destination.origin !== location.origin)
-        location.replace(destination.origin + "/signin#host-transfer-start=" +
-          encodeURIComponent(location.origin));
+        location.replace(
+          destination.origin +
+            "/signin#host-transfer-start=" +
+            encodeURIComponent(location.origin),
+        );
     }
   }
 
@@ -320,12 +341,22 @@ export function hostAuthUI({
         });
         location.assign(result.url);
       }
-      if (config.firebase && screen !== "admin" && ["host-login", "host-connect-firebase"].includes(kind)) {
-        await firebaseSignIn(values, kind === "host-connect-firebase" ? "connect" : "login");
+      if (
+        config.firebase &&
+        screen !== "admin" &&
+        ["host-login", "host-connect-firebase"].includes(kind)
+      ) {
+        await firebaseSignIn(
+          values,
+          kind === "host-connect-firebase" ? "connect" : "login",
+        );
         return true;
       }
       if (kind === "host-login") {
-        await api("/api/host-auth/login", { method: "POST", data: { ...values, platformAdmin: screen === "admin" } });
+        await api("/api/host-auth/login", {
+          method: "POST",
+          data: { ...values, platformAdmin: screen === "admin" },
+        });
         screen = "login";
         history.replaceState(null, "", "/");
         state.view = "home";
@@ -333,8 +364,10 @@ export function hostAuthUI({
         if (!request) await this.goHome();
       }
       if (config.firebase && kind === "host-signup") {
-        values.logo = values.logoChoice === "upload"
-          ? await fileData(form.elements.registrationLogo) : "";
+        values.logo =
+          values.logoChoice === "upload"
+            ? await fileData(form.elements.registrationLogo)
+            : "";
         await firebaseSignIn(values, "signup");
         return true;
       }
@@ -359,10 +392,20 @@ export function hostAuthUI({
         // Reauthenticate after opening the email link: identity confirmation can
         // take longer than the server's five-minute fresh-auth window.
         if (firebasePendingRegistration?.password)
-          await sdk.signInWithEmailAndPassword(auth, firebasePendingRegistration.email, firebasePendingRegistration.password);
-        if (!firebasePendingRegistration) throw Error("Please restart Firebase sign-up.");
+          await sdk.signInWithEmailAndPassword(
+            auth,
+            firebasePendingRegistration.email,
+            firebasePendingRegistration.password,
+          );
+        if (!firebasePendingRegistration)
+          throw Error("Please restart Firebase sign-up.");
         const saved = firebasePendingRegistration;
-        const data = { ...saved, invite, intent: "signup", idToken: await auth.currentUser.getIdToken(true) };
+        const data = {
+          ...saved,
+          invite,
+          intent: "signup",
+          idToken: await auth.currentUser.getIdToken(true),
+        };
         delete data.password;
         await api("/api/host-auth/firebase", { method: "POST", data });
         await sdk.signOut(auth);
@@ -387,11 +430,13 @@ export function hostAuthUI({
       }
       if (config.firebase && kind === "host-recover") {
         const { auth, sdk } = await firebase();
-        try { await sdk.sendPasswordResetEmail(auth, values.email); }
-        catch (error) {
+        try {
+          await sdk.sendPasswordResetEmail(auth, values.email);
+        } catch (error) {
           if (error?.code !== "auth/user-not-found") throw error;
         }
-        message = "If a Firebase host account exists, password recovery has been requested.";
+        message =
+          "If a Firebase host account exists, password recovery has been requested.";
         screen = "login";
         render();
         return true;
@@ -444,7 +489,9 @@ export function hostAuthUI({
         return true;
       }
       if (config.firebase && action === "host-connect-screen") {
-        screen = "connect"; render(); return true;
+        screen = "connect";
+        render();
+        return true;
       }
       if (config.firebase && action === "host-admin-screen") {
         screen = "admin";
@@ -459,13 +506,28 @@ export function hostAuthUI({
       if (action !== "host-google") return false;
       if (screen === "admin") return false;
       if (config.firebase) {
-        const form = target.closest("form"), values = Object.fromEntries(new FormData(form));
+        const form = target.closest("form"),
+          values = Object.fromEntries(new FormData(form));
         if (screen === "signup") {
-          if (!form.elements.email.reportValidity() || !form.elements.name.reportValidity()) return true;
-          values.logo = values.logoChoice === "upload"
-            ? await fileData(form.elements.registrationLogo) : "";
+          if (
+            !form.elements.email.reportValidity() ||
+            !form.elements.name.reportValidity()
+          )
+            return true;
+          values.logo =
+            values.logoChoice === "upload"
+              ? await fileData(form.elements.registrationLogo)
+              : "";
         }
-        await firebaseSignIn(values, screen === "signup" ? "signup" : screen === "connect" ? "connect" : "login", "google");
+        await firebaseSignIn(
+          values,
+          screen === "signup"
+            ? "signup"
+            : screen === "connect"
+              ? "connect"
+              : "login",
+          "google",
+        );
         return true;
       }
       if (location.origin !== central()) {

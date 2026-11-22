@@ -94,7 +94,11 @@ export async function hostAuthAPI(ctx) {
     const verified = await verifyHostFirebaseToken(input.idToken, env, {
       fetcher: ctx.firebaseFetcher || fetch,
     });
-    store.limit("host-firebase-uid:" + hostFirebaseKey(verified.project, verified.uid), 12, 60000);
+    store.limit(
+      "host-firebase-uid:" + hostFirebaseKey(verified.project, verified.uid),
+      12,
+      60000,
+    );
     const key = hostFirebaseKey(verified.project, verified.uid);
     const existing = store.get("host-firebase-account", key, P);
     let user;
@@ -103,8 +107,12 @@ export async function hostAuthAPI(ctx) {
       const invite = invitation(store, input.invite, verified.email);
       const password = await hashPassword(fresh());
       const account = await completeHostRegistration(
-        store, invite.id, verified.email, registrationInput(input),
-        password, "firebase",
+        store,
+        invite.id,
+        verified.email,
+        registrationInput(input),
+        password,
+        "firebase",
         (registered) => {
           if (store.get("host-firebase-account", key, P))
             fail(409, "Firebase account changed. Sign in again.");
@@ -127,30 +135,41 @@ export async function hostAuthAPI(ctx) {
         !availableHost(store, user) ||
         store.get("platform-access", user.id, P) ||
         !(await checkPassword(input.currentPassword, user?.password))
-      ) fail(403, "Confirm your existing host password to connect Firebase.");
+      )
+        fail(403, "Confirm your existing host password to connect Firebase.");
       store.transaction(() => {
         if (store.get("host-firebase-account", key, P))
           fail(409, "Firebase account changed. Sign in again.");
         store.put("host-firebase-account", key, P, {
-          user: user.id, household: user.household,
-          email: verified.email, project: verified.project,
+          user: user.id,
+          household: user.household,
+          email: verified.email,
+          project: verified.project,
         });
         auditAccount(store, user.id, user.id, "host-firebase-connected");
       });
     } else if (input.intent === "login") {
-      user = existing && store.one("SELECT * FROM users WHERE id=?", existing.user);
+      user =
+        existing && store.one("SELECT * FROM users WHERE id=?", existing.user);
       if (
-        !existing || !availableHost(store, user) ||
+        !existing ||
+        !availableHost(store, user) ||
         existing.email !== verified.email ||
         existing.project !== verified.project ||
         existing.household !== user.household
-      ) fail(403, "This Firebase account is not approved to host Gather.");
+      )
+        fail(403, "This Firebase account is not approved to host Gather.");
     } else fail(400, "Unsupported host sign-in.");
     if (!availableHost(store, user) || store.get("platform-access", user.id, P))
       fail(403, "Administrator access uses separately protected sign-in.");
-    cookie(res, persistentHostSession(
-      store, { user: user.id, household: user.household, role: "host" }, origin,
-    ));
+    cookie(
+      res,
+      persistentHostSession(
+        store,
+        { user: user.id, household: user.household, role: "host" },
+        origin,
+      ),
+    );
     auditAccount(store, user.id, user.id, "host-firebase-sign-in");
     json(res, { ok: true });
     return true;
@@ -262,10 +281,11 @@ export async function hostAuthAPI(ctx) {
       fail(403, "Host account access is required.");
     json(res, {
       email: user.email,
-      googleConnected: hostFirebaseEnabled(env) ? false : store
-        .list("host-google-account", P)
-        .some((m) => m.user === user.id),
-      firebaseConnected: store.list("host-firebase-account", P)
+      googleConnected: hostFirebaseEnabled(env)
+        ? false
+        : store.list("host-google-account", P).some((m) => m.user === user.id),
+      firebaseConnected: store
+        .list("host-firebase-account", P)
         .some((m) => m.user === user.id),
       passwordAllowed:
         store.get("host-auth-account", user.id, P)?.passwordAllowed !== false,
@@ -321,11 +341,17 @@ export async function hostAuthAPI(ctx) {
     json(res, { ok: true });
     return true;
   }
-  if (hostFirebaseEnabled(env) && [
-    "/api/host-auth/google/disconnect", "/api/host-auth/google/start",
-    "/api/host-auth/password", "/api/host-auth/recovery/start",
-    "/api/host-auth/recovery/complete",
-  ].includes(path)) fail(410, "Use Firebase account settings and recovery.");
+  if (
+    hostFirebaseEnabled(env) &&
+    [
+      "/api/host-auth/google/disconnect",
+      "/api/host-auth/google/start",
+      "/api/host-auth/password",
+      "/api/host-auth/recovery/start",
+      "/api/host-auth/recovery/complete",
+    ].includes(path)
+  )
+    fail(410, "Use Firebase account settings and recovery.");
   if (path === "/api/host-auth/google/disconnect") {
     const user =
       session?.role === "host" &&
@@ -384,7 +410,10 @@ export async function hostAuthAPI(ctx) {
   }
   if (path === "/api/host-auth/login") {
     if (hostFirebaseEnabled(env) && input.platformAdmin !== true)
-      fail(410, "Sign in through Firebase, or use separate administrator sign-in.");
+      fail(
+        410,
+        "Sign in through Firebase, or use separate administrator sign-in.",
+      );
     const address = email(input.email);
     store.limit("host-email-login:" + hash(address), 10, 60000);
     const user = store.one("SELECT * FROM users WHERE email=?", address),
@@ -392,7 +421,12 @@ export async function hostAuthAPI(ctx) {
     if (
       !valid ||
       !user ||
-      (hostFirebaseEnabled(env) && !platformAdministrator(store, { user: user.id, household: user.household, role: user.role })) ||
+      (hostFirebaseEnabled(env) &&
+        !platformAdministrator(store, {
+          user: user.id,
+          household: user.household,
+          role: user.role,
+        })) ||
       (user.role !== "admin" && !availableHost(store, user)) ||
       (selected && user.household !== selected.id) ||
       store.get("host-auth-account", user.id, P)?.passwordAllowed === false

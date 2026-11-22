@@ -203,7 +203,10 @@ export async function hostSignupAPI(ctx) {
     return true;
   }
 
-  if (hostFirebaseEnabled(env) && ["/api/host-signup/email", "/api/host-signup/complete"].includes(path))
+  if (
+    hostFirebaseEnabled(env) &&
+    ["/api/host-signup/email", "/api/host-signup/complete"].includes(path)
+  )
     fail(410, "Host registration now uses Firebase email verification.");
   if (path === "/api/host-signup/email") {
     if (typeof hostVerificationSender !== "function")
