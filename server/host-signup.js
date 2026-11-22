@@ -1,3 +1,4 @@
+import { hostFirebaseEnabled } from "./firebase-host.js";
 import { ensureHostRoster } from "./host-roster.js";
 import { revokeUserSessions } from "./device-sessions.js";
 import { hostOnlyMode, hostAuthOrigin } from "./host-model.js";
@@ -202,6 +203,8 @@ export async function hostSignupAPI(ctx) {
     return true;
   }
 
+  if (hostFirebaseEnabled(env) && ["/api/host-signup/email", "/api/host-signup/complete"].includes(path))
+    fail(410, "Host registration now uses Firebase email verification.");
   if (path === "/api/host-signup/email") {
     if (typeof hostVerificationSender !== "function")
       fail(503, "Host email verification is not configured.");
