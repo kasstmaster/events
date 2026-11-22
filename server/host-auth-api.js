@@ -459,6 +459,7 @@ export async function hostAuthAPI(ctx) {
         P,
         {
           ...proof,
+          ...(hostFirebaseEnabled(env) ? { adminFallback: true } : {}),
           adminRestricted: false,
           adminUntil: Date.now() + 15 * 60000,
         },
