@@ -175,7 +175,7 @@ export function hostAuthUI({
       return ui`${topbar({ title: C("Administrator verification"), back: "page-back" })}<section class="panel"><form data-form="host-admin-stepup">${field(H("Current system administrator password"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Open administrator tools</button></form></section>`;
     },
     accountPage() {
-      return ui`${topbar({ title: C("Host account"), back: "page-back" })}<section class="panel"><h1>Host account</h1>${field(H("Registered email"), "hostEmail", state.hostAccount?.email || "", "email", "readonly")}<form data-form="host-password">${field(H("Current password"), "currentPassword", "", "password", 'required autocomplete="current-password"')}${field(H("New password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Change password</button></form>${config.google && !state.session?.platformAdmin ? ui`<form data-form="host-connect-google">${field(H("Current password to connect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Connect Google</button></form>` : ""}${state.hostAccount?.googleConnected ? ui`<form data-form="host-disconnect-google">${field(H("Current password to disconnect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Disconnect Google and sign out devices</button></form>` : ""}<div class="row">${button("passwordless-revoke", H("Sign out other devices"))}${button("passwordless-revoke-all", H("Sign out all devices"))}${button("host-recovery", H("Recover host account"))}</div></section>`;
+      return ui`${topbar({ title: C("Host account"), back: "page-back" })}<section class="panel"><h1>Host account</h1>${field(H("Registered email"), "hostEmail", state.hostAccount?.email || "", "email", "readonly")}${config.firebase ? ui`<form data-form="host-firebase-reset"><p>Firebase manages your password and recovery emails.</p><p class="form-error" role="alert"></p><button>Send password reset email</button></form>` : ui`<form data-form="host-password">${field(H("Current password"), "currentPassword", "", "password", 'required autocomplete="current-password"')}${field(H("New password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Change password</button></form>`}${config.google && !state.session?.platformAdmin ? ui`<form data-form="host-connect-google">${field(H("Current password to connect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Connect Google</button></form>` : ""}${state.hostAccount?.googleConnected ? ui`<form data-form="host-disconnect-google">${field(H("Current password to disconnect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Disconnect Google and sign out devices</button></form>` : ""}<div class="row">${button("passwordless-revoke", H("Sign out other devices"))}${button("passwordless-revoke-all", H("Sign out all devices"))}${button("host-recovery", H("Recover host account"))}</div></section>`;
     },
     authEntry: () =>
       ["/host-signup", "/host-recovery"].includes(location.pathname),
@@ -268,6 +268,7 @@ export function hostAuthUI({
           "host-recover",
           "host-reset",
           "host-password",
+          "host-firebase-reset",
           "host-connect-google",
           "host-disconnect-google",
           "host-admin-stepup",
@@ -282,7 +283,7 @@ export function hostAuthUI({
         state.view = "home";
         await load();
       }
-      if (config.firebase && kind === "host-password") {
+      if (config.firebase && kind === "host-firebase-reset") {
         const { auth, sdk } = await firebase();
         await sdk.sendPasswordResetEmail(auth, state.hostAccount.email);
         notify("Check your email for Firebase password settings.");
