@@ -11,7 +11,7 @@ import { cardInput } from "./features.js";
 import { randomBytes } from "node:crypto";
 import QRCode from "qrcode";
 import { fail } from "./model.js";
-import { renderCard } from "../public/card-system.js";
+import { renderCard, cardTextLines } from "../public/card-system.js";
 import {
   universalEnabled,
   GATHER_ORIGIN,
@@ -74,7 +74,11 @@ export async function rsvpCardsAPI(ctx) {
   const input = await body(req),
     event = store.get("event", match[1], session.household),
     house = store.household(session.household);
-  if (!event || !activeHouseholdLabel(store, house, householdHosts))
+  if (
+    !event ||
+    !house ||
+    (!publicMode && !activeHouseholdLabel(store, house, householdHosts))
+  )
     fail(404, "An active household address is required.");
   if (event.version !== version(req))
     fail(409, "Event changed. Refresh before preparing cards.");
@@ -150,6 +154,11 @@ export async function rsvpCardsAPI(ctx) {
         ? publicEventReference(store, session.household, event.id)
         : referenceFor(store, session.household, event, group);
       const primary = group.people.find((p) => !p.parent) || group.people[0];
+      if (
+        publicMode &&
+        recipientHouseholdID(store, session.household, primary.id).revoked
+      )
+        fail(409, "Replace the revoked Household ID before preparing cards.");
       return {
         reference: ref,
         name,
@@ -162,10 +171,11 @@ export async function rsvpCardsAPI(ctx) {
                 session.household,
                 primary.id,
               ).code,
-              invitedNames: group.people.map((p) =>
-                [p.first, ...(p.parent ? [] : [p.last]), p.suffix]
-                  .filter(Boolean)
-                  .join(" "),
+              invitedNames: group.people.map(
+                (p) =>
+                  [p.first, ...(p.parent ? [] : [p.last]), p.suffix]
+                    .filter(Boolean)
+                    .join(" ") + (p.plusOne && p.first !== "+1" ? " · +1" : ""),
               ),
             }
           : {}),
@@ -173,7 +183,20 @@ export async function rsvpCardsAPI(ctx) {
     }),
   );
   const cards = [];
-  for (const recipient of entries) {
+  const printable = entries.flatMap((recipient) => {
+    if (!publicMode) return [recipient];
+    const chunks = Array.from(
+      { length: Math.ceil(recipient.invitedNames.length / 18) },
+      (_, index) => recipient.invitedNames.slice(index * 18, index * 18 + 18),
+    );
+    return chunks.map((names, index) => ({
+      ...recipient,
+      invitedNames: names,
+      pageIndex: index,
+      pageCount: chunks.length,
+    }));
+  });
+  for (const recipient of printable) {
     const url =
       GATHER_ORIGIN +
       (publicMode ? "/event/" : "/invite/") +
@@ -191,10 +214,22 @@ export async function rsvpCardsAPI(ctx) {
       rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722 > 150
         ? "#172b24"
         : "#fffdf9";
+    const namesText = publicMode
+      ? recipient.invitedNames.join(" · ") +
+        (recipient.pageCount > 1
+          ? ` · ${recipient.pageIndex + 1}/${recipient.pageCount}`
+          : "")
+      : recipient.name;
+    const headerHeight = publicMode
+      ? Math.max(
+          70,
+          Math.ceil(cardTextLines(namesText, 550, 16).length * 21 + 8),
+        )
+      : 70;
     const card = {
       name: "RSVP · " + recipient.name,
       width: 600,
-      height: 420,
+      height: publicMode ? headerHeight + 350 : 420,
       color: source?.color || "#fffdf9",
       includeQR: true,
       elements: [
@@ -203,7 +238,7 @@ export async function rsvpCardsAPI(ctx) {
           x: 300,
           y: 20,
           width: 550,
-          height: 70,
+          height: headerHeight,
           fontSize: publicMode ? 16 : 28,
           font:
             source?.elements.find((e) => e.field !== "qr")?.font || "Georgia",
@@ -213,7 +248,7 @@ export async function rsvpCardsAPI(ctx) {
         {
           field: "qr",
           x: 200,
-          y: 95,
+          y: publicMode ? headerHeight + 40 : 95,
           width: 200,
           height: 200,
           qrColor: "#000000",
@@ -225,7 +260,7 @@ export async function rsvpCardsAPI(ctx) {
             ? "Household ID: " + recipient.householdID
             : "Scan to RSVP",
           x: 300,
-          y: 330,
+          y: publicMode ? headerHeight + 280 : 330,
           width: 550,
           height: 60,
           fontSize: publicMode ? 16 : 27,
@@ -240,7 +275,7 @@ export async function rsvpCardsAPI(ctx) {
       household: { name: house.name },
       event,
       recipient: {
-        name: publicMode ? recipient.invitedNames.join(" · ") : recipient.name,
+        name: namesText,
       },
     };
     cards.push({
@@ -249,25 +284,26 @@ export async function rsvpCardsAPI(ctx) {
       height: card.height,
       url,
       svg: renderCard(card, context, qr),
-      invitation: source
-        ? renderCard(
-            {
-              ...source,
-              elements: source.elements.filter(
-                (e) => !["recipient.inviteCode", "qr"].includes(e.field),
-              ),
-            },
-            {
-              ...source.context,
-              recipient: {
-                ...source.context?.recipient,
-                name: recipient.name,
-                inviteCode: "",
+      invitation:
+        source && (!publicMode || recipient.pageIndex === 0)
+          ? renderCard(
+              {
+                ...source,
+                elements: source.elements.filter(
+                  (e) => !["recipient.inviteCode", "qr"].includes(e.field),
+                ),
               },
-            },
-            "",
-          )
-        : "",
+              {
+                ...source.context,
+                recipient: {
+                  ...source.context?.recipient,
+                  name: recipient.name,
+                  inviteCode: "",
+                },
+              },
+              "",
+            )
+          : "",
     });
   }
   json(res, { cards });

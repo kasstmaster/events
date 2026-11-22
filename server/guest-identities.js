@@ -31,6 +31,8 @@ const addressKey = (value) =>
     )
     .replace(/[^a-z0-9]/g, "");
 export function identityFor(store, guest, household) {
+  if (isolatedAddressBook(store, household))
+    return { id: guest.id, creator: household, local: true };
   let link = store.one(
     "SELECT identity FROM guest_identity_links WHERE household=? AND guest=?",
     household,

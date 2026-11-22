@@ -1,3 +1,6 @@
+import { publicEventPages } from "./event-pages.js";
+import { hostOnlyMode } from "./host-model.js";
+import { isolatedAddressBook } from "./recipient-isolation.js";
 // Additive, opt-in invitation capabilities. These are not user accounts or sessions.
 import { randomBytes, createHash } from "node:crypto";
 import { fail } from "./model.js";
@@ -7,7 +10,7 @@ const digest = (value) => createHash("sha256").update(value).digest("hex");
 const token = () => randomBytes(32).toString("base64url");
 const unavailable = () => fail(404, "Invitation unavailable.");
 export const publicInvitationsEnabled = (env) =>
-  env.PUBLIC_INVITATIONS_ENABLED === "true";
+  hostOnlyMode(env) || env.PUBLIC_INVITATIONS_ENABLED === "true";
 export function groupFor(store, household, guest) {
   const person = store.get("guest", guest, household);
   if (!person) unavailable();
@@ -55,7 +58,7 @@ export function publicEventReference(store, household, event) {
     return reference;
   });
 }
-function resolve(store, reference, selected) {
+export function resolvePublicEvent(store, reference, selected) {
   const link = store.get("public-event", reference, "platform");
   if (!link || link.revoked || (selected && selected.id !== link.household))
     unavailable();
@@ -93,6 +96,7 @@ export function publicEventView(store, event, household) {
   const totals = store.totals(event, household.id);
   return {
     ...result,
+    extraPages: publicEventPages(store, event, household.id),
     totals: { invited: totals.invited, attending: totals.attending },
     menu: store.menuView(event, household.id),
     members: [],
@@ -150,6 +154,22 @@ export async function publicInvitationsAPI(ctx) {
     requireRole,
     selected,
   } = ctx;
+  const legacy = path.match(
+    /^\/api\/public\/invitations\/([A-Za-z0-9_-]{43})$/,
+  );
+  if (legacy) {
+    if (!publicInvitationsEnabled(env) || method !== "GET") unavailable();
+    const ref = store.get("rsvp-reference", legacy[1], "platform");
+    if (
+      !ref ||
+      (selected && selected.id !== ref.household) ||
+      (hostOnlyMode(env) && !isolatedAddressBook(store, ref.household))
+    )
+      unavailable();
+    const reference = publicEventReference(store, ref.household, ref.event);
+    json(res, { path: `/event/${reference}` });
+    return true;
+  }
   const host = path.match(
     /^\/api\/host\/events\/([A-Za-z0-9-]+)\/public-invitation$/,
   );
@@ -186,9 +206,16 @@ export async function publicInvitationsAPI(ctx) {
     return true;
   }
   store.limit(`public-invitation:${req.socket.remoteAddress}`, 100, 60000);
-  const { link, event, household } = resolve(store, visitor[1], selected);
+  const { link, event, household } = resolvePublicEvent(
+    store,
+    visitor[1],
+    selected,
+  );
+  if (hostOnlyMode(env) && !isolatedAddressBook(store, link.household))
+    unavailable();
   if (!visitor[2] && method === "GET") {
     json(res, {
+      hostOnly: hostOnlyMode(env),
       household: {
         name: household.name,
         slug: household.slug,

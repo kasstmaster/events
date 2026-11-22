@@ -2,7 +2,10 @@
 import { createHash } from "node:crypto";
 import { fail } from "./model.js";
 export const isolatedAddressBook = (store, household) =>
-  store.get("address-book-policy", "local", household)?.mode === "host-owned";
+  (
+    store.get("address-book-policy", "local:" + household, household) ||
+    store.get("address-book-policy", "local", household)
+  )?.mode === "host-owned";
 export function addressBookCheckpoint(store, household) {
   if (!store.household(household)) fail(404, "Household not found.");
   const byID = (rows) =>
@@ -33,12 +36,17 @@ export function isolateAddressBook(store, household, fingerprint, actor) {
     const checkpoint = addressBookCheckpoint(store, household);
     if (checkpoint.fingerprint !== fingerprint)
       fail(409, "Address Book changed. Prepare a new checkpoint.");
-    store.put("address-book-cutover-checkpoint", "initial", household, {
-      ...checkpoint,
-      actor,
-      at: Date.now(),
-    });
-    store.put("address-book-policy", "local", household, {
+    store.put(
+      "address-book-cutover-checkpoint",
+      "initial:" + household,
+      household,
+      {
+        ...checkpoint,
+        actor,
+        at: Date.now(),
+      },
+    );
+    store.put("address-book-policy", "local:" + household, household, {
       mode: "host-owned",
       actor,
       at: Date.now(),

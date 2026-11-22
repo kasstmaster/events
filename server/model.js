@@ -957,7 +957,8 @@ export class Store {
       },
       menu: this.menuView(event, session.household),
       members: [guest, ...children].map(
-        ({ id, first, last, suffix, parent }) => ({
+        ({ id, first, last, suffix, parent, plusOne }) => ({
+          ...(plusOne ? { plusOne: true } : {}),
           id,
           first,
           last,

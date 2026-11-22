@@ -120,7 +120,21 @@ export function featureTools(ctx) {
           familyKidTasks: "My Tasks · kid",
           hostLogin: "Host sign-in",
           registration: "Host registration",
-        }).map(([id, label]) => [id, C(label)]),
+        })
+          .filter(
+            ([id]) =>
+              !state.hostOnly ||
+              ![
+                "guestHome",
+                "guestLogin",
+                "guestLoginSuffix",
+                "guestSettings",
+                "personalAccount",
+                "personalSetup",
+                "personalContacts",
+              ].includes(id),
+          )
+          .map(([id, label]) => [id, C(label)]),
         "hostHome",
       )}${select(
         H("Example screen size"),
@@ -461,7 +475,7 @@ export function featureTools(ctx) {
       return topbar({
         title: escape(editingCard.name),
         extra: [
-          ...(state.passwordless?.universal &&
+          ...((state.hostOnly || state.passwordless?.universal) &&
           role() === "host" &&
           editingCard?.event
             ? [["rsvp-card-open", "RSVP cards", "invite"]]
@@ -1200,7 +1214,7 @@ export function featureTools(ctx) {
       }
       if (
         action === "print-card" &&
-        state.passwordless?.universal &&
+        (state.hostOnly || state.passwordless?.universal) &&
         role() === "host" &&
         editingCard?.event
       ) {

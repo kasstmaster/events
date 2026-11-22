@@ -1,6 +1,26 @@
 // Host-only RSVP participants. These are projections of existing family/account
 // records, never guest invitations or additional sign-in accounts.
 export function hostFamilyMembers(store, household) {
+  const roster = store.get(
+    "host-family-roster",
+    "family:" + household,
+    household,
+  );
+  if (roster)
+    return roster.members
+      .filter((m) => !m.archived)
+      .map((m) => ({
+        id: m.rsvpID,
+        first: m.first,
+        last: m.last || "",
+        suffix: m.suffix || "",
+        parent: m.parent
+          ? roster.members.find((p) => p.id === m.parent)?.rsvpID || ""
+          : "",
+        hostFamily: true,
+      }))
+      .sort((a, b) => Number(!!a.parent) - Number(!!b.parent));
+
   const host = store.one(
     "SELECT id FROM users WHERE household=? AND role='host'",
     household,

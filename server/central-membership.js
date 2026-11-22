@@ -1,3 +1,4 @@
+import { isolatedAddressBook } from "./recipient-isolation.js";
 import { randomBytes, randomInt } from "node:crypto";
 import { fail, id } from "./model.js";
 import { confirmAdministrator, auditAccount } from "./account-management.js";
@@ -59,6 +60,8 @@ export function workspaceId(store, household, identity) {
   return legacy?.id || identity;
 }
 export function centralMemberForActor(store, session) {
+  if (session?.household && isolatedAddressBook(store, session.household))
+    return null;
   if (!session?.household || !session.user) return null;
   let identity = store.get(
     "household-member",
@@ -91,6 +94,7 @@ export function centralMemberForActor(store, session) {
   };
 }
 export function centralWorkspaceMembers(store, household) {
+  if (isolatedAddressBook(store, household)) return [];
   return store.list("household-member", household).flatMap((record) => {
     const member = membership(store, household, record.identity);
     if (

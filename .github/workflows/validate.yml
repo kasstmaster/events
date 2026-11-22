@@ -108,6 +108,11 @@ jobs:
       - name: Public invitation phone, tablet and desktop regression
         if: matrix.group == 'accounts'
         run: node test/public-invitations-mobile.js
+      - name: Replacement host ownership and private page browser checks
+        if: matrix.group == 'accounts'
+        run: |
+          node test/host-model-mobile.js
+          node test/host-model-features-mobile.js
       - name: Preserve approved Home, Event and Address Book pixels
         if: matrix.group == 'accounts'
         run: node test/approved-design-mobile.js

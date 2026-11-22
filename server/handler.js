@@ -1,3 +1,12 @@
+import { weddingImportAPI } from "./wedding-import.js";
+import { eventPagesAPI, eventPages, pageMetadata } from "./event-pages.js";
+import { recipientManagementAPI } from "./recipient-management-api.js";
+import { hostManagementAPI } from "./host-management-api.js";
+import { hostRosterProjection, saveHostRoster } from "./host-roster.js";
+import { hostOnlyMode, retiredGuestRoute } from "./host-model.js";
+import { hostAuthAPI } from "./host-auth-api.js";
+import { hostMailSender } from "./host-mail.js";
+import { hostTransitionAPI } from "./host-transition-api.js";
 import { isolatedAddressBook } from "./recipient-isolation.js";
 import {
   hostSignupAPI,
@@ -22,7 +31,10 @@ import {
   centralMemberForActor,
 } from "./central-membership.js";
 import { handoffAPI } from "./auth-handoff.js";
-import { publicInvitationsAPI } from "./public-invitations.js";
+import {
+  publicInvitationsAPI,
+  publicEventReference,
+} from "./public-invitations.js";
 import { rsvpCardsAPI } from "./rsvp-cards.js";
 import { gatherAppAPI } from "./gather-app.js";
 import {
@@ -143,6 +155,11 @@ const files = new Map([
     "address-system.js",
     "browse-ui.js",
     "appearance-editor.js",
+    "host-auth-ui.js",
+    "host-admin-ui.js",
+    "recipient-management-ui.js",
+    "event-pages-ui.js",
+    "wedding-import-ui.js",
     "event-information.js",
     "personal-ui.js",
     "passwordless-ui.js",
@@ -219,13 +236,32 @@ function guestInput(input, store, household, existing) {
     );
   if (address && !store.get("address", address, household))
     fail(400, "Choose an address in your household.");
-  const nextPhone = contactPhone(input.phone ?? existing?.phone ?? ""),
+  const local = isolatedAddressBook(store, household);
+  const plusOne =
+    input.plusOne === undefined
+      ? existing?.plusOne === true
+      : input.plusOne === true;
+  const nextPhone =
+      local && parent ? "" : contactPhone(input.phone ?? existing?.phone ?? ""),
     phoneChanged = existing && nextPhone !== existing.phone;
   return {
     position: Number.isFinite(Number(input.position))
       ? Number(input.position)
       : (existing?.position ?? Date.now()),
-    first: text(input.first, 80, true),
+    ...(plusOne
+      ? { plusOne: true }
+      : existing?.plusOne !== undefined
+        ? { plusOne: false }
+        : {}),
+    first: text(
+      plusOne &&
+        (input.first === undefined ||
+          (typeof input.first === "string" && !input.first.trim()))
+        ? "+1"
+        : input.first,
+      80,
+      true,
+    ),
     notes: text(input.notes ?? existing?.notes ?? "", 20000),
     phone: nextPhone,
     smsConsent:
@@ -236,7 +272,14 @@ function guestInput(input, store, household, existing) {
       input.smsConsent === true
         ? new Date().toISOString()
         : existing?.consentRecorded || null,
-    last: text(input.last ?? (parent ? existing?.last || "" : ""), 80, !parent),
+    last:
+      local && parent
+        ? ""
+        : text(
+            input.last ?? (parent ? existing?.last || "" : ""),
+            80,
+            !parent && !plusOne,
+          ),
     suffix: text(input.suffix ?? "", 30),
     parent,
     address,
@@ -440,8 +483,11 @@ export function createHandler({
   canonicalOrigin = origin,
   firebaseFetcher,
   hostVerificationSender,
+  hostGoogleFetcher,
 } = {}) {
-  const firebaseSettings = firebaseConfig(env);
+  const replacement = hostOnlyMode(env);
+  const firebaseSettings = replacement ? null : firebaseConfig(env);
+  hostVerificationSender ||= hostMailSender(env, origin);
   if (new URL(origin).origin !== origin)
     throw new Error(
       "APP_ORIGIN must be a canonical origin without a path or trailing slash.",
@@ -466,7 +512,9 @@ export function createHandler({
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader(
       "Content-Security-Policy",
-      firebaseEnabled(env) && origin === "https://gather.ilymmd.com"
+      !replacement &&
+        firebaseEnabled(env) &&
+        origin === "https://gather.ilymmd.com"
         ? "default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.google.com https://www.recaptcha.net; frame-src https://www.google.com https://www.recaptcha.net https://" +
             firebaseSettings.authDomain +
             "; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.gstatic.com; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
@@ -480,6 +528,42 @@ export function createHandler({
       const selected = householdHostname
         ? store.hostnameHousehold(hostnameLabel(householdHostname))
         : null;
+      if (
+        replacement &&
+        (retiredGuestRoute(path) ||
+          (path.startsWith("/api/central/") && path !== "/api/central/family"))
+      )
+        fail(
+          410,
+          "Guest sign-in is retired. Open the event link shared by your host.",
+        );
+      if (
+        replacement &&
+        path === "/api/passwordless/config" &&
+        method === "GET"
+      ) {
+        json(res, {
+          enabled: false,
+          universal: false,
+          firebase: null,
+          hostOnly: true,
+        });
+        return;
+      }
+      if (replacement && path === "/api/host-auth/config" && method === "GET") {
+        await hostAuthAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          env,
+          json,
+          origin,
+          hostVerificationSender,
+        });
+        return;
+      }
       const presentHousehold = (household) => ({
         ...household,
         shareUrl: householdLink(household, canonicalOrigin, householdHosts),
@@ -542,9 +626,26 @@ export function createHandler({
       }
       if (method !== "GET" && req.headers.origin !== origin)
         fail(403, "Please use the application’s own page to submit changes.");
-      // Public invitation capabilities deliberately ignore any host/legacy guest cookie.
       if (
         path.startsWith("/api/public/events/") &&
+        (await eventPagesAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          env,
+          body,
+          json,
+          selected,
+          origin,
+        }))
+      )
+        return;
+      // Public invitation capabilities deliberately ignore any host/legacy guest cookie.
+      if (
+        (path.startsWith("/api/public/events/") ||
+          path.startsWith("/api/public/invitations/")) &&
         (await publicInvitationsAPI({
           path,
           method,
@@ -617,6 +718,32 @@ export function createHandler({
         )
         ?.split("=")[1];
       let session = store.session(raw, origin, !selected);
+      if (replacement && session) {
+        const proof = store.get(
+          "passwordless-session",
+          session.token,
+          "platform",
+        );
+        if (
+          session.role === "guest" ||
+          (session.role === "host" &&
+            (!store.one(
+              "SELECT id FROM users WHERE id=? AND household=? AND role='host'",
+              session.user,
+              session.household,
+            ) ||
+              store.get("host-membership", session.user, session.household)
+                ?.enabled === false ||
+              (proof && proof.provider !== "host-account"))) ||
+          (session.role === "family" &&
+            !store.one(
+              "SELECT id FROM family_members WHERE id=? AND household=? AND disabled=0",
+              session.user,
+              session.household,
+            ))
+        )
+          session = null;
+      }
       if (
         session?.role === "family" &&
         passwordlessEnabled(env) &&
@@ -628,8 +755,12 @@ export function createHandler({
         centralMemberForActor(store, session)?.role !== "kid"
       )
         session = null;
-      if (session && !validPasswordlessSession(store, session))
-        fail(401, "Please sign in again.");
+      if (session && !validPasswordlessSession(store, session)) {
+        if (replacement) {
+          session = null;
+          cookie(res, null);
+        } else fail(401, "Please sign in again.");
+      }
       if (
         selected &&
         session &&
@@ -689,6 +820,22 @@ export function createHandler({
       };
       const requireRole = (role) => {
         if (!session) fail(401, "Please sign in.");
+        if (replacement && role === "host") {
+          if (
+            session.role !== "host" ||
+            !store.one(
+              "SELECT id FROM users WHERE id=? AND household=? AND role='host'",
+              session.user,
+              session.household,
+            )
+          )
+            fail(403, "An explicitly approved adult host account is required.");
+          if (!isolatedAddressBook(store, session.household))
+            fail(
+              503,
+              "An administrator must prepare this household's Address Book transition.",
+            );
+        }
         if (role === "host" && ["host", "family"].includes(session.role)) {
           if (!manager(familyMember(store, session)))
             fail(403, "Household content requires an owner or administrator.");
@@ -715,6 +862,127 @@ export function createHandler({
           10,
         );
       };
+      if (
+        replacement &&
+        ["/api/sign-in", "/api/login"].includes(path) &&
+        method === "POST"
+      ) {
+        if (path === "/api/sign-in")
+          fail(410, "Use host email/password or Google sign-in.");
+        await hostAuthAPI({
+          path: "/api/host-auth/login",
+          method,
+          req,
+          res,
+          store,
+          env,
+          session,
+          body,
+          json,
+          origin,
+          selected,
+          cookie,
+          newSession,
+        });
+        return;
+      }
+      if (
+        replacement &&
+        path.startsWith("/api/personal") &&
+        session?.role !== "host"
+      )
+        fail(403, "Host account settings are private.");
+      if (
+        replacement &&
+        path.startsWith("/api/app/") &&
+        path !== "/api/app/icon" &&
+        session?.role !== "host"
+      )
+        fail(404, "Page not found.");
+      if (
+        await hostAuthAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          env,
+          session,
+          body,
+          json,
+          origin,
+          selected,
+          cookie,
+          newSession,
+          hostVerificationSender,
+          hostGoogleFetcher,
+        })
+      )
+        return;
+      if (
+        await weddingImportAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          env,
+          session,
+          body,
+          json,
+          validateEvent: eventInput,
+        })
+      )
+        return;
+      if (
+        await hostManagementAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          env,
+          session,
+          body,
+          json,
+        })
+      )
+        return;
+      if (
+        await hostTransitionAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          env,
+          session,
+          body,
+          json,
+        })
+      )
+        return;
+      if (replacement && path === "/api/central/family") {
+        requireRole("host");
+        if (method !== "GET") fail(410, "Guest sign-in enrollment is retired.");
+        json(res, { people: [] });
+        return;
+      }
+      if (replacement && path === "/api/personal") {
+        requireRole("host");
+        if (method !== "GET") fail(405, "Method not allowed.");
+        json(res, hostRosterProjection(store, session));
+        return;
+      }
+      if (replacement && path === "/api/personal/family") {
+        requireRole("host");
+        if (method !== "PUT") fail(405, "Method not allowed.");
+        json(
+          res,
+          saveHostRoster(store, session, await body(req), version(req)),
+        );
+        return;
+      }
       const familyLogin = path.match(
         /^\/api\/public\/households\/([A-Za-z0-9_-]+)\/members\/login$/,
       );
@@ -752,6 +1020,7 @@ export function createHandler({
       }
       if (
         await gatherAppAPI({
+          session,
           path,
           method,
           req,
@@ -762,6 +1031,40 @@ export function createHandler({
           selected,
           json,
           readAsset,
+        })
+      )
+        return;
+      if (
+        await eventPagesAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          env,
+          session,
+          requireRole,
+          body,
+          json,
+          version,
+          selected,
+          origin,
+        })
+      )
+        return;
+      if (
+        await recipientManagementAPI({
+          path,
+          method,
+          req,
+          res,
+          store,
+          env,
+          session,
+          requireRole,
+          body,
+          json,
+          validateGuest: guestInput,
         })
       )
         return;
@@ -1246,7 +1549,7 @@ export function createHandler({
                   session.role === "admin" &&
                   adminSessionRestricted(store, session)
                     ? "admin-pending"
-                    : ["host", "family"].includes(session.role)
+                    : !replacement && ["host", "family"].includes(session.role)
                       ? manager(familyMember(store, session))
                         ? "host"
                         : "family"
@@ -1532,10 +1835,14 @@ export function createHandler({
             household: presentHousehold(store.household(household)),
             personal:
               session.role === "host"
-                ? accountProjection(store, session)
+                ? replacement
+                  ? hostRosterProjection(store, session)
+                  : accountProjection(store, session)
                 : null,
             receivedEvents:
-              session.role === "host" && !isolatedAddressBook(store, household)
+              session.role === "host" &&
+              !replacement &&
+              !isolatedAddressBook(store, household)
                 ? invitationsForIdentity(
                     store,
                     privateIdentity(store, session),
@@ -1557,6 +1864,13 @@ export function createHandler({
               const family = store.hostFamilyEvent(e, household);
               return {
                 ...e,
+                ...(replacement
+                  ? {
+                      extraPages: eventPages(store, e, household).map(
+                        pageMetadata,
+                      ),
+                    }
+                  : {}),
                 members: family.members,
                 response: family.response,
                 menu: family.menu,
@@ -1624,11 +1938,19 @@ export function createHandler({
           return;
         }
         if (path === "/api/host/qr" && method === "GET") {
-          const link = householdLink(
+          let link = householdLink(
             store.household(household),
             canonicalOrigin,
             householdHosts,
           );
+          if (replacement) {
+            const event = owned("event", url.searchParams.get("event"));
+            link = new URL(
+              "/event/" + publicEventReference(store, household, event.id),
+              link,
+            ).href;
+          }
+
           res.writeHead(200, {
             "Content-Type": "image/svg+xml",
             "Content-Disposition": 'inline; filename="household-qr.svg"',
