@@ -1,0 +1,30 @@
+name: Format staged Firebase host revocation files (temporary)
+on:
+  push:
+    branches: [feat/firebase-host-only-auth]
+permissions:
+  contents: write
+jobs:
+  format-only:
+    if: github.repository == 'kasstmaster/events' && github.ref == 'refs/heads/feat/firebase-host-only-auth'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Format only Firebase host revocation files
+        run: npx prettier --write server/firebase-host-admin.js server/host-signup.js server/host-auth-api.js server/handler.js test/firebase-host.test.js docs/firebase-host-auth.md
+      - name: Commit formatting to feature branch only
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- server/firebase-host-admin.js server/host-signup.js server/host-auth-api.js server/handler.js test/firebase-host.test.js docs/firebase-host-auth.md
+          if ! git diff --cached --quiet; then
+            git commit -m "Format Firebase host revocation source"
+            git push origin HEAD:feat/firebase-host-only-auth
+          fi
