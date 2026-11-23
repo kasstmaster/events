@@ -1,3 +1,5 @@
+import { validFirebaseHostSession } from "./firebase-host-admin.js";
+import { hostFirebaseEnabled, hostFirebaseConfig } from "./firebase-host.js";
 import { weddingImportAPI } from "./wedding-import.js";
 import { eventPagesAPI, eventPages, pageMetadata } from "./event-pages.js";
 import { recipientManagementAPI } from "./recipient-management-api.js";
@@ -486,7 +488,9 @@ export function createHandler({
   hostGoogleFetcher,
 } = {}) {
   const replacement = hostOnlyMode(env);
-  const firebaseSettings = replacement ? null : firebaseConfig(env);
+  const firebaseSettings = replacement
+    ? hostFirebaseConfig(env)
+    : firebaseConfig(env);
   hostVerificationSender ||= hostMailSender(env, origin);
   if (new URL(origin).origin !== origin)
     throw new Error(
@@ -512,8 +516,8 @@ export function createHandler({
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader(
       "Content-Security-Policy",
-      !replacement &&
-        firebaseEnabled(env) &&
+      ((replacement && hostFirebaseEnabled(env)) ||
+        (!replacement && firebaseEnabled(env))) &&
         origin === "https://gather.ilymmd.com"
         ? "default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.google.com https://www.recaptcha.net; frame-src https://www.google.com https://www.recaptcha.net https://" +
             firebaseSettings.authDomain +
@@ -561,6 +565,7 @@ export function createHandler({
           json,
           origin,
           hostVerificationSender,
+          firebaseFetcher,
         });
         return;
       }
@@ -744,6 +749,31 @@ export function createHandler({
         )
           session = null;
       }
+      // Revalidate Firebase authority on every existing host session before
+      // servicing private data, session renewal, or cross-origin handoff.
+      // Firebase disable/delete/revoke overrides the long-lived Gather cookie.
+      if (hostFirebaseEnabled(env) && session?.role === "host") {
+        const proof = store.get(
+          "passwordless-session",
+          session.token,
+          "platform",
+        );
+        const fallback =
+          proof?.adminFallback === true &&
+          store.get("platform-access", session.user, "platform")?.email ===
+            store.one("SELECT email FROM users WHERE id=?", session.user)
+              ?.email;
+        if (!fallback) {
+          const active = await validFirebaseHostSession(store, session, env, {
+            fetcher: firebaseFetcher || fetch,
+          });
+          if (!active) {
+            revokeUserSessions(store, session.user);
+            session = null;
+            cookie(res, null);
+          }
+        }
+      }
       if (
         session?.role === "family" &&
         passwordlessEnabled(env) &&
@@ -916,6 +946,7 @@ export function createHandler({
           newSession,
           hostVerificationSender,
           hostGoogleFetcher,
+          firebaseFetcher,
         })
       )
         return;

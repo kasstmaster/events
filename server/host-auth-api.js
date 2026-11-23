@@ -1,3 +1,9 @@
+import {
+  hostFirebaseEnabled,
+  hostFirebaseConfig,
+  hostFirebaseKey,
+  verifyHostFirebaseToken,
+} from "./firebase-host.js";
 import { randomBytes } from "node:crypto";
 import { fail, email, checkPassword, hashPassword } from "./model.js";
 import { hostOnlyMode, hostAuthOrigin } from "./host-model.js";
@@ -71,12 +77,114 @@ export async function hostAuthAPI(ctx) {
       centralOrigin: hostAuthOrigin(origin),
       enabled: hostOnlyMode(env),
       signup: hostSignupEnabled(env),
-      google: googleHostConfigured(env),
-      emailVerification: !!hostVerificationSender,
+      google: !hostFirebaseEnabled(env) && googleHostConfigured(env),
+      emailVerification: !hostFirebaseEnabled(env) && !!hostVerificationSender,
+      firebase: hostFirebaseConfig(env),
     });
     return true;
   }
+  // Firebase verifies identity only; Gather controls which verified adult may host.
+  // Never accept email/name as authority, and never grant administrator privileges.
+  if (path === "/api/host-auth/firebase" && method === "POST") {
+    if (!hostFirebaseEnabled(env)) fail(404, "Page not found.");
+    if (selected || origin !== hostAuthOrigin(origin))
+      fail(403, "Use the central host sign-in page.");
+    store.limit("host-firebase-ip:" + req.socket.remoteAddress, 15, 60000);
+    const input = await body(req);
+    const verified = await verifyHostFirebaseToken(input.idToken, env, {
+      fetcher: ctx.firebaseFetcher || fetch,
+    });
+    store.limit(
+      "host-firebase-uid:" + hostFirebaseKey(verified.project, verified.uid),
+      12,
+      60000,
+    );
+    const key = hostFirebaseKey(verified.project, verified.uid);
+    const existing = store.get("host-firebase-account", key, P);
+    let user;
+    if (input.intent === "signup") {
+      if (existing) fail(403, "This Firebase identity is already registered.");
+      const invite = invitation(store, input.invite, verified.email);
+      const password = await hashPassword(fresh());
+      const account = await completeHostRegistration(
+        store,
+        invite.id,
+        verified.email,
+        registrationInput(input),
+        password,
+        "firebase",
+        (registered) => {
+          if (store.get("host-firebase-account", key, P))
+            fail(409, "Firebase account changed. Sign in again.");
+          store.put("host-firebase-account", key, P, {
+            user: registered.user,
+            household: registered.household,
+            email: verified.email,
+            project: verified.project,
+          });
+        },
+        hostOnlyMode(env),
+      );
+      user = store.one("SELECT * FROM users WHERE id=?", account.user);
+    } else if (input.intent === "connect") {
+      if (existing) fail(403, "This Firebase identity is already connected.");
+      // Existing hosts migrate only with their known Gather password. An email
+      // match alone never transfers host ownership or administrator authority.
+      user = store.one("SELECT * FROM users WHERE email=?", verified.email);
+      if (
+        !availableHost(store, user) ||
+        store.get("platform-access", user.id, P) ||
+        !(await checkPassword(input.currentPassword, user?.password))
+      )
+        fail(403, "Confirm your existing host password to connect Firebase.");
+      store.transaction(() => {
+        if (store.get("host-firebase-account", key, P))
+          fail(409, "Firebase account changed. Sign in again.");
+        store.put("host-firebase-account", key, P, {
+          user: user.id,
+          household: user.household,
+          email: verified.email,
+          project: verified.project,
+        });
+        auditAccount(store, user.id, user.id, "host-firebase-connected");
+      });
+    } else if (input.intent === "login") {
+      user =
+        existing && store.one("SELECT * FROM users WHERE id=?", existing.user);
+      if (
+        !existing ||
+        !availableHost(store, user) ||
+        existing.email !== verified.email ||
+        existing.project !== verified.project ||
+        existing.household !== user.household
+      )
+        fail(403, "This Firebase account is not approved to host Gather.");
+    } else fail(400, "Unsupported host sign-in.");
+    if (!availableHost(store, user) || store.get("platform-access", user.id, P))
+      fail(403, "Administrator access uses separately protected sign-in.");
+    cookie(
+      res,
+      persistentHostSession(
+        store,
+        { user: user.id, household: user.household, role: "host" },
+        origin,
+        undefined,
+        {
+          key,
+          project: verified.project,
+          uid: verified.uid,
+          email: verified.email,
+          authTime: verified.authTime,
+        },
+      ),
+    );
+    auditAccount(store, user.id, user.id, "host-firebase-sign-in");
+    json(res, { ok: true });
+    return true;
+  }
   if (!hostSignupEnabled(env)) fail(404, "Page not found.");
+  if (hostFirebaseEnabled(env) && path === "/api/host-auth/google/callback")
+    fail(410, "Use Firebase host sign-in.");
   if (path === "/api/host-auth/google/callback" && method === "GET") {
     try {
       if (selected || origin !== hostAuthOrigin(origin))
@@ -181,8 +289,11 @@ export async function hostAuthAPI(ctx) {
       fail(403, "Host account access is required.");
     json(res, {
       email: user.email,
-      googleConnected: store
-        .list("host-google-account", P)
+      googleConnected: hostFirebaseEnabled(env)
+        ? false
+        : store.list("host-google-account", P).some((m) => m.user === user.id),
+      firebaseConnected: store
+        .list("host-firebase-account", P)
         .some((m) => m.user === user.id),
       passwordAllowed:
         store.get("host-auth-account", user.id, P)?.passwordAllowed !== false,
@@ -238,6 +349,17 @@ export async function hostAuthAPI(ctx) {
     json(res, { ok: true });
     return true;
   }
+  if (
+    hostFirebaseEnabled(env) &&
+    [
+      "/api/host-auth/google/disconnect",
+      "/api/host-auth/google/start",
+      "/api/host-auth/password",
+      "/api/host-auth/recovery/start",
+      "/api/host-auth/recovery/complete",
+    ].includes(path)
+  )
+    fail(410, "Use Firebase account settings and recovery.");
   if (path === "/api/host-auth/google/disconnect") {
     const user =
       session?.role === "host" &&
@@ -295,6 +417,11 @@ export async function hostAuthAPI(ctx) {
     return true;
   }
   if (path === "/api/host-auth/login") {
+    if (hostFirebaseEnabled(env) && input.platformAdmin !== true)
+      fail(
+        410,
+        "Sign in through Firebase, or use separate administrator sign-in.",
+      );
     const address = email(input.email);
     store.limit("host-email-login:" + hash(address), 10, 60000);
     const user = store.one("SELECT * FROM users WHERE email=?", address),
@@ -302,6 +429,12 @@ export async function hostAuthAPI(ctx) {
     if (
       !valid ||
       !user ||
+      (hostFirebaseEnabled(env) &&
+        !platformAdministrator(store, {
+          user: user.id,
+          household: user.household,
+          role: user.role,
+        })) ||
       (user.role !== "admin" && !availableHost(store, user)) ||
       (selected && user.household !== selected.id) ||
       store.get("host-auth-account", user.id, P)?.passwordAllowed === false
@@ -326,6 +459,7 @@ export async function hostAuthAPI(ctx) {
         P,
         {
           ...proof,
+          ...(hostFirebaseEnabled(env) ? { adminFallback: true } : {}),
           adminRestricted: false,
           adminUntil: Date.now() + 15 * 60000,
         },

@@ -51,7 +51,104 @@ export function hostAuthUI({
   let config = {},
     invitationContext = null,
     hostPWA = false;
+
   const central = () => config.centralOrigin || "https://gather.ilymmd.com";
+  let firebaseClient, firebasePendingRegistration;
+  async function firebase() {
+    if (!config.firebase || location.origin !== central())
+      throw Error("Use the shared Gather host sign-in page.");
+    if (firebaseClient) return firebaseClient;
+    const [app, sdk] = await Promise.all([
+      import("https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js"),
+    ]);
+    const application =
+      app.getApps().find((a) => a.name === "gather-host") ||
+      app.initializeApp(config.firebase, "gather-host");
+    const auth = sdk.getAuth(application);
+    // The durable Gather session is HttpOnly; do not save Firebase credentials
+    // in local storage or expose them to guest event pages.
+    await sdk.setPersistence(auth, sdk.inMemoryPersistence);
+    firebaseClient = { auth, sdk };
+    return firebaseClient;
+  }
+  async function firebaseSignIn(
+    values,
+    intent = "login",
+    provider = "password",
+  ) {
+    if (location.origin !== central()) {
+      location.assign(
+        intent === "signup"
+          ? central() + "/host-signup#invite=" + encodeURIComponent(invite)
+          : central() + "/signin",
+      );
+      return false;
+    }
+    const { auth, sdk } = await firebase();
+    if (provider === "google") {
+      await sdk.signInWithPopup(auth, new sdk.GoogleAuthProvider());
+    } else if (intent === "signup") {
+      try {
+        await sdk.createUserWithEmailAndPassword(
+          auth,
+          values.email,
+          values.password,
+        );
+      } catch (error) {
+        if (error?.code !== "auth/email-already-in-use") throw error;
+        await sdk.signInWithEmailAndPassword(
+          auth,
+          values.email,
+          values.password,
+        );
+      }
+    } else {
+      await sdk.signInWithEmailAndPassword(auth, values.email, values.password);
+    }
+    await sdk.reload(auth.currentUser);
+    if (!auth.currentUser.emailVerified) {
+      if (intent === "signup")
+        await sdk.sendEmailVerification(auth.currentUser);
+      firebasePendingRegistration = intent === "signup" ? values : null;
+      screen = intent === "signup" ? "verify" : "login";
+      message =
+        "Verify your email using Firebase, then return here to continue.";
+      render();
+      return false;
+    }
+    const data = {
+      intent,
+      idToken: await auth.currentUser.getIdToken(true),
+      ...(intent === "signup" ? { ...values, invite } : {}),
+      ...(intent === "connect"
+        ? { currentPassword: values.currentPassword }
+        : {}),
+    };
+    delete data.password;
+    await api("/api/host-auth/firebase", { method: "POST", data });
+    await sdk.signOut(auth);
+    firebasePendingRegistration = null;
+    history.replaceState(null, "", "/");
+    screen = "login";
+    state.view = "home";
+    await load();
+    await hostFirebaseGoHome();
+    return true;
+  }
+  async function hostFirebaseGoHome() {
+    if (!request && state.session?.role === "host") {
+      const result = await api("/api/host-auth/home");
+      const destination = new URL(result.home);
+      if (destination.origin !== location.origin)
+        location.replace(
+          destination.origin +
+            "/signin#host-transfer-start=" +
+            encodeURIComponent(location.origin),
+        );
+    }
+  }
+
   async function navigateTransfer(data) {
     const response = await api("/api/host-auth/handoff/" + data.action, {
       method: "POST",
@@ -107,7 +204,7 @@ export function hostAuthUI({
       return ui`${topbar({ title: C("Administrator verification"), back: "page-back" })}<section class="panel"><form data-form="host-admin-stepup">${field(H("Current system administrator password"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Open administrator tools</button></form></section>`;
     },
     accountPage() {
-      return ui`${topbar({ title: C("Host account"), back: "page-back" })}<section class="panel"><h1>Host account</h1>${field(H("Registered email"), "hostEmail", state.hostAccount?.email || "", "email", "readonly")}<form data-form="host-password">${field(H("Current password"), "currentPassword", "", "password", 'required autocomplete="current-password"')}${field(H("New password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Change password</button></form>${config.google && !state.session?.platformAdmin ? ui`<form data-form="host-connect-google">${field(H("Current password to connect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Connect Google</button></form>` : ""}${state.hostAccount?.googleConnected ? ui`<form data-form="host-disconnect-google">${field(H("Current password to disconnect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Disconnect Google and sign out devices</button></form>` : ""}<div class="row">${button("passwordless-revoke", H("Sign out other devices"))}${button("passwordless-revoke-all", H("Sign out all devices"))}${button("host-recovery", H("Recover host account"))}</div></section>`;
+      return ui`${topbar({ title: C("Host account"), back: "page-back" })}<section class="panel"><h1>Host account</h1>${field(H("Registered email"), "hostEmail", state.hostAccount?.email || "", "email", "readonly")}${config.firebase ? ui`<form data-form="host-firebase-reset"><p>Firebase manages your password and recovery emails.</p><p class="form-error" role="alert"></p><button>Send password reset email</button></form>` : ui`<form data-form="host-password">${field(H("Current password"), "currentPassword", "", "password", 'required autocomplete="current-password"')}${field(H("New password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Change password</button></form>`}${config.google && !state.session?.platformAdmin ? ui`<form data-form="host-connect-google">${field(H("Current password to connect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Connect Google</button></form>` : ""}${state.hostAccount?.googleConnected ? ui`<form data-form="host-disconnect-google">${field(H("Current password to disconnect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Disconnect Google and sign out devices</button></form>` : ""}<div class="row">${button("passwordless-revoke", H("Sign out other devices"))}${button("passwordless-revoke-all", H("Sign out all devices"))}${button("host-recovery", H("Recover host account"))}</div></section>`;
     },
     authEntry: () =>
       ["/host-signup", "/host-recovery"].includes(location.pathname),
@@ -186,7 +283,7 @@ export function hostAuthUI({
                 ? "Verify your email"
                 : "Host sign-in";
       const household = state.publicHousehold;
-      return ui`<section class="auth"><p class="eyebrow">${household ? escape(household.name) : C("Welcome to Gather")}</p><h1>${C(title)}</h1>${household ? ui`<p class="muted">Open the event link on your invitation to RSVP. Only hosts sign in here.</p>` : ""}<div class="panel">${message ? ui`<p role="status">${escape(message)}</p>` : ""}${screen === "sent" ? ui`<p>Check your email, then open the verification link in this browser. No account has been created yet.</p>` : screen === "verify" ? ui`<form data-form="host-verify"><p>Finish verifying your email to create your host account.</p><p class="form-error" role="alert"></p><button>Verify and continue</button></form>` : screen === "reset" ? ui`<form data-form="host-reset">${field(H("New password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Reset password</button></form>` : screen === "recover" ? ui`<form data-form="host-recover">${field(H("Email address"), "email", "", "email", 'required autocomplete="email"')}<p class="form-error" role="alert"></p><button>Send recovery email</button></form>` : ui`<form data-form="${screen === "signup" ? "host-signup" : "host-login"}">${field(H("Email address"), "email", screen === "signup" ? invitationContext?.email || "" : "", "email", 'required maxlength="254" autocomplete="username"' + (screen === "signup" && invitationContext?.email ? " readonly" : ""))}${screen === "signup" ? field(H("Family household name"), "name", invitationContext?.household?.name || "", "text", 'required maxlength="100"' + (invitationContext?.household ? " readonly" : "")) : ""}${field(H("Password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="current-password"')}${screen === "signup" && !invitationContext?.household ? familyLogoChoice() : ""}<p class="form-error" role="alert"></p><button>${C(screen === "signup" ? "Verify email and create account" : "Sign in")}</button>${config.google ? button("host-google", H(screen === "signup" ? "Sign up with Google" : "Sign in with Google")) : ""}</form>`}</div>${screen !== "signup" ? button("host-recovery", H("Forgot password?"), "", "quiet") : ""}${screen !== "login" ? button("host-login-screen", H("Sign in"), "", "quiet") : ""}<p class="small">New host accounts require an administrator-issued registration link.</p></section>`;
+      return ui`<section class="auth"><p class="eyebrow">${household ? escape(household.name) : C("Welcome to Gather")}</p><h1>${C(title)}</h1>${household ? ui`<p class="muted">Open the event link on your invitation to RSVP. Only hosts sign in here.</p>` : ""}<div class="panel">${message ? ui`<p role="status">${escape(message)}</p>` : ""}${screen === "sent" ? ui`<p>Check your email, then open the verification link in this browser. No account has been created yet.</p>` : screen === "verify" ? ui`<form data-form="host-verify"><p>Finish verifying your email to create your host account.</p><p class="form-error" role="alert"></p><button>Verify and continue</button></form>` : screen === "reset" ? ui`<form data-form="host-reset">${field(H("New password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Reset password</button></form>` : screen === "recover" ? ui`<form data-form="host-recover">${field(H("Email address"), "email", "", "email", 'required autocomplete="email"')}<p class="form-error" role="alert"></p><button>Send recovery email</button></form>` : ui`<form data-form="${screen === "signup" ? "host-signup" : screen === "connect" ? "host-connect-firebase" : "host-login"}">${field(H("Email address"), "email", screen === "signup" ? invitationContext?.email || "" : "", "email", 'required maxlength="254" autocomplete="username"' + (screen === "signup" && invitationContext?.email ? " readonly" : ""))}${screen === "signup" ? field(H("Family household name"), "name", invitationContext?.household?.name || "", "text", 'required maxlength="100"' + (invitationContext?.household ? " readonly" : "")) : ""}${field(H("Password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="current-password"')}${screen === "connect" ? field(H("Existing Gather host password"), "currentPassword", "", "password", 'required autocomplete="current-password"') : ""}${screen === "signup" && !invitationContext?.household ? familyLogoChoice() : ""}<p class="form-error" role="alert"></p><button>${C(screen === "signup" ? "Verify email and create account" : screen === "connect" ? "Connect existing host account" : "Sign in")}</button>${(config.google || config.firebase) && screen !== "admin" ? button("host-google", H(screen === "signup" ? "Sign up with Google" : "Sign in with Google")) : ""}</form>`}</div>${screen !== "signup" ? button("host-recovery", H("Forgot password?"), "", "quiet") : ""}${config.firebase && screen === "login" ? button("host-connect-screen", H("Connect an existing host account"), "", "quiet") : ""}${config.firebase && screen === "login" ? button("host-admin-screen", H("Administrator sign-in"), "", "quiet") : ""}${screen !== "login" ? button("host-login-screen", H("Sign in"), "", "quiet") : ""}<p class="small">New host accounts require an administrator-issued registration link.</p></section>`;
     },
     async submit(form) {
       const kind = form.dataset.form,
@@ -194,11 +291,13 @@ export function hostAuthUI({
       if (
         ![
           "host-login",
+          "host-connect-firebase",
           "host-signup",
           "host-verify",
           "host-recover",
           "host-reset",
           "host-password",
+          "host-firebase-reset",
           "host-connect-google",
           "host-disconnect-google",
           "host-admin-stepup",
@@ -212,6 +311,12 @@ export function hostAuthUI({
         });
         state.view = "home";
         await load();
+      }
+      if (config.firebase && kind === "host-firebase-reset") {
+        const { auth, sdk } = await firebase();
+        await sdk.sendPasswordResetEmail(auth, state.hostAccount.email);
+        notify("Check your email for Firebase password settings.");
+        return true;
       }
       if (kind === "host-password") {
         await api("/api/host-auth/password", { method: "POST", data: values });
@@ -244,13 +349,35 @@ export function hostAuthUI({
         });
         location.assign(result.url);
       }
+      if (
+        config.firebase &&
+        screen !== "admin" &&
+        ["host-login", "host-connect-firebase"].includes(kind)
+      ) {
+        await firebaseSignIn(
+          values,
+          kind === "host-connect-firebase" ? "connect" : "login",
+        );
+        return true;
+      }
       if (kind === "host-login") {
-        await api("/api/host-auth/login", { method: "POST", data: values });
+        await api("/api/host-auth/login", {
+          method: "POST",
+          data: { ...values, platformAdmin: screen === "admin" },
+        });
         screen = "login";
         history.replaceState(null, "", "/");
         state.view = "home";
         await load();
         if (!request) await this.goHome();
+      }
+      if (config.firebase && kind === "host-signup") {
+        values.logo =
+          values.logoChoice === "upload"
+            ? await fileData(form.elements.registrationLogo)
+            : "";
+        await firebaseSignIn(values, "signup");
+        return true;
       }
       if (kind === "host-signup") {
         values.logo =
@@ -264,6 +391,39 @@ export function hostAuthUI({
         screen = "sent";
         render();
       }
+      if (config.firebase && kind === "host-verify") {
+        const { auth, sdk } = await firebase();
+        if (!auth.currentUser) throw Error("Please restart Firebase sign-up.");
+        await sdk.reload(auth.currentUser);
+        if (!auth.currentUser.emailVerified)
+          throw Error("Verify the email in Firebase before continuing.");
+        // Reauthenticate after opening the email link: identity confirmation can
+        // take longer than the server's five-minute fresh-auth window.
+        if (firebasePendingRegistration?.password)
+          await sdk.signInWithEmailAndPassword(
+            auth,
+            firebasePendingRegistration.email,
+            firebasePendingRegistration.password,
+          );
+        if (!firebasePendingRegistration)
+          throw Error("Please restart Firebase sign-up.");
+        const saved = firebasePendingRegistration;
+        const data = {
+          ...saved,
+          invite,
+          intent: "signup",
+          idToken: await auth.currentUser.getIdToken(true),
+        };
+        delete data.password;
+        await api("/api/host-auth/firebase", { method: "POST", data });
+        await sdk.signOut(auth);
+        firebasePendingRegistration = null;
+        screen = "login";
+        history.replaceState(null, "", "/");
+        await load();
+        await hostFirebaseGoHome();
+        return true;
+      }
       if (kind === "host-verify") {
         await api("/api/host-signup/complete", {
           method: "POST",
@@ -275,6 +435,19 @@ export function hostAuthUI({
         state.view = "home";
         await load();
         await this.goHome();
+      }
+      if (config.firebase && kind === "host-recover") {
+        const { auth, sdk } = await firebase();
+        try {
+          await sdk.sendPasswordResetEmail(auth, values.email);
+        } catch (error) {
+          if (error?.code !== "auth/user-not-found") throw error;
+        }
+        message =
+          "If a Firebase host account exists, password recovery has been requested.";
+        screen = "login";
+        render();
+        return true;
       }
       if (kind === "host-recover") {
         await api("/api/host-auth/recovery/start", {
@@ -323,12 +496,48 @@ export function hostAuthUI({
         render();
         return true;
       }
+      if (config.firebase && action === "host-connect-screen") {
+        screen = "connect";
+        render();
+        return true;
+      }
+      if (config.firebase && action === "host-admin-screen") {
+        screen = "admin";
+        render();
+        return true;
+      }
       if (action === "host-login-screen") {
         screen = "login";
         render();
         return true;
       }
       if (action !== "host-google") return false;
+      if (screen === "admin") return false;
+      if (config.firebase) {
+        const form = target.closest("form"),
+          values = Object.fromEntries(new FormData(form));
+        if (screen === "signup") {
+          if (
+            !form.elements.email.reportValidity() ||
+            !form.elements.name.reportValidity()
+          )
+            return true;
+          values.logo =
+            values.logoChoice === "upload"
+              ? await fileData(form.elements.registrationLogo)
+              : "";
+        }
+        await firebaseSignIn(
+          values,
+          screen === "signup"
+            ? "signup"
+            : screen === "connect"
+              ? "connect"
+              : "login",
+          "google",
+        );
+        return true;
+      }
       if (location.origin !== central()) {
         location.assign(central() + "/signin");
         return true;

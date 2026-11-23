@@ -1,3 +1,4 @@
+import { hostFirebaseEnabled } from "./firebase-host.js";
 import { ensureHostRoster } from "./host-roster.js";
 import { revokeUserSessions } from "./device-sessions.js";
 import { hostOnlyMode, hostAuthOrigin } from "./host-model.js";
@@ -45,7 +46,14 @@ export function validHostSession(store, session, proof) {
     )
   );
 }
-export function persistentHostSession(store, account, origin, deviceId) {
+export function persistentHostSession(
+  store,
+  account,
+  origin,
+  deviceId,
+  firebase,
+  adminFallback = false,
+) {
   const user = store.one(
     "SELECT * FROM users WHERE id=? AND role='host'",
     account.user,
@@ -61,8 +69,18 @@ export function persistentHostSession(store, account, origin, deviceId) {
       persistentProof({
         deviceId,
         provider: "host-account",
+        ...(adminFallback ? { adminFallback: true } : {}),
         user: user.id,
         stamp: hostAccountStamp(user),
+        ...(firebase
+          ? {
+              firebase: {
+                ...firebase,
+                user: user.id,
+                household: user.household,
+              },
+            }
+          : {}),
         adminRestricted: true,
       }),
     );
@@ -202,6 +220,11 @@ export async function hostSignupAPI(ctx) {
     return true;
   }
 
+  if (
+    hostFirebaseEnabled(env) &&
+    ["/api/host-signup/email", "/api/host-signup/complete"].includes(path)
+  )
+    fail(410, "Host registration now uses Firebase email verification.");
   if (path === "/api/host-signup/email") {
     if (typeof hostVerificationSender !== "function")
       fail(503, "Host email verification is not configured.");
