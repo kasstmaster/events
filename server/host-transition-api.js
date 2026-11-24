@@ -10,7 +10,6 @@ import {
   publicEventReference,
   recipientHouseholdID,
 } from "./public-invitations.js";
-import { hostSignupEnabled } from "./host-signup.js";
 import { revokeUserSessions } from "./device-sessions.js";
 const P = "platform";
 export function hostTransitionPlan(store) {
@@ -52,9 +51,8 @@ export function hostTransitionPlan(store) {
   };
 }
 export async function hostTransitionAPI(ctx) {
-  const { path, method, req, res, store, env, session, body, json } = ctx;
+  const { path, method, req, res, store, session, body, json } = ctx;
   if (path !== "/api/admin/host-transition") return false;
-  if (!hostSignupEnabled(env)) fail(404, "Page not found.");
   if (method !== "POST") fail(405, "Method not allowed.");
   const input = await body(req);
   await confirmAdministrator(store, session, input.password);
