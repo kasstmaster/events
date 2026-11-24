@@ -1066,6 +1066,7 @@ function render(target = $("#app"), example = false) {
         ? ui`<section class="panel"><h2>Approved emails</h2><form data-form="approval">${field(H("Email address"), "email", "", "email", "required")}<p class="form-error" role="alert"></p><button>Approve host</button></form><ul class="guest-list">${state.data.approvals.map((a) => ui`<li class="row between"><span>${escape(a.email)}</span>${button("revoke", H("Remove"), `data-email="${escape(a.email)}"`, "quiet")}</li>`).join("") || M('<li class="muted">No pending approvals.</li>')}</ul></section>`
         : state.view === "admin-hosts"
           ? ui`<section class="panel"><h2>Registered hosts</h2>${button("account-management", H("Registered accounts"))}${button("account-recovery", H("Account Recovery"))}<ul>${state.data.hosts.map((h) => ui`<li>${escape(h.email)} ${button("admin-household-identity", H("Household name / domain"), `data-id="${h.id}"`)} ${h.logoRequested ? ui`<span class="small">Family icon requested</span>` : ""} ${button("recover-owner", H("Recover owner sign-in"), `data-id="${h.id}"`)}${h.platformAdmin ? ui`<span>Administrator tools enabled</span>` : button("grant-platform-access", H("Make administrator"), `data-id="${h.id}"`)}${button("delete-host", H("Delete account"), `data-id="${h.id}"`, "danger")}</li>`).join("") || M("<li>No hosts yet.</li>")}</ul><p class="small muted">Host guest records and RSVPs are not included here.</p></section>` +
+            hostAdmin.transitionPage() +
             tools.cleanupPanel() +
             (role === "host"
               ? ui`<section class="panel"><h2>Old administrator accounts</h2>${(state.data.legacyAdministrators || []).map((a) => ui`<p>${escape(a.email)} ${button("retire-legacy-admin", H("Remove old administrator"), `data-email="${escape(a.email)}"`, "danger")}</p>`).join("") || M("<p>No old administrator accounts remain.</p>")}</section>`
@@ -2084,7 +2085,11 @@ async function submit(form) {
   if (state.hostOnly && (await weddingImport.submit(form))) return;
   if (await extraPages.submit(form)) return;
   if (state.hostOnly && (await recipients.submit(form))) return;
-  if (state.hostOnly && (await hostAdmin.submit(form))) return;
+  if (
+    (state.hostOnly || kind === "host-admin-transition") &&
+    (await hostAdmin.submit(form))
+  )
+    return;
   if (state.hostOnly && (await hostAuth.submit(form))) return;
   if (kind === "rsvp-cards") return rsvpCards.submit(form);
   if (kind === "passwordless-step-up") return passwordless.stepUp(form);

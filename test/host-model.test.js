@@ -31,6 +31,29 @@ async function prepare(f) {
   assert.equal(result.status, 200);
   return result;
 }
+test("only a password-confirmed administrator can prepare before enabling host-only mode", async (t) => {
+  const f = await application(t);
+  const host = await f.host("Alpha");
+  const path = "/api/admin/host-transition";
+  for (const [cookie, candidatePassword] of [
+    [host.cookie, password],
+    [f.admin, "incorrect-password"],
+  ]) {
+    const result = await f.request(path, {
+      method: "POST",
+      cookie,
+      data: { password: candidatePassword },
+    });
+    assert.equal(result.status, 403);
+  }
+  await prepare(f);
+  const config = await f.request("/api/host-auth/config");
+  assert.equal(config.body.enabled, false);
+  assert.equal(
+    (await f.request("/api/host", { cookie: host.cookie })).status,
+    200,
+  );
+});
 test("replacement mode retires guest authorities and preserves independent recipients/history", async (t) => {
   const f = await application(t, mode),
     a = await f.host("Alpha"),
