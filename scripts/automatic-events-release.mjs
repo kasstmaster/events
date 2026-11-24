@@ -21,6 +21,14 @@ export const ACCOUNT = "37d068144865a0b725ee272bc7b2eb71";
 export const NAMESPACE = "8203f4cd7fde45d2ab49de62e239d744";
 export const INTEGRATION = "562ca263097e79fa8026d6427a21ebedfe8deae1";
 export const INITIAL_VERSION = "2445780c-00a8-4be8-be81-64e450420038";
+// These encrypted bindings were added by the owner after this verified release.
+const AUTH_SECRET_BASELINE = "99e5529bbd4edec085c7b0948cd9dc78404b4036";
+const APPROVED_AUTH_SECRET_ADDITIONS = new Set([
+  "HOST_GOOGLE_CLIENT_ID",
+  "HOST_GOOGLE_CLIENT_SECRET",
+  "HOST_FIREBASE_ADMIN_CLIENT_EMAIL",
+  "HOST_FIREBASE_ADMIN_PRIVATE_KEY",
+]);
 const ORIGIN = "https://events.kassandraraudman.workers.dev";
 const SCRIPT = `/accounts/${ACCOUNT}/workers/scripts/events`;
 const STORAGE_ADAPTER_SHA256 =
@@ -751,9 +759,25 @@ export async function run(mode, options = {}) {
         const expectedSettings =
           anchor.application?.protected_settings_sha256 ||
           fingerprint(anchor.preserved.settings);
+        // Reconcile additions only against the exact prior release. The full
+        // live inventory is still captured in the checkpoint and new receipt.
+        const baselineSettings =
+          anchor.release === AUTH_SECRET_BASELINE
+            ? {
+                ...protectedRaw,
+                bindings: protectedRaw.bindings.filter(
+                  (binding) =>
+                    binding.type !== "secret_text" ||
+                    !APPROVED_AUTH_SECRET_ADDITIONS.has(binding.name) ||
+                    anchor.preserved.settings.bindings.some(
+                      (previous) => previous.name === binding.name,
+                    ),
+                ),
+              }
+            : protectedRaw;
         must(
-          runtimeSettingsFingerprint(protectedRaw) === expectedRuntime &&
-            fingerprint(safeSettings(protectedRaw)) === expectedSettings,
+          runtimeSettingsFingerprint(baselineSettings) === expectedRuntime &&
+            fingerprint(safeSettings(baselineSettings)) === expectedSettings,
           "provenance",
           "Unapproved runtime or binding change since verified release.",
         );

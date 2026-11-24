@@ -31,7 +31,7 @@ import {
   fingerprint as proofFingerprint,
 } from "./application-provenance.mjs";
 import { safeSettings } from "./manual-events-release.mjs";
-const PREVIOUS = "a".repeat(40);
+const PREVIOUS = "99e5529bbd4edec085c7b0948cd9dc78404b4036";
 const syntheticModules = (id) => ({
   id,
   main_module: "worker.js",
@@ -385,6 +385,7 @@ async function fixture(fn) {
         if (state.firebaseEnabled)
           result.bindings.find((b) => b.name === "FIREBASE_AUTH_ENABLED").text =
             "true";
+        if (state.extraBindings) result.bindings.push(...state.extraBindings);
         if (state.extraConfig)
           result.bindings.push({
             name: "UNKNOWN_FLAG",
@@ -543,6 +544,40 @@ test("checkpoint precedes a single exact publish; verification checks all assets
     assert.equal(v.application.commit, RELEASE);
     assert.equal(v.application.asset_count, 2);
     assert.match(v.application.code_sha256, /^[a-f0-9]{64}$/);
+  }));
+test("only approved encrypted auth additions reconcile against the prior release and remain protected after deployment", () =>
+  fixture(async ({ state, options, preflight, root }) => {
+    state.extraBindings = [
+      "HOST_GOOGLE_CLIENT_ID",
+      "HOST_GOOGLE_CLIENT_SECRET",
+      "HOST_FIREBASE_ADMIN_CLIENT_EMAIL",
+      "HOST_FIREBASE_ADMIN_PRIVATE_KEY",
+    ].map((name) => ({ name, type: "secret_text" }));
+    const [first] = state.extraBindings;
+    first.type = "plain_text";
+    first.text = "test-only";
+    await assert.rejects(run("preflight", options), /Unapproved runtime/);
+    first.type = "secret_text";
+    delete first.text;
+    state.extraBindings.push({
+      name: "UNREVIEWED_SECRET",
+      type: "secret_text",
+    });
+    await assert.rejects(run("preflight", options), /Unapproved runtime/);
+    state.extraBindings.pop();
+    await preflight();
+    const checkpoint = JSON.parse(
+      await readFile(join(root, "recovery/events-checkpoint.json"), "utf8"),
+    );
+    for (const binding of state.extraBindings) {
+      assert.ok(
+        checkpoint.before.settings.bindings.some(
+          (entry) => entry.name === binding.name && entry.type === binding.type,
+        ),
+      );
+    }
+    await run("publish", options);
+    await run("verify", options);
   }));
 test("permanent provenance permits public configuration rotation but blocks activation, unknown settings, code and asset drift", () =>
   fixture(async ({ state, options, preflight }) => {
