@@ -1063,6 +1063,7 @@ try {
   );
   await footer(promoted, [
     "Home",
+    "Admin",
     "Family",
     "Contacts",
     "Edit House",
@@ -1077,12 +1078,20 @@ try {
       fullPage: true,
     });
   }
+  await click(promoted, "Admin");
+  await promoted
+    .getByRole("heading", { name: "Administration", exact: true })
+    .waitFor();
+  await home(promoted);
+  await promoted.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
+  await click(promoted, "Admin");
   await click(promoted, "Approvals");
   await promoted
     .getByRole("heading", { name: "Approved emails", exact: true })
     .waitFor();
   await footer(promoted, [
     "Home",
+    "Admin",
     "Family",
     "Contacts",
     "Edit House",
