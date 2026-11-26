@@ -818,6 +818,10 @@ function eventPage(event) {
     : content;
 }
 const pageTrail = [];
+const browserPages = new Map();
+const browserSession = crypto.randomUUID();
+let browserPage = 0,
+  nextBrowserPage = 0;
 let currentPage = null,
   pageIdentity = "",
   returningToPage = false,
@@ -831,6 +835,8 @@ function rememberPage() {
   ]);
   if (identity !== pageIdentity) {
     pageTrail.length = 0;
+    browserPages.clear();
+    browserPage = 0;
     currentPage = null;
     state.settingsReturn = null;
     state.eventLayoutDraft = null;
@@ -847,11 +853,11 @@ function rememberPage() {
     pageIdentity = identity;
   }
   if (
-    !state.session ||
+    !state.session?.role ||
     pageTransition ||
     state.preview ||
     state.example ||
-    ["management", "card-editor"].includes(state.view)
+    state.view === "management"
   )
     return;
   const page = {
@@ -870,11 +876,38 @@ function rememberPage() {
       p.adminMode,
       p.view === "family" ? [p.family.selected, p.family.section] : null,
     ]);
-  if (currentPage && route(currentPage) !== route(page) && !returningToPage) {
+  const changed = currentPage && route(currentPage) !== route(page);
+  const previousBrowserPage = browserPage;
+  if (changed && !returningToPage) {
     currentPage.scroll = scrollY;
     pageTrail.push(currentPage);
     if (pageTrail.length > 50) pageTrail.shift();
+    const previous = browserPages.get(browserPage);
+    if (previous) previous.page.scroll = scrollY;
+    browserPage = ++nextBrowserPage;
+    history.pushState(
+      { ...history.state, gather: browserSession, page: browserPage },
+      "",
+    );
+  } else if (!browserPage) {
+    browserPage = ++nextBrowserPage;
+    history.replaceState(
+      { ...history.state, gather: browserSession, page: browserPage },
+      "",
+    );
   }
+  browserPages.set(browserPage, {
+    previous:
+      changed && !returningToPage
+        ? previousBrowserPage
+        : browserPages.get(browserPage)?.previous,
+    page,
+    trail: [...pageTrail],
+    settingsReturn: state.settingsReturn,
+    rsvpMarkup: state.rsvpMarkup,
+    editingResponse: state.editingResponse,
+    manualRSVP: state.manualRSVP,
+  });
   currentPage = page;
 }
 async function returnFromSettings() {
@@ -914,18 +947,31 @@ async function returnFromSettings() {
   requestAnimationFrame(() => window.scrollTo(0, target.scroll || 0));
 }
 async function previousPage() {
-  if (state.settingsOpen && state.settingsReturn) return returnFromSettings();
   const previous = pageTrail.at(-1);
   if (!previous) {
     notify(C("No previous page in this session."));
     return;
   }
+  const entry = browserPages.get(browserPage)?.previous;
+  if (
+    entry &&
+    browserPages.get(entry)?.page === previous &&
+    (!state.settingsReturn || previous.view === state.settingsReturn.view)
+  ) {
+    history.back();
+    return;
+  }
+  if (state.settingsOpen && state.settingsReturn) return returnFromSettings();
+  pageTrail.pop();
+  if (!(await restorePage(previous))) pageTrail.push(previous);
+}
+async function restorePage(previous) {
   if (
     previous.view === "family" &&
     !(await family.restoreNavigation(previous.family))
   ) {
     notify(C("The previous page is no longer available."));
-    return;
+    return false;
   }
   if (
     previous.event &&
@@ -934,9 +980,8 @@ async function previousPage() {
     )
   ) {
     notify(C("The previous page is no longer available."));
-    return;
+    return false;
   }
-  pageTrail.pop();
   resetContactInvites();
   state.actionEvent = null;
   Object.assign(state, {
@@ -952,7 +997,27 @@ async function previousPage() {
     returningToPage = false;
   }
   requestAnimationFrame(() => window.scrollTo(0, previous.scroll || 0));
+  return true;
 }
+window.addEventListener("popstate", async ({ state: entry }) => {
+  if (entry?.gather !== browserSession) return;
+  const target = browserPages.get(entry.page);
+  if (!target) return;
+  browserPage = entry.page;
+  pageTrail.splice(0, pageTrail.length, ...target.trail);
+  Object.assign(state, {
+    settingsReturn: target.settingsReturn,
+    rsvpMarkup: target.rsvpMarkup,
+    editingResponse: target.editingResponse,
+    manualRSVP: target.manualRSVP,
+  });
+  try {
+    await restorePage(target.page);
+  } catch (error) {
+    notify(error.message);
+  }
+});
+
 function render(target = $("#app"), example = false) {
   if (!example) rememberPage();
   const designTarget = example ? target : document.documentElement;
@@ -1054,7 +1119,7 @@ function render(target = $("#app"), example = false) {
   else if (role === "admin-pending" || state.view === "passwordless-security")
     content = passwordless.securityPage();
   else if (role === "visitor" && state.view === "recipient-access")
-    content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C("Household ID")}</h1><form data-form="recipient-access">${field(H("Household ID"), "householdID", "", "text", 'required maxlength="64" autocomplete="off"')}<p class="form-error" role="alert"></p><div class="row"><button>${C("Continue")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
+    content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C("Household ID")}</h1><p>${C("You can find your Household ID on your RSVP card.")}</p><form data-form="recipient-access">${field(H("Household ID"), "householdID", "", "text", 'required maxlength="64" autocomplete="off"')}<p class="form-error" role="alert"></p><div class="row"><button>${C("Continue")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
   else if (role && state.view === "rsvp-page")
     content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C(state.manualRSVP?.hostFamily ? "RSVP for your family" : state.manualRSVP ? "Record guest RSVP" : "Will you join us?")}</h1><form data-form="rsvp">${state.rsvpMarkup}<p class="form-error" role="alert"></p><div class="row"><button>${C("RSVP")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
   else if (state.view === "rsvp-cards") content = rsvpCards.page();
