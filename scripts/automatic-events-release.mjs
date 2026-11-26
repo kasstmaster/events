@@ -29,6 +29,15 @@ const APPROVED_AUTH_SECRET_ADDITIONS = new Set([
   "HOST_FIREBASE_ADMIN_CLIENT_EMAIL",
   "HOST_FIREBASE_ADMIN_PRIVATE_KEY",
 ]);
+// The owner activated these bindings after the verified household preparation release.
+const HOST_ACTIVATION_BASELINE = "d2b09a2128cf2381fe58583d756616591fe5aa91";
+const HOST_ACTIVATION_BINDINGS = [
+  "GATHER_DOMAIN_APPROVED",
+  "HOST_ONLY_MODEL_ENABLED",
+  "HOST_ONLY_MODEL_ACTIVATION_APPROVED",
+  "HOST_FIREBASE_ENABLED",
+  "HOST_FIREBASE_ACTIVATION_APPROVED",
+];
 const ORIGIN = "https://events.kassandraraudman.workers.dev";
 const SCRIPT = `/accounts/${ACCOUNT}/workers/scripts/events`;
 const STORAGE_ADAPTER_SHA256 =
@@ -775,9 +784,30 @@ export async function run(mode, options = {}) {
                 ),
               }
             : protectedRaw;
+        const reconciledSettings =
+          anchor.release === HOST_ACTIVATION_BASELINE &&
+          HOST_ACTIVATION_BINDINGS.every(
+            (name) =>
+              !anchor.preserved.settings.bindings.some(
+                (b) => b.name === name,
+              ) &&
+              protectedRaw.bindings.some(
+                (b) =>
+                  b.name === name &&
+                  b.type === "plain_text" &&
+                  b.text === "true",
+              ),
+          )
+            ? {
+                ...baselineSettings,
+                bindings: baselineSettings.bindings.filter(
+                  (b) => !HOST_ACTIVATION_BINDINGS.includes(b.name),
+                ),
+              }
+            : baselineSettings;
         must(
-          runtimeSettingsFingerprint(baselineSettings) === expectedRuntime &&
-            fingerprint(safeSettings(baselineSettings)) === expectedSettings,
+          runtimeSettingsFingerprint(reconciledSettings) === expectedRuntime &&
+            fingerprint(safeSettings(reconciledSettings)) === expectedSettings,
           "provenance",
           "Unapproved runtime or binding change since verified release.",
         );

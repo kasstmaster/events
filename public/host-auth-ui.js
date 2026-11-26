@@ -223,7 +223,7 @@ export function hostAuthUI({
         }
       }
     },
-    async route(session) {
+    async route(getSession) {
       if (source) {
         const value = source;
         source = "";
@@ -240,7 +240,7 @@ export function hostAuthUI({
         location.replace(redeemed.next === "account" ? "/?account=1" : "/");
         return true;
       }
-      if (request && session.role === "host") {
+      if (request && (await getSession()).role === "host") {
         const value = request;
         request = "";
         await navigateTransfer({
@@ -251,11 +251,11 @@ export function hostAuthUI({
       }
       if (
         parameters.get("host") === "complete" &&
-        session.role === "host" &&
-        !completed
+        !completed &&
+        (await getSession()).role === "host"
       ) {
         completed = true;
-        return this.goHome(session);
+        return this.goHome({ role: "host" });
       }
       return false;
     },

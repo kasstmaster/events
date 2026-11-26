@@ -354,8 +354,11 @@ async function load({ background = false } = {}) {
     }
 
     state.hostOnly = passwordlessConfig.hostOnly === true;
-    if (state.hostOnly) await hostAuth.initialize();
-    else await passwordless.initialize(passwordlessConfig);
+    if (state.hostOnly) {
+      if (!background && (await hostAuth.route(() => api("/api/session"))))
+        return;
+      await hostAuth.initialize();
+    } else await passwordless.initialize(passwordlessConfig);
     const [context, platform, session] = await Promise.all([
       api("/api/public/context"),
       api("/api/interface"),
@@ -387,7 +390,6 @@ async function load({ background = false } = {}) {
       ].includes(state.view)
     )
       state.view = "home";
-    if (state.hostOnly && (await hostAuth.route(session))) return;
     if (state.preview) {
       const data = await api(state.preview.endpoint || "/api/admin/preview", {
         method: "POST",
@@ -1260,10 +1262,21 @@ function render(target = $("#app"), example = false) {
           "beforeend",
           tool("share-details", "Share Invitation", "", "share"),
         );
-      footer.insertAdjacentHTML(
-        "beforeend",
-        tool("settings", "Settings", "", "settings"),
-      );
+      if (role === "guest" && !footer.querySelector('[data-action="logout"]'))
+        footer.insertAdjacentHTML(
+          "beforeend",
+          tool("logout", "Sign Out", "", "logout"),
+        );
+      if (role === "visitor" && state.visitor?.grant)
+        footer.insertAdjacentHTML(
+          "beforeend",
+          tool("recipient-sign-out", "Sign Out", "", "logout"),
+        );
+      if (!["guest", "visitor"].includes(role))
+        footer.insertAdjacentHTML(
+          "beforeend",
+          tool("settings", "Settings", "", "settings"),
+        );
     }
   }
   if (
@@ -3045,6 +3058,16 @@ document.addEventListener("click", async (event) => {
       state.view = "home";
       render();
       await load({ background: true });
+      return;
+    }
+    if (action === "recipient-sign-out") {
+      const { reference, grant } = state.visitor || {};
+      if (!grant) return;
+      await api(`/api/public/events/${reference}/access`, {
+        method: "DELETE",
+        data: { grant },
+      });
+      window.location.reload();
       return;
     }
     if (action === "logout") {
