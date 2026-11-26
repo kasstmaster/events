@@ -2655,7 +2655,7 @@ document.addEventListener("click", async (event) => {
       state.promotingHost = host;
       modal(
         C("Make host administrator"),
-        ui`<p>The host keeps their household, events and normal pages. Administrator tools are added to their Home toolbar.</p>${field(H("Confirm host email"), "confirmEmail", "", "email", "required")}${field(H("Your administrator password"), "password", "", "password", "required")}`,
+        ui`<p>The host keeps their household, events and normal pages. Administrator tools appear in their Home page three-dot menu.</p>${field(H("Confirm host email"), "confirmEmail", "", "email", "required")}${field(H("Your administrator password"), "password", "", "password", "required")}`,
         "grant-platform-access",
       );
       return;
