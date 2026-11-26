@@ -1054,10 +1054,12 @@ try {
     await api(null, "/api/login", { email: "alpha@example.test", password })
   ).cookie;
   const promoted = await page(promotedCookie, 390);
+  await promoted.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
+  await promoted
+    .locator('.browse-menu [data-action="admin-approvals"]')
+    .waitFor({ state: "attached" });
   assert.deepEqual(
-    await promoted
-      .locator('#top-navigation .browse-menu [role="menuitem"]')
-      .allTextContents(),
+    await promoted.locator('.browse-menu [role="menuitem"]').allTextContents(),
     ["Approvals", "Hosts", "Defaults", "Templates", "Preview guest experience"],
   );
   assert.equal(
