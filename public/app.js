@@ -354,8 +354,11 @@ async function load({ background = false } = {}) {
     }
 
     state.hostOnly = passwordlessConfig.hostOnly === true;
-    if (state.hostOnly) await hostAuth.initialize();
-    else await passwordless.initialize(passwordlessConfig);
+    if (state.hostOnly) {
+      if (!background && (await hostAuth.route(() => api("/api/session"))))
+        return;
+      await hostAuth.initialize();
+    } else await passwordless.initialize(passwordlessConfig);
     const [context, platform, session] = await Promise.all([
       api("/api/public/context"),
       api("/api/interface"),
@@ -387,7 +390,6 @@ async function load({ background = false } = {}) {
       ].includes(state.view)
     )
       state.view = "home";
-    if (state.hostOnly && (await hostAuth.route(session))) return;
     if (state.preview) {
       const data = await api(state.preview.endpoint || "/api/admin/preview", {
         method: "POST",
@@ -1260,10 +1262,11 @@ function render(target = $("#app"), example = false) {
           "beforeend",
           tool("share-details", "Share Invitation", "", "share"),
         );
-      footer.insertAdjacentHTML(
-        "beforeend",
-        tool("settings", "Settings", "", "settings"),
-      );
+      if (!["guest", "visitor"].includes(role))
+        footer.insertAdjacentHTML(
+          "beforeend",
+          tool("settings", "Settings", "", "settings"),
+        );
     }
   }
   if (
