@@ -304,7 +304,13 @@ async function load({ background = false } = {}) {
   if (background && isEditing()) return;
   const generation = ++loadGeneration;
   try {
-    const setup = await api("/api/setup");
+    const publicReference = location.pathname.match(
+      /^\/event\/([A-Za-z0-9_-]{43})$/,
+    )?.[1];
+    const [setup, passwordlessConfig] = await Promise.all([
+      api("/api/setup"),
+      publicReference ? null : api("/api/passwordless/config"),
+    ]);
     state.setup = setup;
     if (setup.required) {
       if (generation !== loadGeneration || (background && isEditing())) return;
@@ -316,9 +322,6 @@ async function load({ background = false } = {}) {
       render();
       return;
     }
-    const publicReference = location.pathname.match(
-      /^\/event\/([A-Za-z0-9_-]{43})$/,
-    )?.[1];
     if (publicReference) {
       const data = await api(`/api/public/events/${publicReference}`);
       if (generation !== loadGeneration || (background && isEditing())) return;
@@ -341,7 +344,6 @@ async function load({ background = false } = {}) {
       renderRefresh(background);
       return;
     }
-    const passwordlessConfig = await api("/api/passwordless/config");
     if (passwordlessConfig.hostOnly) {
       const legacyReference = location.pathname.match(
         /^\/invite\/([A-Za-z0-9_-]{43})$/,
@@ -354,15 +356,19 @@ async function load({ background = false } = {}) {
     }
 
     state.hostOnly = passwordlessConfig.hostOnly === true;
-    if (state.hostOnly) {
-      if (!background && (await hostAuth.route(() => api("/api/session"))))
-        return;
-      await hostAuth.initialize();
-    } else await passwordless.initialize(passwordlessConfig);
+    if (
+      state.hostOnly &&
+      !background &&
+      (await hostAuth.route(() => api("/api/session")))
+    )
+      return;
     const [context, platform, session] = await Promise.all([
       api("/api/public/context"),
       api("/api/interface"),
       api("/api/session"),
+      state.hostOnly
+        ? hostAuth.initialize()
+        : passwordless.initialize(passwordlessConfig),
     ]);
     state.platformUI = platform.ui;
     if (session.role !== "admin" && !session.platformAdmin) {
@@ -451,15 +457,21 @@ async function load({ background = false } = {}) {
     )
       return;
     if (session.role) {
-      data = await api(
-        session.role === "admin-pending"
-          ? "/api/passwordless/security"
-          : session.role === "admin"
-            ? "/api/admin"
-            : `/api/${session.role}`,
-      );
-      if (session.role === "host" && session.platformAdmin) {
-        const admin = await api("/api/admin");
+      const [accountData, adminData] = await Promise.all([
+        api(
+          session.role === "admin-pending"
+            ? "/api/passwordless/security"
+            : session.role === "admin"
+              ? "/api/admin"
+              : `/api/${session.role}`,
+        ),
+        session.role === "host" && session.platformAdmin
+          ? api("/api/admin")
+          : null,
+      ]);
+      data = accountData;
+      if (adminData) {
+        const admin = adminData;
         Object.assign(data, {
           approvals: admin.approvals,
           hosts: admin.hosts,
@@ -473,7 +485,9 @@ async function load({ background = false } = {}) {
     const familyData =
       session.role === "family"
         ? data
-        : session.role === "host" && state.view === "family"
+        : session.role === "host" &&
+            state.view === "family" &&
+            !state.settingsOpen
           ? await api("/api/family")
           : null;
     // An editor may have opened while a background request was in flight.
@@ -824,8 +838,7 @@ let browserPage = 0,
   nextBrowserPage = 0;
 let currentPage = null,
   pageIdentity = "",
-  returningToPage = false,
-  pageTransition = false;
+  returningToPage = false;
 function rememberPage() {
   const identity = JSON.stringify([
     state.session?.role,
@@ -854,7 +867,6 @@ function rememberPage() {
   }
   if (
     !state.session?.role ||
-    pageTransition ||
     state.preview ||
     state.example ||
     state.view === "management"
@@ -2688,14 +2700,7 @@ document.addEventListener("click", async (event) => {
       resetContactInvites();
       state.settingsOpen = true;
       if (["host", "family"].includes(state.session.role)) {
-        pageTransition = true;
-        try {
-          await family.action("family-settings", target);
-          state.settingsOpen = true;
-        } finally {
-          pageTransition = false;
-        }
-        render();
+        await family.action("family-settings", target);
       } else {
         state.event = null;
         state.view = "settings";
@@ -4134,12 +4139,23 @@ const tools = featureTools({
 });
 tools.bind();
 await load();
-setInterval(() => {
-  if (state.session?.role && document.visibilityState === "visible") {
-    load({ background: true });
+let refreshing = false;
+async function refreshInBackground() {
+  if (
+    refreshing ||
+    !state.session?.role ||
+    document.visibilityState !== "visible"
+  )
+    return;
+  refreshing = true;
+  try {
+    await load({ background: true });
+  } finally {
+    refreshing = false;
   }
-}, 3000);
-window.addEventListener("online", () => load({ background: true }));
+}
+setInterval(refreshInBackground, 3000);
+window.addEventListener("online", refreshInBackground);
 
 function applyPersonalLayouts(target, config) {
   for (const group of target.querySelectorAll('[data-layout^="personal"]')) {
