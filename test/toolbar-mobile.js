@@ -1054,6 +1054,9 @@ try {
     await api(null, "/api/login", { email: "alpha@example.test", password })
   ).cookie;
   const promoted = await page(promotedCookie, 390);
+  await promoted
+    .locator('#main .browse-menu [data-action="admin-approvals"]')
+    .waitFor();
   assert.deepEqual(
     await promoted
       .locator('#main .browse-menu [role="menuitem"]')
