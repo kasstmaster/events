@@ -274,7 +274,7 @@ const settings = () => ({
     }).map(([name, text]) => ({ name, type: "plain_text", text })),
   ],
 });
-async function fixture(fn) {
+async function fixture(fn, previous = PREVIOUS) {
   const root = await mkdtemp(join(tmpdir(), "events-auto-"));
   await mkdir(join(root, "recovery"));
   const env = environment(),
@@ -414,7 +414,7 @@ async function fixture(fn) {
           resources: { script_runtime: { migration_tag: "events-v1" } },
           annotations:
             state.version === INITIAL_VERSION
-              ? { "workers/message": PREVIOUS }
+              ? { "workers/message": previous }
               : { "workers/message": RELEASE },
         };
       else if (u.pathname.endsWith("/schedules"))
@@ -456,7 +456,7 @@ async function fixture(fn) {
   priorRaw.annotations["workers/tag"] = state.versionTag;
   const priorApplication = {
     schema: 1,
-    commit: PREVIOUS,
+    commit: previous,
     code_sha256: moduleIdentity(
       syntheticModules(INITIAL_VERSION),
       INITIAL_VERSION,
@@ -471,7 +471,7 @@ async function fixture(fn) {
     ),
   };
   const anchor = {
-    release: PREVIOUS,
+    release: previous,
     version_id: INITIAL_VERSION,
     verified_at: new Date().toISOString(),
     health:
@@ -579,6 +579,26 @@ test("only approved encrypted auth additions reconcile against the prior release
     await run("publish", options);
     await run("verify", options);
   }));
+test("the prepared release reconciles only the complete approved activation", () =>
+  fixture(async ({ state, options, preflight }) => {
+    state.extraBindings = [
+      "GATHER_DOMAIN_APPROVED",
+      "HOST_ONLY_MODEL_ENABLED",
+      "HOST_ONLY_MODEL_ACTIVATION_APPROVED",
+      "HOST_FIREBASE_ENABLED",
+      "HOST_FIREBASE_ACTIVATION_APPROVED",
+    ].map((name) => ({ name, type: "plain_text", text: "true" }));
+    await preflight();
+    state.extraBindings[0].text = "false";
+    await assert.rejects(run("preflight", options), /Unapproved runtime/);
+    state.extraBindings[0].text = "true";
+    state.extraBindings.push({
+      name: "OTHER_FLAG",
+      type: "plain_text",
+      text: "true",
+    });
+    await assert.rejects(run("preflight", options), /Unapproved runtime/);
+  }, "d2b09a2128cf2381fe58583d756616591fe5aa91"));
 test("permanent provenance permits public configuration rotation but blocks activation, unknown settings, code and asset drift", () =>
   fixture(async ({ state, options, preflight }) => {
     state.firebaseKey = "AIza" + "z".repeat(35);
