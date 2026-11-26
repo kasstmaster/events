@@ -1059,9 +1059,7 @@ try {
     .locator('.browse-menu [data-action="admin-approvals"]')
     .waitFor({ state: "attached" });
   assert.deepEqual(
-    await promoted
-      .locator('.browse-menu [role="menuitem"]')
-      .allTextContents(),
+    await promoted.locator('.browse-menu [role="menuitem"]').allTextContents(),
     ["Approvals", "Hosts", "Defaults", "Templates", "Preview guest experience"],
   );
   assert.equal(
