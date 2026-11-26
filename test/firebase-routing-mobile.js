@@ -6,7 +6,6 @@ import { chromium } from "playwright";
 import { routingFixture, centralOrigin } from "./helpers/firebase-routing.js";
 import { token } from "./helpers/firebase.js";
 import { referenceFor } from "../server/rsvp-cards.js";
-import { clickNavigation } from "./helpers/navigation.js";
 await test(
   "central Firebase login preserves branding, host/guest QR authority, device sessions and standalone-browser fallback",
   { timeout: 120000 },
@@ -197,7 +196,6 @@ await test(
     );
     assert.equal(response.role, "guest");
     // Per-device sign-out also revokes the central handoff source session.
-    await clickNavigation(page, "Settings");
     await page.getByRole("button", { name: "Sign Out", exact: true }).click();
     await page.getByLabel("First Name", { exact: true }).waitFor();
     assert.equal(new URL(page.url()).origin, centralOrigin);

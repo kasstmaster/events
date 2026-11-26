@@ -1434,7 +1434,7 @@ try {
     0,
     "Host cannot edit shared interface wording",
   );
-  await footer(g, ["Home", "Print", "Settings"]);
+  await footer(g, ["Home", "Print", "Sign Out"]);
   assert.equal(await g.locator(".event-summary").count(), 1);
   assert.equal(
     await g.getByRole("button", { name: "Edit Event", exact: true }).count(),
@@ -1881,7 +1881,7 @@ try {
     "Back follows visited pages, including Contacts and cross-section workspace navigation",
   );
   await click(p, "Contacts");
-  await p.getByRole("button", { name: "Back", exact: true }).click();
+  await p.goBack();
   await p.locator("[data-home-card=contacts]").waitFor();
   await click(p, "Family Workspace");
   await p.getByRole("button", { name: "Lists", exact: true }).click();
