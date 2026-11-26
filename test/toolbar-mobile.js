@@ -1054,16 +1054,19 @@ try {
     await api(null, "/api/login", { email: "alpha@example.test", password })
   ).cookie;
   const promoted = await page(promotedCookie, 390);
-  await promoted
-    .getByRole("toolbar", { name: "Administrator tools", exact: true })
-    .waitFor();
   assert.deepEqual(
-    await promoted.locator(".admin-home-actions button").allTextContents(),
-    ["Approvals", "Hosts", "Defaults", "Templates"],
+    await promoted
+      .locator('#top-navigation .browse-menu [role="menuitem"]')
+      .allTextContents(),
+    ["Approvals", "Hosts", "Defaults", "Templates", "Preview guest experience"],
+  );
+  assert.equal(
+    await promoted.locator('[data-action="admin-home"]').count(),
+    0,
+    "there is no separate administrator page or toolbar button",
   );
   await footer(promoted, [
     "Home",
-    "Admin",
     "Family",
     "Contacts",
     "Edit House",
@@ -1078,20 +1081,12 @@ try {
       fullPage: true,
     });
   }
-  await click(promoted, "Admin");
-  await promoted
-    .getByRole("heading", { name: "Administration", exact: true })
-    .waitFor();
-  await home(promoted);
-  await promoted.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
-  await click(promoted, "Admin");
-  await click(promoted, "Approvals");
+  await option(promoted, "Approvals");
   await promoted
     .getByRole("heading", { name: "Approved emails", exact: true })
     .waitFor();
   await footer(promoted, [
     "Home",
-    "Admin",
     "Family",
     "Contacts",
     "Edit House",
@@ -1099,7 +1094,7 @@ try {
     "Settings",
   ]);
   await home(promoted);
-  await click(promoted, "Defaults");
+  await option(promoted, "Defaults");
   await promoted.getByLabel("Example page", { exact: true }).waitFor();
   await promoted
     .getByLabel("Example page", { exact: true })
@@ -1116,15 +1111,11 @@ try {
     3,
   );
   await click(promoted, "Cancel");
-  await promoted
-    .getByRole("toolbar", { name: "Administrator tools", exact: true })
-    .waitFor();
-  await click(promoted, "Templates");
+  await promoted.getByLabel("Sorting and options", { exact: true }).waitFor();
+  await option(promoted, "Templates");
   await promoted.getByText("Shared card templates", { exact: true }).waitFor();
   await click(promoted, "Close editor");
-  await promoted
-    .getByRole("toolbar", { name: "Administrator tools", exact: true })
-    .waitFor();
+  await promoted.getByLabel("Sorting and options", { exact: true }).waitFor();
   assert.equal(
     await promoted.locator("#top-navigation .browse-menu").count(),
     1,
@@ -1146,9 +1137,7 @@ try {
   await promoted.locator("main [data-action=rsvp]").click();
   assert.equal(store.list("response", host.household).length, responseCount);
   await click(promoted, "Exit read-only preview");
-  await promoted
-    .getByRole("toolbar", { name: "Administrator tools", exact: true })
-    .waitFor();
+  await promoted.getByLabel("Sorting and options", { exact: true }).waitFor();
   await promoted
     .locator("article.card")
     .filter({

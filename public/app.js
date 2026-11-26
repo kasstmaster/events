@@ -611,8 +611,12 @@ function authPage(designTarget) {
   const register = state.view === "register";
   return ui`<section class="auth"><p class="eyebrow">A place for your people</p><h1>${register ? C("Make yourself at home.") : C("Good things begin together.")}</h1><div class="panel"><h2>${register ? C("Create your host account") : C("Host Login")}</h2><p class="muted">${register ? C("Registration is available only for administrator-approved email addresses. No emails will be sent.") : C("Plan a little. Gather a lot.")}</p><form data-form="${register ? "register" : "login"}">${field(H("Email address"), "email", "", "email", 'required autocomplete="username" maxlength="254"')}${field(H("Password"), "password", "", "password", `required minlength="12" maxlength="256" autocomplete="${register ? "new-password" : "current-password"}"`)}${register ? field(H("Family household name"), "name", "", "text", 'required maxlength="100" placeholder="Household name"') + subdomainField() + ui`<fieldset><legend>Already have a guest account? · optional</legend>${field(H("Existing private username"), "existingUsername", "", "text", 'autocomplete="off"')}${field(H("Existing Household ID"), "existingHouseholdId", "", "password", 'inputmode="numeric" maxlength="4" autocomplete="off"')}</fieldset>` + familyLogoChoice() : ""}<p class="form-error" role="alert"></p><button>${register ? C("Create account") : C("Sign in")}</button></form></div><p class="small">${register ? C("Already registered?") : C("Approved to host?")} ${button(register ? "host-login" : "register", register ? C("Sign in") : C("Create your account"), "", "quiet")}</p>${household ? button("page-back", H("Back"), "", "quiet") : ""}</section>`;
 }
-const adminShortcuts = () =>
-  ui`<div class="admin-home-actions" role="toolbar" aria-label="Administrator tools">${button("admin-approvals", H("Approvals"))}${button("admin-hosts", H("Hosts"))}${button("global-defaults", H("Defaults"))}${button("admin-templates", H("Templates"))}</div>`;
+const administratorMenuItems = () => [
+  { action: "admin-approvals", label: "Approvals" },
+  { action: "admin-hosts", label: "Hosts" },
+  { action: "global-defaults", label: "Defaults" },
+  { action: "admin-templates", label: "Templates" },
+];
 function toolbar(event) {
   if (state.preview)
     return bottom([
@@ -632,9 +636,6 @@ function toolbar(event) {
   if (role === "host")
     return bottom([
       { action: "home", label: "Home", icon: "home" },
-      ...(state.session.platformAdmin
-        ? [{ action: "admin-home", label: "Admin", icon: "settings" }]
-        : []),
       ...(event && !event.invitingHousehold
         ? [{ action: "invite-guests", label: "Invite", icon: "invite" }]
         : []),
@@ -670,7 +671,6 @@ function topActions(event) {
           ? [{ action: "new-card", label: "Create shared template" }]
           : [{ action: "admin-approvals", label: "Approve host" }],
       sort: [{ action: "preview-guest", label: "Preview guest experience" }],
-      extra: role === "host" ? adminShortcuts() : "",
     });
   if (event)
     return topbar({
@@ -993,6 +993,10 @@ function render(target = $("#app"), example = false) {
   configureCopy(active);
   applyDesign(active.design, designTarget);
   const role = state.session?.role;
+  if (state.view === "admin-home" && role === "host") {
+    state.view = "home";
+    state.adminMode = false;
+  }
   let content = "",
     event = null;
   if (state.hostOnly && location.pathname === "/guest")
@@ -1104,17 +1108,15 @@ function render(target = $("#app"), example = false) {
           ? topbar({
               title: "",
               plus: [{ action: "new-event", label: "Create Event" }],
-              extra: state.session.platformAdmin ? adminShortcuts() : "",
-              sort: [
-                ...(state.session.platformAdmin
-                  ? [
-                      {
-                        action: "preview-guest",
-                        label: "Preview guest experience",
-                      },
-                    ]
-                  : []),
-              ],
+              sort: state.session.platformAdmin
+                ? [
+                    ...administratorMenuItems(),
+                    {
+                      action: "preview-guest",
+                      label: "Preview guest experience",
+                    },
+                  ]
+                : [],
             })
           : "") +
         ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : C("Welcome")}</p><h1>${escape(role === "guest" ? state.data.personal?.person.name || fullName(state.data.guest) : state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? personal.homeActions() : ""}${state.data.events.length ? ui`<section class="home-invitations"><h2 class="invitations-title">${role === "host" ? C("Your events") : C("You’re invited to gather")}</h2><section class="grid home-events ${state.data.events.length > 1 ? "multiple-events" : "single-event"}" aria-label="Events">${(role === "guest" ? orderedInvitations(state.data.events) : state.data.events).map(eventCard).join("")}</section></section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
@@ -2656,7 +2658,7 @@ document.addEventListener("click", async (event) => {
       state.promotingHost = host;
       modal(
         C("Make host administrator"),
-        ui`<p>The host keeps their household, events and normal pages. Administrator tools are added to their Home toolbar.</p>${field(H("Confirm host email"), "confirmEmail", "", "email", "required")}${field(H("Your administrator password"), "password", "", "password", "required")}`,
+        ui`<p>The host keeps their household, events and normal pages. Administrator tools appear in their Home page three-dot menu.</p>${field(H("Confirm host email"), "confirmEmail", "", "email", "required")}${field(H("Your administrator password"), "password", "", "password", "required")}`,
         "grant-platform-access",
       );
       return;
@@ -2669,15 +2671,6 @@ document.addEventListener("click", async (event) => {
         "retire-legacy-admin",
         C("Remove old administrator"),
       );
-      return;
-    }
-    if (action === "admin-home") {
-      if (state.session.role !== "host" || !state.session.platformAdmin) return;
-      closeModal();
-      state.event = null;
-      state.adminMode = true;
-      state.view = "admin-home";
-      render();
       return;
     }
     if (action === "admin-approvals" || action === "admin-hosts") {
