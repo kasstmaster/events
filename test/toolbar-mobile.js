@@ -1055,12 +1055,9 @@ try {
   ).cookie;
   const promoted = await page(promotedCookie, 390);
   await promoted.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
-  console.log("Admin Home debug", await promoted.evaluate(() => ({
-    heading: document.querySelector("main")?.textContent?.slice(0, 400),
-    menus: [...document.querySelectorAll(".browse-menu")].map(x => x.outerHTML.slice(0, 500)),
-    links: [...document.querySelectorAll('[data-action="admin-approvals"]')].map(x => x.outerHTML.slice(0, 300)),
-  })));
-  await promoted.locator('.browse-menu [data-action="admin-approvals"]').waitFor();
+  await promoted
+    .locator('.browse-menu [data-action="admin-approvals"]')
+    .waitFor({ state: "attached" });
   assert.deepEqual(
     await promoted
       .locator('.browse-menu [role="menuitem"]')
