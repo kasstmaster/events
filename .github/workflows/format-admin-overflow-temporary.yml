@@ -1,0 +1,29 @@
+name: Format temporary Gather admin overflow changes
+on:
+  push:
+    branches: [fix/admin-actions-home-overflow]
+permissions:
+  contents: write
+jobs:
+  format-only:
+    if: github.repository == 'kasstmaster/events' && github.ref == 'refs/heads/fix/admin-actions-home-overflow'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx prettier --write public/app.js test/toolbar-mobile.js
+      - name: Commit formatting to feature branch only
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- public/app.js test/toolbar-mobile.js
+          if ! git diff --cached --quiet; then
+            git commit -m "Format administrator Home overflow change"
+            git push origin HEAD:fix/admin-actions-home-overflow
+          fi
