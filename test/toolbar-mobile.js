@@ -1054,12 +1054,16 @@ try {
     await api(null, "/api/login", { email: "alpha@example.test", password })
   ).cookie;
   const promoted = await page(promotedCookie, 390);
-  await promoted
-    .locator('#main .browse-menu [data-action="admin-approvals"]')
-    .waitFor();
+  await promoted.getByRole("heading", { name: "Alpha", exact: true }).waitFor();
+  console.log("Admin Home debug", await promoted.evaluate(() => ({
+    heading: document.querySelector("main")?.textContent?.slice(0, 400),
+    menus: [...document.querySelectorAll(".browse-menu")].map(x => x.outerHTML.slice(0, 500)),
+    links: [...document.querySelectorAll('[data-action="admin-approvals"]')].map(x => x.outerHTML.slice(0, 300)),
+  })));
+  await promoted.locator('.browse-menu [data-action="admin-approvals"]').waitFor();
   assert.deepEqual(
     await promoted
-      .locator('#main .browse-menu [role="menuitem"]')
+      .locator('.browse-menu [role="menuitem"]')
       .allTextContents(),
     ["Approvals", "Hosts", "Defaults", "Templates", "Preview guest experience"],
   );
