@@ -857,7 +857,7 @@ function rememberPage() {
     pageTransition ||
     state.preview ||
     state.example ||
-    ["management", "card-editor"].includes(state.view)
+    state.view === "management"
   )
     return;
   const page = {
@@ -953,7 +953,11 @@ async function previousPage() {
     return;
   }
   const entry = browserPages.get(browserPage)?.previous;
-  if (entry && browserPages.get(entry)?.page === previous) {
+  if (
+    entry &&
+    browserPages.get(entry)?.page === previous &&
+    (!state.settingsReturn || previous.view === state.settingsReturn.view)
+  ) {
     history.back();
     return;
   }
