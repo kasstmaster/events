@@ -1262,6 +1262,16 @@ function render(target = $("#app"), example = false) {
           "beforeend",
           tool("share-details", "Share Invitation", "", "share"),
         );
+      if (role === "guest" && !footer.querySelector('[data-action="logout"]'))
+        footer.insertAdjacentHTML(
+          "beforeend",
+          tool("logout", "Sign Out", "", "logout"),
+        );
+      if (role === "visitor" && state.visitor?.grant)
+        footer.insertAdjacentHTML(
+          "beforeend",
+          tool("recipient-sign-out", "Sign Out", "", "logout"),
+        );
       if (!["guest", "visitor"].includes(role))
         footer.insertAdjacentHTML(
           "beforeend",
@@ -3048,6 +3058,16 @@ document.addEventListener("click", async (event) => {
       state.view = "home";
       render();
       await load({ background: true });
+      return;
+    }
+    if (action === "recipient-sign-out") {
+      const { reference, grant } = state.visitor || {};
+      if (!grant) return;
+      await api(`/api/public/events/${reference}/access`, {
+        method: "DELETE",
+        data: { grant },
+      });
+      window.location.reload();
       return;
     }
     if (action === "logout") {

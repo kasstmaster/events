@@ -270,6 +270,25 @@ export async function publicInvitationsAPI(ctx) {
     json(res, { grant, event: partyView(store, event, household, subject) });
     return true;
   }
+  if (visitor[2] === "access" && method === "DELETE") {
+    const { grant } = await body(req);
+    if (typeof grant === "string" && /^[A-Za-z0-9_-]{43}$/.test(grant)) {
+      const record = store.get(
+        "invitation-rsvp-grant",
+        digest(grant),
+        link.household,
+      );
+      if (record?.event === event.id)
+        store.remove(
+          "invitation-rsvp-grant",
+          record.id,
+          link.household,
+          record.version,
+        );
+    }
+    json(res, { ok: true });
+    return true;
+  }
   if (visitor[2] === "rsvp" && method === "PUT") {
     const input = await body(req),
       subject = authorized(store, link, event, input.grant);
