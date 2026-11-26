@@ -54,6 +54,19 @@ test("only a password-confirmed administrator can prepare before enabling host-o
     200,
   );
 });
+test("transition prepares historical invitations without inventing a household owner", async (t) => {
+  const f = await application(t);
+  const host = await f.host("Alpha");
+  const guest = await f.guest(host);
+  const event = await f.event(host, [guest]);
+  f.store.run("DELETE FROM family_owners WHERE household=?", host.household.id);
+  f.store.run("DELETE FROM users WHERE household=?", host.household.id);
+  await prepare(f);
+  assert.equal(f.store.household(host.household.id).name, "Alpha");
+  assert.equal(f.store.list("host-family-roster", host.household.id).length, 0);
+  assert.equal(f.store.list("guest", host.household.id).length, 1);
+  assert.equal(f.store.list("event", host.household.id)[0].id, event.id);
+});
 test("replacement mode retires guest authorities and preserves independent recipients/history", async (t) => {
   const f = await application(t, mode),
     a = await f.host("Alpha"),

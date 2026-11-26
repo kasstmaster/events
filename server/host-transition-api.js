@@ -106,7 +106,8 @@ export async function hostTransitionAPI(ctx) {
       });
     for (const house of plan.households) {
       isolateAddressBook(store, house.id, house.fingerprint, session.user);
-      ensureHostRoster(store, house.id);
+      // Historical households without a host can still have invited guests.
+      if (house.owner) ensureHostRoster(store, house.id);
       for (const user of house.users) {
         const previous = store.get("host-membership", user.id, house.id),
           enabled = input.approvedAdults.includes(user.id);
