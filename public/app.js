@@ -1109,11 +1109,14 @@ function render(target = $("#app"), example = false) {
               title: "",
               plus: [{ action: "new-event", label: "Create Event" }],
               sort: state.session.platformAdmin
-                 ? [
-                     ...administratorMenuItems(),
-                     { action: "preview-guest", label: "Preview guest experience" },
-                   ]
-                 : [],
+                ? [
+                    ...administratorMenuItems(),
+                    {
+                      action: "preview-guest",
+                      label: "Preview guest experience",
+                    },
+                  ]
+                : [],
             })
           : "") +
         ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : C("Welcome")}</p><h1>${escape(role === "guest" ? state.data.personal?.person.name || fullName(state.data.guest) : state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? personal.homeActions() : ""}${state.data.events.length ? ui`<section class="home-invitations"><h2 class="invitations-title">${role === "host" ? C("Your events") : C("You’re invited to gather")}</h2><section class="grid home-events ${state.data.events.length > 1 ? "multiple-events" : "single-event"}" aria-label="Events">${(role === "guest" ? orderedInvitations(state.data.events) : state.data.events).map(eventCard).join("")}</section></section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;

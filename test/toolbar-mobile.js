@@ -1055,7 +1055,9 @@ try {
   ).cookie;
   const promoted = await page(promotedCookie, 390);
   assert.deepEqual(
-    await promoted.locator('main .browse-menu [role="menuitem"]').allTextContents(),
+    await promoted
+      .locator('main .browse-menu [role="menuitem"]')
+      .allTextContents(),
     ["Approvals", "Hosts", "Defaults", "Templates", "Preview guest experience"],
   );
   assert.equal(
