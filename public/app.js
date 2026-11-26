@@ -1054,7 +1054,7 @@ function render(target = $("#app"), example = false) {
   else if (role === "admin-pending" || state.view === "passwordless-security")
     content = passwordless.securityPage();
   else if (role === "visitor" && state.view === "recipient-access")
-    content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C("Household ID")}</h1><form data-form="recipient-access">${field(H("Household ID"), "householdID", "", "text", 'required maxlength="64" autocomplete="off"')}<p class="form-error" role="alert"></p><div class="row"><button>${C("Continue")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
+    content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C("Household ID")}</h1><p>${C("You can find your Household ID on your RSVP card.")}</p><form data-form="recipient-access">${field(H("Household ID"), "householdID", "", "text", 'required maxlength="64" autocomplete="off"')}<p class="form-error" role="alert"></p><div class="row"><button>${C("Continue")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
   else if (role && state.view === "rsvp-page")
     content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C(state.manualRSVP?.hostFamily ? "RSVP for your family" : state.manualRSVP ? "Record guest RSVP" : "Will you join us?")}</h1><form data-form="rsvp">${state.rsvpMarkup}<p class="form-error" role="alert"></p><div class="row"><button>${C("RSVP")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
   else if (state.view === "rsvp-cards") content = rsvpCards.page();
