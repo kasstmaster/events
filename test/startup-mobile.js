@@ -110,6 +110,22 @@ test(
       title,
       date: "2030-05-07",
     });
+    // The first response includes readable, escaped host content without
+    // waiting for JavaScript. Anonymous documents never contain private events.
+    const firstDocument = await f.request("/", { cookie: connected.cookie });
+    assert.equal(firstDocument.status, 200);
+    assert.match(firstDocument.body, /Your gathering place/);
+    assert.match(
+      firstDocument.body,
+      /Fixture &lt;\\/script&gt;&lt;img id=&quot;unescaped-event&quot;&gt;/,
+    );
+    assert.doesNotMatch(firstDocument.body, /<img id="unescaped-event">/);
+    assert.doesNotMatch(firstDocument.body, /Getting things ready/);
+    assert.equal(firstDocument.headers.get("cache-control"), "no-store");
+    const anonymousDocument = await f.request("/");
+    assert.equal(anonymousDocument.status, 200);
+    assert.match(anonymousDocument.body, /Welcome to Gather/);
+    assert.doesNotMatch(anonymousDocument.body, /Fixture/);
     const reference = publicEventReference(
       f.store,
       host.household.id,
