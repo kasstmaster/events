@@ -448,7 +448,9 @@ async function fixture(fn, previous = PREVIOUS) {
     if (state.healthFailures-- > 0) return new Response("stale");
     if (state.alteredAsset) return new Response("altered asset");
     return new Response(
-      u.pathname === "/" ? "approved-index" : "approved-style",
+      ["/", "/signin"].includes(u.pathname)
+        ? "approved-index"
+        : "approved-style",
     );
   };
   const priorRaw = settings();
@@ -489,6 +491,7 @@ async function fixture(fn, previous = PREVIOUS) {
   const options = {
     evidence: { receipt: anchor },
     manifestLoader: () => p.appearance,
+    reviewedIndex: "approved-index",
     env,
     root,
     policy: p,
