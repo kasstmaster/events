@@ -5,9 +5,9 @@ import { initialHomeHtml } from "../server/initial-home.js";
 test(
   "initial HTML needs no JavaScript and exposes no account details to visitors",
   () => {
-  const output = initialHomeHtml();
-  assert.match(output, /Welcome to Gather/);
-  assert.match(output, /href="\/signin"/);
+    const output = initialHomeHtml();
+    assert.match(output, /Welcome to Gather/);
+    assert.match(output, /href="\/signin"/);
     assert.doesNotMatch(output, /Getting things ready/);
   },
 );
