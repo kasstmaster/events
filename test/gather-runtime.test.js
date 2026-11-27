@@ -153,7 +153,7 @@ test(
           assert.equal(
             asset.headers.get("server-timing")?.includes('asset;desc="edge"') ||
               false,
-            entryOrigin === origin,
+            entryOrigin !== canonical,
             "asset routing on " + entryOrigin + " for " + path,
           );
         }
