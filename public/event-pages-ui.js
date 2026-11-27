@@ -35,32 +35,40 @@ export function eventPagesUI({
       []),
   ];
   return {
-    async hydrate(data, reference) {
+    async hydrate(data, visitor) {
       if (pending) {
-        state.visitor.privateGrant =
+        visitor.privateGrant =
           new URLSearchParams(pending.slice(1)).get("private") || "";
         pending = "";
       }
-      if (!state.visitor.privateGrant) return;
+      const grant = visitor.privateGrant;
+      if (!grant) return;
       try {
-        const result = await api(`/api/public/events/${reference}/pages`, {
-          method: "POST",
-          data: { grant: state.visitor.privateGrant },
-        });
-        data.events[0].extraPages = result.pages;
-        if (
-          state.view === "event-extra-page" &&
-          active &&
-          !result.pages.some((p) => p.id === active.id)
-        ) {
-          active = null;
-          state.view = "home";
-        }
+        const result = await api(
+          `/api/public/events/${visitor.reference}/pages`,
+          {
+            method: "POST",
+            data: { grant },
+          },
+        );
+        return () => {
+          data.events[0] = { ...data.events[0], extraPages: result.pages };
+          if (
+            state.view === "event-extra-page" &&
+            active &&
+            !result.pages.some((p) => p.id === active.id)
+          ) {
+            active = null;
+            state.view = "home";
+          }
+        };
       } catch {
-        state.visitor.privateGrant = "";
-        active = null;
-        state.view = "home";
-        notify("Private page access is unavailable or has been revoked.");
+        return () => {
+          visitor.privateGrant = "";
+          active = null;
+          if (state.view === "event-extra-page") state.view = "home";
+          notify("Private page access is unavailable or has been revoked.");
+        };
       }
     },
     page() {

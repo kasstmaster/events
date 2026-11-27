@@ -18,6 +18,13 @@ replacement mode. Production flags, schemas, migrations and data remain unchange
 Tests use only synthetic data and mocked providers; actual provider/native-device
 acceptance and authoritative wedding export remain external prerequisites.
 
+Home's no-store startup response includes the host snapshot only after the same
+session, Firebase account-status, role, and household checks used by the host
+API. Firebase account status is checked once for that request, and subsequent
+protected reads and mutations still validate independently. Public invitation
+reads use only the allowlisted event projection. Private-page hydration requires
+the individual grant after public content renders.
+
 # Security boundaries and release prerequisites
 
 This is a new application in `kasstmaster/events`. It does not read, migrate, write to or deploy the existing Meyers Gatherings site or its private data repository. The reference informed adult-level RSVPs, child association, declined attendance, menu claims and deadline behavior; its codebase was not copied.

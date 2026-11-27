@@ -579,7 +579,8 @@ try {
   const refreshCount = await p.evaluate(() => window.pageRefreshes);
   await Promise.all([
     p.waitForResponse(
-      (response) => response.url().includes("/api/session") && response.ok(),
+      (response) =>
+        new URL(response.url()).pathname === "/api/startup" && response.ok(),
     ),
     p.evaluate(() => window.dispatchEvent(new Event("online"))),
   ]);

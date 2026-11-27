@@ -1,8 +1,9 @@
 # Lightweight browser entry and secure transfers
 
-PR #106 shortened local request waterfalls but did not resolve the reported
-production waits. This follow-up removes the underlying repeated application
-loads instead of changing loading text or authentication permissions.
+PR #108 cut the browser module waterfall and removed full application downloads
+from intermediate sign-in transfers. Gather still made separate setup, configuration,
+household context, interface, session, and host reads. Several of those requests
+each independently checked the same Firebase account.
 
 ## Normal Home and event entry
 
@@ -18,6 +19,22 @@ bytes). It now fetches two entry files (414,746 bytes). This matters in producti
 these requests traverse the household gateway/Worker and authoritative database
 routing checks. Preloading alone still incurred all of those requests. No routing
 cache, authorization shortcut, gateway change or database change is introduced.
+
+The small entry starts the data request while the app loads. Home uses
+`GET /api/startup` for setup status, public interface configuration and the
+current session. Where the session authorizes host access, that same request
+includes the existing host projection. The response is no-store and goes through
+the existing origin, session renewal, provider revocation, and household role
+checks. Navigation back to Home uses the current in-document data. A fresh load
+or a protected operation still validates its session on the server.
+
+Direct public event links use the existing public event API. In host-only mode,
+legacy invitation links resolve to the same public projection in one request and
+update the address in the current document. Individual private-page grants are
+checked separately after the public event and RSVP control render. Ordinary
+Firebase email/Google sign-in uses the fresh SDK sign-in token, which Gather
+still verifies against Firebase and the approved host mapping. Email verification
+completion refreshes the identity before submitting it.
 
 ## Cross-domain authentication
 
@@ -63,8 +80,9 @@ It counts requests and application downloads rather than asserting that changing
 the loading message fixes latency. All fixtures and provider responses are local
 and synthetic; no real accounts or invitation responses are modified.
 
-This chat still has no connected browser-control tool and production site access
-from the Cloud computer remains blocked. Production before/after timings and
-Meyer's real browser session cannot be claimed from these tests. Deployment uses
-the existing merged-main workflow and its real version/asset/binding verification;
-that is distinct from measuring the two production pages in a connected browser.
+Run `node --test test/startup-mobile.js` for browser diagnostics. The startup
+test reports milliseconds to first usable UI, Gather API requests, authoritative
+Firebase session lookups, initial loading-screen displays, and document loads.
+It applies fixed synthetic transport delays and mocks external providers while
+exercising the real shared server. Its timings characterize local browser
+behavior and do not represent production page timings.

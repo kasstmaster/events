@@ -1,11 +1,13 @@
 // Only synthetic local fixtures. No production pages, users, or providers.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { generateKeyPairSync, sign } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { existsSync } from "node:fs";
 import { once } from "node:events";
 import { createApp } from "../server/app.js";
 import { chromium } from "playwright";
-import { application } from "./helpers/application.js";
+import { application, password } from "./helpers/application.js";
 import {
   addressBookCheckpoint,
   isolateAddressBook,
@@ -16,19 +18,99 @@ const mode = {
   HOST_ONLY_MODEL_ACTIVATION_APPROVED: "true",
 };
 test(
-  "cold startup downloads one application and does not serialize Home reads or gate public events on setup",
+  "startup validates Firebase once, keeps navigation in-document, and renders before private hydration",
   { timeout: 60000 },
   async (t) => {
-    const f = await application(t, mode),
-      host = await f.host("Startup");
+    const appOrigin = "https://gather.ilymmd.com",
+      project = "synthetic-startup",
+      uid = "startup-host",
+      email = "startup@example.test",
+      { privateKey, publicKey } = generateKeyPairSync("rsa", {
+        modulusLength: 2048,
+      }),
+      jwk = { ...publicKey.export({ format: "jwk" }), kid: "startup-fixture" };
+    const seconds = Math.floor(Date.now() / 1000);
+    const encoded = (value) =>
+      Buffer.from(JSON.stringify(value)).toString("base64url");
+    const claims = encoded({
+      aud: project,
+      iss: "https://securetoken.google.com/" + project,
+      sub: uid,
+      email,
+      email_verified: true,
+      iat: seconds,
+      exp: seconds + 3600,
+      auth_time: seconds,
+      firebase: { sign_in_provider: "password" },
+    });
+    const signed = encoded({ alg: "RS256", kid: jwk.kid }) + "." + claims;
+    const token =
+      signed +
+      "." +
+      sign("RSA-SHA256", Buffer.from(signed), privateKey).toString("base64url");
+    let lookups = 0,
+      disabled = false;
+    const f = await application(
+      t,
+      {
+        ...mode,
+        HOST_FIREBASE_ENABLED: "true",
+        HOST_FIREBASE_ACTIVATION_APPROVED: "true",
+        FIREBASE_PROJECT_ID: project,
+        FIREBASE_API_KEY: "AIza" + "a".repeat(35),
+        FIREBASE_AUTH_DOMAIN: project + ".firebaseapp.com",
+        HOST_FIREBASE_ADMIN_CLIENT_EMAIL:
+          "startup@synthetic-startup.iam.gserviceaccount.com",
+        HOST_FIREBASE_ADMIN_PRIVATE_KEY: privateKey.export({
+          type: "pkcs8",
+          format: "pem",
+        }),
+      },
+      {
+        origin: appOrigin,
+        firebaseFetcher: async (url) => {
+          if (url.includes("/jwk/")) return Response.json({ keys: [jwk] });
+          if (url === "https://oauth2.googleapis.com/token")
+            return Response.json({
+              access_token: "fixture",
+              token_type: "Bearer",
+              expires_in: 3600,
+            });
+          assert.match(url, /accounts:lookup/);
+          if (url.includes("/projects/")) lookups++;
+          await delay(120);
+          return Response.json({
+            users: [{ localId: uid, email, emailVerified: true, disabled }],
+          });
+        },
+      },
+    );
+    const host = await f.host("Startup");
     isolateAddressBook(
       f.store,
       host.household.id,
       addressBookCheckpoint(f.store, host.household.id).fingerprint,
       "synthetic",
     );
-    const event = await f.event(host, []),
-      reference = publicEventReference(f.store, host.household.id, event.id);
+    const connected = await f.request("/api/host-auth/firebase", {
+      method: "POST",
+      data: { intent: "connect", idToken: token, currentPassword: password },
+    });
+    assert.equal(connected.status, 200);
+    const event = await f.event({ ...host, cookie: connected.cookie }, []);
+    const reference = publicEventReference(
+      f.store,
+      host.household.id,
+      event.id,
+    );
+    const legacy = "a".repeat(43);
+    f.store.put("rsvp-reference", legacy, "platform", {
+      household: host.household.id,
+      event: event.id,
+    });
+    const requested = [],
+      measurements = {},
+      backendPaths = {};
     const browser = await chromium.launch({
       executablePath:
         process.env.CHROMIUM_PATH ||
@@ -38,115 +120,242 @@ test(
       args: ["--no-sandbox"],
     });
     try {
-      // The complete shared application is one compiled request. Authentication
-      // fragment capture remains a single separately shared module instance.
-      const c = await browser.newContext(),
-        requested = [];
-      await c.route("**/*", async (route) => {
-        const url = new URL(route.request().url());
-        if (url.origin !== f.url) return route.abort();
-        requested.push(url.pathname);
-        return route.continue();
+      const context = await browser.newContext({
+        serviceWorkers: "block",
+        viewport: { width: 390, height: 844 },
       });
-      const p = await c.newPage();
-      p.setDefaultTimeout(10000);
-      let documents = 0;
-      p.on("request", (r) => {
-        if (r.isNavigationRequest() && r.frame() === p.mainFrame()) documents++;
-      });
-      await p.goto(f.url);
-      await p.locator('form[data-form="host-login"]').waitFor();
-      assert.equal(documents, 1);
-      assert.deepEqual(
-        requested.filter((path) => path.endsWith(".js")).sort(),
-        ["/app.js", "/auth-bootstrap.js"],
-      );
-      assert.equal(requested.includes("/api/host-auth/config"), false);
-      await c.close();
-      // Config is slow, but independent ordinary Home reads must start immediately.
-      const d = await browser.newContext(),
-        reads = new Set();
-      let allReadsReady;
-      const allReads = new Promise((r) => (allReadsReady = r));
-      await d.route("**/*", async (route) => {
-        const path = new URL(route.request().url()).pathname;
-        if (
-          ["/api/public/context", "/api/interface", "/api/session"].includes(
-            path,
-          )
-        ) {
-          reads.add(path);
-          if (reads.size === 3) allReadsReady();
+      await context.route("**/*", async (route) => {
+        const { origin, pathname } = new URL(route.request().url());
+        if (origin === "https://www.gstatic.com") {
+          await delay(80);
+          const body = pathname.endsWith("/firebase-app.js")
+            ? "export const getApps = () => []; export const initializeApp = () => ({});"
+            : `const auth = { currentUser: { emailVerified: true, getIdToken: async (force) => {
+                if (force) { await new Promise(r => setTimeout(r, 120)); window.sdkExtraReads++; }
+                return ${JSON.stringify(token)};
+              } } };
+              window.sdkExtraReads = 0;
+              export const getAuth = () => auth;
+              export const inMemoryPersistence = {};
+              export const setPersistence = async () => {};
+              export const signInWithEmailAndPassword = async () => new Promise(r => setTimeout(r, 120));
+              export const reload = async () => { await new Promise(r => setTimeout(r, 120)); window.sdkExtraReads++; };
+              export const signOut = async () => {};`;
+          return route.fulfill({
+            contentType: "text/javascript",
+            body,
+            headers: { "Access-Control-Allow-Origin": "*" },
+          });
         }
-        if (path === "/api/passwordless/config")
-          await Promise.race([
-            allReads,
-            new Promise((_, reject) =>
-              setTimeout(
-                () =>
-                  reject(
-                    Error(
-                      "Home startup is waiting on configuration before independent reads",
-                    ),
-                  ),
-                4000,
-              ),
-            ),
-          ]);
-        return route.continue();
-      });
-      const q = await d.newPage();
-      await q.goto(f.url);
-      await q.locator('form[data-form="host-login"]').waitFor();
-      assert.equal(reads.size, 3);
-      await d.close();
-      // Both ordinary host and system administrator still use their existing session.
-      for (const [cookie, selector] of [
-        [host.cookie, '[data-action="open-event"]'],
-        [f.admin, '[data-action="admin-hosts"]'],
-      ]) {
-        const context = await browser.newContext();
-        await context.addCookies([
+        if (origin !== appOrigin) return route.abort();
+        if (pathname.startsWith("/api/")) {
+          await delay(pathname.endsWith("/pages") ? 700 : 75);
+        }
+        const request = route.request(),
+          headers = await request.allHeaders();
+        const response = await fetch(
+          f.url + request.url().slice(appOrigin.length),
           {
-            name: cookie.split("=")[0],
-            value: cookie.split("=")[1],
-            url: f.url,
+            method: request.method(),
+            headers,
+            body: request.postDataBuffer() || undefined,
+            redirect: "manual",
           },
-        ]);
-        const page = await context.newPage();
-        let count = 0;
-        page.on("request", (r) => {
-          if (r.isNavigationRequest() && r.frame() === page.mainFrame())
-            count++;
+        );
+        return route.fulfill({
+          status: response.status,
+          headers: Object.fromEntries(response.headers),
+          body: Buffer.from(await response.arrayBuffer()),
         });
-        await page.goto(f.url);
-        await page.locator(selector).first().waitFor();
-        assert.equal(count, 1);
-        await context.close();
-      }
-      // A direct /event/ page does not need any setup/config/session API or document redirect.
-      const visitor = await browser.newContext(),
-        api = [];
-      await visitor.route("**/*", (route) => {
-        const path = new URL(route.request().url()).pathname;
-        if (path.startsWith("/api/")) api.push(path);
-        if (path === "/api/setup") return route.abort();
-        return route.continue();
       });
-      const page = await visitor.newPage();
-      let count = 0;
-      page.on("request", (r) => {
-        if (r.isNavigationRequest() && r.frame() === page.mainFrame()) count++;
+      await context.addInitScript(() => {
+        const selectors = {
+          login: 'form[data-form="host-login"]',
+          home: '[data-action="open-event"]',
+          event: '[data-action="rsvp"]',
+          denied: "#notice",
+        };
+        window.startupTrace = { entries: {}, loading: 0, start: 0 };
+        let wasLoading = false;
+        new MutationObserver(() => {
+          const trace = window.startupTrace;
+          const loading = Boolean(
+            document.querySelector("#app > #main > p:only-child"),
+          );
+          if (loading && !wasLoading) trace.loading++;
+          wasLoading = loading;
+          for (const [key, selector] of Object.entries(selectors)) {
+            const element = document.querySelector(selector);
+            if (
+              element &&
+              (key !== "denied" ||
+                element.textContent.includes(
+                  "Private page access is unavailable",
+                ))
+            )
+              trace.entries[key] ??= performance.now() - trace.start;
+          }
+        }).observe(document, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+        });
       });
-      await page.goto(f.url + "/event/" + reference);
-      await page.locator('[data-action="rsvp"]').waitFor();
-      assert.deepEqual(api, ["/api/public/events/" + reference]);
-      assert.equal(count, 1);
-      assert.equal(
-        await page.locator('form[data-form="host-login"]').count(),
-        0,
+      const page = await context.newPage();
+      page.setDefaultTimeout(10000);
+      const errors = [];
+      let documents = 0;
+      page.on("pageerror", (error) => errors.push(error.message));
+      page.on("request", (request) => {
+        const { origin, pathname } = new URL(request.url());
+        if (
+          request.isNavigationRequest() &&
+          request.frame() === page.mainFrame()
+        )
+          documents++;
+        if (origin === appOrigin) requested.push(pathname);
+      });
+      const measure = async (
+        label,
+        target,
+        action,
+        { sameDocument = false, settled } = {},
+      ) => {
+        requested.length = 0;
+        documents = lookups = 0;
+        if (sameDocument)
+          await page.evaluate(() => {
+            window.startupTrace = {
+              entries: {},
+              loading: 0,
+              start: performance.now(),
+            };
+          });
+        await action();
+        try {
+          await page.waitForFunction(
+            (key) => window.startupTrace.entries[key] !== undefined,
+            target,
+          );
+        } catch (error) {
+          const message = await page.locator("#main").innerText();
+          throw new Error(label + ": " + message + " " + requested.join(", "), {
+            cause: error,
+          });
+        }
+        const trace = await page.evaluate(() => window.startupTrace);
+        await settled?.();
+        const paths = requested.filter(
+          (route) =>
+            route.startsWith("/api/") &&
+            route !== "/api/app/manifest" &&
+            route !== "/api/app/icon",
+        );
+        backendPaths[label] = paths;
+        measurements[label] = {
+          ms: Math.round(trace.entries[target]),
+          api: paths.length,
+          lookups,
+          loading: trace.loading,
+          documents,
+        };
+      };
+      await measure("cold signed out", "login", () => page.goto(appOrigin));
+      const coldScripts = requested
+        .filter((path) => path.endsWith(".js"))
+        .sort();
+      await page.locator('[name="email"]').fill(email);
+      await page.locator('[name="password"]').fill(password);
+      await measure(
+        "Firebase sign-in",
+        "home",
+        () =>
+          page.getByRole("button", { name: "Sign in", exact: true }).click(),
+        { sameDocument: true },
       );
-      await visitor.close();
+      const sdkExtraReads = await page.evaluate(() => window.sdkExtraReads);
+      await measure("signed-in refresh", "home", () => page.reload());
+      await page.locator('[data-action="open-event"]').first().click();
+      await measure(
+        "Home",
+        "home",
+        () => page.locator('button[data-action="home"]').first().click(),
+        { sameDocument: true },
+      );
+      await page.locator('.toolbar [data-action="settings"]').click();
+      await measure(
+        "sign-out",
+        "login",
+        () => page.locator('[data-action="logout"]').click(),
+        { sameDocument: true },
+      );
+      const publicPath = "/api/public/events/" + reference;
+      await measure("direct public event", "event", () =>
+        page.goto(appOrigin + "/event/" + reference),
+      );
+      await measure("legacy invitation", "event", () =>
+        page.goto(appOrigin + "/invite/" + legacy),
+      );
+      assert.equal(new URL(page.url()).pathname, "/event/" + reference);
+      await measure(
+        "public event with private grant",
+        "event",
+        () =>
+          page.goto(
+            appOrigin +
+              "/event/" +
+              reference +
+              "?fixture=1#private=" +
+              "a".repeat(43),
+          ),
+        {
+          settled: () =>
+            page.waitForFunction(
+              () => window.startupTrace.entries.denied !== undefined,
+            ),
+        },
+      );
+      const grantTrace = await page.evaluate(() => window.startupTrace.entries);
+      t.diagnostic(JSON.stringify(measurements));
+      assert.deepEqual(errors, []);
+      assert.deepEqual(coldScripts, ["/app.js", "/auth-bootstrap.js"]);
+      assert.deepEqual(backendPaths, {
+        "cold signed out": ["/api/startup"],
+        "Firebase sign-in": [
+          "/api/host-auth/login",
+          "/api/host-auth/firebase",
+          "/api/startup",
+        ],
+        "signed-in refresh": ["/api/startup"],
+        Home: [],
+        "sign-out": ["/api/logout"],
+        "direct public event": [publicPath],
+        "legacy invitation": ["/api/startup"],
+        "public event with private grant": [publicPath, publicPath + "/pages"],
+      });
+      assert.equal(sdkExtraReads, 0);
+      assert.ok(grantTrace.event < grantTrace.denied);
+      for (const [label, result] of Object.entries(measurements)) {
+        const sameDocument = ["Firebase sign-in", "Home", "sign-out"].includes(
+          label,
+        );
+        assert.equal(result.documents, sameDocument ? 0 : 1, label);
+        assert.equal(result.loading, result.documents, label);
+      }
+      assert.equal(measurements["Firebase sign-in"].lookups, 1);
+      assert.equal(measurements["signed-in refresh"].lookups, 1);
+      assert.equal(measurements.Home.lookups, 0);
+      assert.equal(measurements["sign-out"].lookups, 1);
+      // A revoked account must not get a private snapshot through the combined endpoint.
+      disabled = true;
+      const revoked = await f.request("/api/startup", {
+        cookie: connected.cookie,
+      });
+      assert.equal(revoked.status, 200);
+      assert.equal(revoked.body.session.role, null);
+      assert.equal(revoked.body.host, undefined);
+      await page.goto(appOrigin);
+      await page.locator('form[data-form="host-login"]').waitFor();
     } finally {
       await browser.close();
     }
@@ -207,6 +416,7 @@ test(
         },
       ]);
       const apps = [],
+        startup = [],
         documents = [],
         calls = [],
         errors = [];
@@ -216,6 +426,7 @@ test(
           target = sites.get(url.origin);
         if (!target) return route.abort();
         if (url.pathname === "/app.js") apps.push(url.origin);
+        if (url.pathname === "/api/startup") startup.push(url.origin);
         if (url.pathname.startsWith("/api/host-auth/handoff/"))
           calls.push(url.pathname);
         const headers = await request.allHeaders();
@@ -246,6 +457,7 @@ test(
       assert.equal(p.url(), alpha + "/");
       assert.deepEqual(documents, [alpha, central, alpha]);
       assert.deepEqual(apps, [alpha]);
+      assert.deepEqual(startup, [alpha]);
       assert.deepEqual(calls, [
         "/api/host-auth/handoff/prepare",
         "/api/host-auth/handoff/authorize",
@@ -258,6 +470,7 @@ test(
       await p.reload();
       await p.locator('[data-action="open-event"]').first().waitFor();
       assert.equal(calls.length, 3);
+      assert.deepEqual(startup, [alpha, alpha]);
       assert.deepEqual(errors, []);
       apps.length = 0;
       const callback = await c.newPage();

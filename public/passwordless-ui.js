@@ -129,8 +129,11 @@ export function passwordlessUI({
         favicon.rel = "icon";
         favicon.href = "/api/app/icon?size=192";
         document.head.append(favicon);
-        const branding = await api("/api/app/manifest");
-        document.title = branding.name;
+        api("/api/app/manifest")
+          .then((branding) => {
+            document.title = branding.name;
+          })
+          .catch(() => {});
         if ("serviceWorker" in navigator)
           navigator.serviceWorker
             .register("/gather-sw.js", { scope: "/" })
@@ -159,7 +162,7 @@ export function passwordlessUI({
               },
             });
             location.replace(result.url);
-            return;
+            return "redirect";
           }
           if (current.has("transfer-request")) {
             const result = await api("/api/passwordless/handoff/authorize", {
@@ -167,7 +170,7 @@ export function passwordlessUI({
               data: { request: current.get("transfer-request") },
             });
             location.replace(result.url);
-            return;
+            return "redirect";
           }
           if (current.has("transfer")) {
             const [request, token] = current.get("transfer").split(".");
@@ -175,7 +178,9 @@ export function passwordlessUI({
               method: "POST",
               data: { request, token },
             });
-            await afterAuthentication(result);
+            return (await afterAuthentication(result))
+              ? "redirect"
+              : "redeemed";
           }
         } catch {
           handoffFailed = true;
@@ -192,7 +197,9 @@ export function passwordlessUI({
               method: "POST",
               data: { challenge, token },
             });
-            await afterAuthentication(result);
+            return (await afterAuthentication(result))
+              ? "redirect"
+              : "redeemed";
           } catch {
             message =
               "This link could not sign you in. Request a new link in this browser, or use account recovery.";
@@ -259,10 +266,6 @@ export function passwordlessUI({
         throw Error("Unsupported sign-in destination.");
       location.replace(result.url);
       return true;
-    },
-    async goHome() {
-      const { home } = await api("/api/passwordless/home");
-      return transferTo(home);
     },
     async resolveInvitation() {
       if (state.session?.role && invitation())
