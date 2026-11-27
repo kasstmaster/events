@@ -1,0 +1,21 @@
+name: Draft release formatter diagnostics
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  format-diff:
+    if: github.event.pull_request.draft == true
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Show exact formatting changes without writing repository
+        run: |
+          npx prettier --write scripts/application-provenance.mjs scripts/application-provenance.test.mjs
+          git diff --unified=1 -- scripts/application-provenance.mjs scripts/application-provenance.test.mjs
