@@ -147,6 +147,16 @@ test(
           ? await mf.dispatchFetch(forwarded.url, forwarded)
           : await mf.dispatchFetch(url);
         assert.equal(asset.status, 200, path + " on " + entryOrigin);
+        // Universal static assets must load without consulting the shared
+        // Durable Object. Household routes keep the original routing gate.
+        if (["public/app.js", "public/style.css"].includes(path)) {
+          assert.equal(
+            asset.headers.get("server-timing")?.includes('asset;desc="edge"') ||
+              false,
+            entryOrigin === origin,
+            "asset routing on " + entryOrigin + " for " + path,
+          );
+        }
         const bytes = Buffer.from(await asset.arrayBuffer());
         assert.equal(
           createHash("sha256").update(bytes).digest("hex"),
