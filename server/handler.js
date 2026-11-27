@@ -1,4 +1,4 @@
-import { initialHomeHtml } from "./initial-home.js";
+import { initialHomeHtml, initialHomeTopbar, initialHomeBottomBar } from "./initial-home.js";
 import { initialThemeStyle } from "./initial-theme.js";
 import { validFirebaseHostSession } from "./firebase-host-admin.js";
 import { hostFirebaseEnabled, hostFirebaseConfig } from "./firebase-host.js";
@@ -1172,9 +1172,14 @@ export function createHandler({
               `${snapshot.host ? initialThemeStyle(snapshot.host.ui.design, snapshot.host.defaults) : ""}</head>`,
           )
           .replace(
+            '<a class="brand" href="/">gather<span>＊</span></a>',
+            () =>
+              `<a class="brand" href="/" data-action="home">gather<span>＊</span></a>${snapshot.host ? `<div id="top-navigation">${initialHomeTopbar()}</div>` : ""}`,
+          )
+          .replace(
             '<main id="main"><p>Getting things ready…</p></main>',
             () =>
-              `<main id="main">${initialHomeHtml({ household, events })}</main>`,
+              `<main id="main">${initialHomeHtml({ household, events })}</main>${snapshot.host ? initialHomeBottomBar() : ""}`,
           )
           .replace(
             "</body>",
