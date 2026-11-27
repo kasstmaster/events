@@ -29,7 +29,7 @@ async function fixture(
   });
   const request = async (
     path,
-    { method = "GET", data, cookie, version, requestOrigin = origin } = {},
+    { method = "GET", data, cookie, version, requestOrigin = origin, extraHeaders = {} } = {},
   ) => {
     const res = await fetch(base + path, {
       method,
@@ -38,6 +38,7 @@ async function fixture(
         ...(requestOrigin ? { Origin: requestOrigin } : {}),
         ...(data ? { "Content-Type": "application/json" } : {}),
         ...(version !== undefined ? { "If-Match": String(version) } : {}),
+        ...extraHeaders,
       },
       body: data ? JSON.stringify(data) : undefined,
     });
@@ -727,6 +728,24 @@ test("QR links stay stable; templates are administrator managed; CSP and no-stor
     /frame-ancestors 'none'/,
   );
   assert.equal(page.headers.get("cache-control"), "no-store");
+  // Browser assets may be briefly cached; authenticated documents and API
+  // responses must remain private and uncached. Revalidation must be safe.
+  const appScript = await f.request("/app.js");
+  assert.equal(appScript.status, 200);
+  assert.equal(
+    appScript.headers.get("cache-control"),
+    "public, max-age=60, must-revalidate",
+  );
+  const etag = appScript.headers.get("etag");
+  assert.match(etag, /^"[0-9a-f]{64}"$/);
+  const revalidated = await f.request("/app.js", {
+    extraHeaders: { "If-None-Match": etag },
+  });
+  assert.equal(revalidated.status, 304);
+  assert.equal(revalidated.headers.get("etag"), etag);
+  assert.equal(revalidated.headers.get("cache-control"), appScript.headers.get("cache-control"));
+  const sessionRead = await f.request("/api/session");
+  assert.equal(sessionRead.headers.get("cache-control"), "no-store");
 });
 test("database survives restart independently of browser state, and sessions expire", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "events-persist-"));
