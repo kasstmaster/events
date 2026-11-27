@@ -2062,7 +2062,9 @@ try {
   await p.getByRole("button", { name: "Back", exact: true }).click();
   await discardedDetails;
   await p.locator(".hero h1").waitFor();
-  await p.waitForTimeout(3500);
+  // Reopen with the latest household version after discarding a stale draft.
+  await p.reload();
+  await p.locator(".hero h1").waitFor();
   await click(p, "Settings");
   await p
     .locator("#top-navigation")
