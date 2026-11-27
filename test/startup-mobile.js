@@ -115,9 +115,10 @@ test(
     const firstDocument = await f.request("/", { cookie: connected.cookie });
     assert.equal(firstDocument.status, 200);
     assert.match(firstDocument.body, /Your gathering place/);
-    assert.match(
-      firstDocument.body,
-      /Fixture &lt;\\/script&gt;&lt;img id=&quot;unescaped-event&quot;&gt;/,
+    assert.ok(
+      firstDocument.body.includes(
+        'Fixture &lt;/script&gt;&lt;img id=&quot;unescaped-event&quot;&gt;',
+      ),
     );
     assert.doesNotMatch(firstDocument.body, /<img id="unescaped-event">/);
     assert.doesNotMatch(firstDocument.body, /Getting things ready/);
