@@ -369,13 +369,13 @@ async function load({ background = false } = {}) {
       (await hostAuth.route(() => api("/api/session")))
     )
       return;
+    // Legacy sign-in initialization can redeem a link and set the session.
+    if (!state.hostOnly) await passwordless.initialize(passwordlessConfig);
     const [context, platform, session] = await Promise.all([
       api("/api/public/context"),
       api("/api/interface"),
       api("/api/session"),
-      state.hostOnly
-        ? hostAuth.initialize()
-        : passwordless.initialize(passwordlessConfig),
+      state.hostOnly ? hostAuth.initialize() : null,
     ]);
     state.platformUI = platform.ui;
     if (session.role !== "admin" && !session.platformAdmin) {
