@@ -35,6 +35,8 @@ import {
 import { accountHome, handoffAPI } from "./auth-handoff.js";
 import {
   publicInvitationsAPI,
+  readPublicEvent,
+  readLegacyInvitation,
   publicEventReference,
 } from "./public-invitations.js";
 import { rsvpCardsAPI } from "./rsvp-cards.js";
@@ -64,7 +66,10 @@ import {
   renamePersonalHousehold,
   savePersonalProfile,
 } from "./personal-accounts.js";
-import { informationInput } from "../public/event-information.js";
+import {
+  eventIntroduction,
+  informationInput,
+} from "../public/event-information.js";
 import {
   platformAdministrator,
   verifyPlatformLogin,
@@ -632,22 +637,77 @@ export function createHandler({
           (path === "/setup" ? files.get("/") : null) ||
           (/^\/h\/[A-Za-z0-9_-]+$/.test(path) ? files.get("/") : null);
         if (!entry) fail(404, "Page not found.");
-        res.writeHead(200, { "Content-Type": entry[1] });
         const asset = await readAsset(entry[0]);
-        // Transfer hops need only the tiny credential-capture module. Avoid
-        // downloading the full application repeatedly across authenticated origins.
-        res.end(
-          path === "/signin"
-            ? asset
-                .toString()
-                .replace(/\s*<link rel="modulepreload"[^>]*>/g, "")
-                .replace('<script type="module" src="/app.js"></script>', "")
-                .replace(
-                  'src="/auth-bootstrap.js"',
-                  'src="/auth-bootstrap.js" data-gather-transfer',
-                )
-            : asset,
-        );
+        let content = asset;
+        if (entry[0] === "index.html") {
+          content = asset.toString();
+          if (path !== "/")
+            content = content.replace(
+              /\s*<link\s[^>]*\bdata-gather-home\b[^>]*>/,
+              "",
+            );
+          const publicLink = path.match(
+            /^\/(event|invite)\/([A-Za-z0-9_-]{43})$/,
+          );
+          let initial;
+          if (publicLink && (replacement || publicLink[1] === "event")) {
+            const [, kind, reference] = publicLink;
+            try {
+              initial =
+                kind === "event"
+                  ? readPublicEvent(
+                      store,
+                      env,
+                      reference,
+                      selected,
+                      req.socket.remoteAddress,
+                    )
+                  : readLegacyInvitation(
+                      store,
+                      env,
+                      reference,
+                      selected,
+                      req.socket.remoteAddress,
+                    );
+            } catch (error) {
+              // Preserve the application's existing unavailable-link and retry UI.
+              if (!(error instanceof Problem) || error.status !== 404)
+                throw error;
+            }
+          }
+          if (initial) {
+            const event = initial.event || initial;
+            // Script data is inert. Escape HTML delimiters before placing JSON in raw text.
+            const payload = JSON.stringify(initial).replaceAll("<", "\\u003c");
+            // Event artwork is already carried in the snapshot and can be large.
+            const intro = eventIntroduction({ ...event.events[0], icon: "" });
+            const markup =
+              event.events[0].containerLayout === "single"
+                ? `<section class="panel event-content-shell" data-event-shell>${intro}</section>`
+                : intro;
+            content = content
+              .replace(
+                '<main id="main"><p>Getting things ready…</p></main>',
+                () => `<main id="main">${markup}</main>`,
+              )
+              .replace(
+                "</body>",
+                () =>
+                  `<script id="gather-public-event" type="application/json">${payload}</script></body>`,
+              );
+          } else if (path === "/signin") {
+            // Transfer hops need only the credential-capture module.
+            content = content
+              .replace(/\s*<link rel="modulepreload"[^>]*>/g, "")
+              .replace('<script type="module" src="/app.js"></script>', "")
+              .replace(
+                'src="/auth-bootstrap.js"',
+                'src="/auth-bootstrap.js" data-gather-transfer',
+              );
+          }
+        }
+        res.writeHead(200, { "Content-Type": entry[1] });
+        res.end(content);
         return;
       }
       if (!["GET", "POST", "PUT", "DELETE"].includes(method))

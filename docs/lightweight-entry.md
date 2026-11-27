@@ -20,7 +20,9 @@ these requests traverse the household gateway/Worker and authoritative database
 routing checks. Preloading alone still incurred all of those requests. No routing
 cache, authorization shortcut, gateway change or database change is introduced.
 
-The small entry starts the data request while the app loads. Home uses
+Home declares its data request in the document so the browser can start it
+while fetching both JavaScript entries. Transfer documents wait for any
+browser-bound redemption before starting their data request. Home uses
 `GET /api/startup` for setup status, public interface configuration and the
 current session. Where the session authorizes host access, that same request
 includes the existing host projection. The response is no-store and goes through
@@ -28,10 +30,13 @@ the existing origin, session renewal, provider revocation, and household role
 checks. Navigation back to Home uses the current in-document data. A fresh load
 or a protected operation still validates its session on the server.
 
-Direct public event links use the existing public event API. In host-only mode,
-legacy invitation links resolve to the same public projection in one request and
-update the address in the current document. Individual private-page grants are
-checked separately after the public event and RSVP control render. Ordinary
+Direct public event links send the shared event introduction and allowlisted
+public snapshot with the HTML. Visitors can read the title, description, date
+and location while the JavaScript downloads. The application reuses that
+snapshot for its first render. In host-only mode legacy invitation links take
+the same path and update the address in the current document. Individual
+private-page grants are checked separately after the public event and RSVP
+control render. The first response never contains private page content. Ordinary
 Firebase email/Google sign-in uses the fresh SDK sign-in token, which Gather
 still verifies against Firebase and the approved host mapping. Email verification
 completion refreshes the identity before submitting it.

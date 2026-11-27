@@ -97,7 +97,11 @@ test(
       data: { intent: "connect", idToken: token, currentPassword: password },
     });
     assert.equal(connected.status, 200);
-    const event = await f.event({ ...host, cookie: connected.cookie }, []);
+    const title = 'Fixture </script><img id="unescaped-event">';
+    const event = await f.event({ ...host, cookie: connected.cookie }, [], {
+      title,
+      date: "2030-05-07",
+    });
     const reference = publicEventReference(
       f.store,
       host.household.id,
@@ -329,9 +333,9 @@ test(
         "signed-in refresh": ["/api/startup"],
         Home: [],
         "sign-out": ["/api/logout"],
-        "direct public event": [publicPath],
-        "legacy invitation": ["/api/startup"],
-        "public event with private grant": [publicPath, publicPath + "/pages"],
+        "direct public event": [],
+        "legacy invitation": [],
+        "public event with private grant": [publicPath + "/pages"],
       });
       assert.equal(sdkExtraReads, 0);
       assert.ok(grantTrace.event < grantTrace.denied);
@@ -340,12 +344,46 @@ test(
           label,
         );
         assert.equal(result.documents, sameDocument ? 0 : 1, label);
-        assert.equal(result.loading, result.documents, label);
+        const initialInvitation = /event|invitation/.test(label);
+        assert.equal(
+          result.loading,
+          initialInvitation ? 0 : result.documents,
+          label,
+        );
       }
       assert.equal(measurements["Firebase sign-in"].lookups, 1);
       assert.equal(measurements["signed-in refresh"].lookups, 1);
       assert.equal(measurements.Home.lookups, 0);
       assert.equal(measurements["sign-out"].lookups, 1);
+      // Hold the entry modules so the test can distinguish HTML rendering
+      // and preload behavior from a quickly downloaded application.
+      const slowPage = await context.newPage();
+      const { promise: modulesReady, resolve: releaseModules } =
+        Promise.withResolvers();
+      await slowPage.route(/\/(?:app|auth-bootstrap)\.js$/, async (route) => {
+        await modulesReady;
+        await route.fallback();
+      });
+      try {
+        await slowPage.goto(appOrigin + "/event/" + reference, {
+          waitUntil: "commit",
+        });
+        await slowPage
+          .getByRole("heading", { name: title, exact: true })
+          .waitFor();
+        await slowPage.getByText("May 7, 2030", { exact: true }).waitFor();
+        assert.equal(await slowPage.locator("#unescaped-event").count(), 0);
+        assert.equal(await slowPage.locator('[data-action="rsvp"]').count(), 0);
+        const preload = slowPage.waitForRequest(
+          (request) => new URL(request.url()).pathname === "/api/startup",
+        );
+        await slowPage.goto(appOrigin, { waitUntil: "commit" });
+        await preload;
+      } finally {
+        releaseModules();
+      }
+      await slowPage.locator('form[data-form="host-login"]').waitFor();
+      await slowPage.close();
       // A revoked account must not get a private snapshot through the combined endpoint.
       disabled = true;
       const revoked = await f.request("/api/startup", {

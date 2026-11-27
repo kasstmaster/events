@@ -78,7 +78,12 @@ function startStartupRead() {
   const url = event
     ? "/api/public/events/" + event
     : "/api/startup" + (query.size ? "?" + query : "");
-  const response = fetch(url, { credentials: "same-origin" });
+  const initialEvent =
+    (event || invitation) && document.querySelector("#gather-public-event");
+  const response = initialEvent
+    ? Promise.resolve(new Response(initialEvent.textContent))
+    : fetch(url, { credentials: path === "/" ? "include" : "same-origin" });
+  if (initialEvent) initialEvent.remove();
   // Store the original promise so the app handles failures through its usual UI.
   response.catch(() => {});
   startupRead = { url, response };
