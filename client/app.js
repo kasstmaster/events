@@ -505,7 +505,8 @@ async function load({ background = false } = {}) {
         ),
         session.role === "host" &&
         session.platformAdmin &&
-        (state.adminMode || ["admin-approvals", "admin-hosts"].includes(state.view))
+        (state.adminMode ||
+          ["admin-approvals", "admin-hosts"].includes(state.view))
           ? api("/api/admin")
           : null,
       ]);
@@ -1238,9 +1239,7 @@ function render(target = $("#app"), example = false) {
           ? state.data.events.filter((event) => !eventHasPassed(event))
           : orderedInvitations(state.data.events);
       const archivedEvents =
-        role === "host"
-          ? state.data.events.filter(eventHasPassed)
-          : [];
+        role === "host" ? state.data.events.filter(eventHasPassed) : [];
       content =
         (role === "host"
           ? topbar({
