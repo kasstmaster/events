@@ -124,10 +124,12 @@ test(
     assert.doesNotMatch(firstDocument.body, /Getting things ready/);
     assert.equal(firstDocument.headers.get("cache-control"), "no-store");
     assert.doesNotMatch(firstDocument.body, /data-gather-home/);
-    const embeddedPayload = (document) =>
-      document.split(
+    const embeddedPayload = (document) => {
+      const [, payload] = document.split(
         '<script id="gather-public-event" type="application/json">',
-      )[1]?.split("</script>")[0];
+      );
+      return payload?.split("</script>")[0];
+    };
     const signedInBootstrap = JSON.parse(embeddedPayload(firstDocument.body));
     assert.equal(signedInBootstrap.session.role, "host");
     assert.equal(signedInBootstrap.host.events[0].id, event.id);
