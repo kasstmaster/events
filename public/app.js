@@ -307,10 +307,14 @@ async function load({ background = false } = {}) {
     const publicReference = location.pathname.match(
       /^\/event\/([A-Za-z0-9_-]{43})$/,
     )?.[1];
-    const [setup, passwordlessConfig] = await Promise.all([
-      api("/api/setup"),
-      publicReference ? null : api("/api/passwordless/config"),
-    ]);
+    const setupRequest = api("/api/setup");
+    const configRequest = publicReference
+      ? null
+      : api("/api/passwordless/config").then(
+          (config) => ({ config }),
+          (error) => ({ error }),
+        );
+    const setup = await setupRequest;
     state.setup = setup;
     if (setup.required) {
       if (generation !== loadGeneration || (background && isEditing())) return;
@@ -344,6 +348,9 @@ async function load({ background = false } = {}) {
       renderRefresh(background);
       return;
     }
+    const configResult = await configRequest;
+    if (configResult.error) throw configResult.error;
+    const passwordlessConfig = configResult.config;
     if (passwordlessConfig.hostOnly) {
       const legacyReference = location.pathname.match(
         /^\/invite\/([A-Za-z0-9_-]{43})$/,
