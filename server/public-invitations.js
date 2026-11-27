@@ -152,6 +152,35 @@ function eventSnapshot(store, env, event, household) {
     events: [publicEventView(store, event, household)],
   };
 }
+export function readPublicEvent(store, env, reference, selected, peer) {
+  if (!publicInvitationsEnabled(env)) unavailable();
+  store.limit(`public-invitation:${peer}`, 100, 60000);
+  const { link, event, household } = resolvePublicEvent(
+    store,
+    reference,
+    selected,
+  );
+  if (hostOnlyMode(env) && !isolatedAddressBook(store, link.household))
+    unavailable();
+  return eventSnapshot(store, env, event, household);
+}
+export function readLegacyInvitation(store, env, legacy, selected, peer) {
+  if (!publicInvitationsEnabled(env)) unavailable();
+  const ref = store.get("rsvp-reference", legacy, "platform");
+  if (
+    !ref ||
+    (selected && selected.id !== ref.household) ||
+    (hostOnlyMode(env) && !isolatedAddressBook(store, ref.household))
+  )
+    unavailable();
+  const reference = publicEventReference(store, ref.household, ref.event);
+  return {
+    path: `/event/${reference}`,
+    ...(peer !== undefined
+      ? { event: readPublicEvent(store, env, reference, selected, peer) }
+      : {}),
+  };
+}
 export async function publicInvitationsAPI(ctx) {
   const {
     path,
@@ -171,27 +200,16 @@ export async function publicInvitationsAPI(ctx) {
   );
   if (legacy) {
     if (!publicInvitationsEnabled(env) || method !== "GET") unavailable();
-    const ref = store.get("rsvp-reference", legacy[1], "platform");
-    if (
-      !ref ||
-      (selected && selected.id !== ref.household) ||
-      (hostOnlyMode(env) && !isolatedAddressBook(store, ref.household))
-    )
-      unavailable();
-    const reference = publicEventReference(store, ref.household, ref.event);
-    const destination = `/event/${reference}`;
-    if (ctx.includeEvent) {
-      store.limit(`public-invitation:${req.socket.remoteAddress}`, 100, 60000);
-      const { event, household } = resolvePublicEvent(
+    json(
+      res,
+      readLegacyInvitation(
         store,
-        reference,
+        env,
+        legacy[1],
         selected,
-      );
-      json(res, {
-        path: destination,
-        event: eventSnapshot(store, env, event, household),
-      });
-    } else json(res, { path: destination });
+        ctx.includeEvent ? req.socket.remoteAddress : undefined,
+      ),
+    );
     return true;
   }
   const host = path.match(
@@ -229,6 +247,19 @@ export async function publicInvitationsAPI(ctx) {
     json(res, result);
     return true;
   }
+  if (!visitor[2] && method === "GET") {
+    json(
+      res,
+      readPublicEvent(
+        store,
+        env,
+        visitor[1],
+        selected,
+        req.socket.remoteAddress,
+      ),
+    );
+    return true;
+  }
   store.limit(`public-invitation:${req.socket.remoteAddress}`, 100, 60000);
   const { link, event, household } = resolvePublicEvent(
     store,
@@ -237,10 +268,6 @@ export async function publicInvitationsAPI(ctx) {
   );
   if (hostOnlyMode(env) && !isolatedAddressBook(store, link.household))
     unavailable();
-  if (!visitor[2] && method === "GET") {
-    json(res, eventSnapshot(store, env, event, household));
-    return true;
-  }
   if (visitor[2] === "access" && method === "POST") {
     store.limit(
       `recipient-lookup:${req.socket.remoteAddress}:${visitor[1]}`,

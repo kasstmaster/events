@@ -1,6 +1,7 @@
+import { C, ui } from "./ui-runtime.js";
 // Store bounded text runs, never arbitrary HTML. Shared by server and browser.
 const escape = (value) =>
-  String(value).replace(
+  String(value ?? "").replace(
     /[&<>"']/g,
     (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
@@ -335,4 +336,55 @@ export function bindInformationEditor(doc = document, { showPopup } = {}) {
     } else doc.execCommand(action, false);
     editor.dispatchEvent(new Event("input", { bubbles: true }));
   });
+}
+
+export function eventIntroduction(event) {
+  return ui`<section class="event-hero">${event.icon ? ui`<img class="event-icon" data-event-edit="iconUpload" src="${escape(event.icon)}" alt="Event artwork">` : ""}<h1 data-event-edit="title">${escape(event.title ?? "")}</h1><p class="event-details" data-event-edit="description">${escape(event.description ?? "")}</p>${eventInformation(event)}</section>`;
+}
+
+export const dateLabel = (value) =>
+  value
+    ? new Intl.DateTimeFormat(undefined, {
+        dateStyle: "long",
+        timeZone: "UTC",
+      }).format(new Date(value + "T12:00:00Z"))
+    : C("Date to come");
+
+export function eventInformation(
+  event,
+  preview = false,
+  layout = event.informationLayout,
+) {
+  const edit = (name) =>
+    preview ? 'data-host-content=""' : `data-event-edit="${name}"`;
+  if (layout === "invitation") {
+    const parts = event.date
+      ? Object.fromEntries(
+          new Intl.DateTimeFormat("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+            timeZone: "UTC",
+          })
+            .formatToParts(new Date(event.date + "T12:00:00Z"))
+            .map((p) => [p.type, p.value]),
+        )
+      : null;
+    const date = parts
+      ? `${parts.weekday} ${parts.month} ${parts.day} ${parts.year}`
+      : String(C("Date to come"));
+    const deadline = event.deadline
+      ? new Date(event.deadline + "T12:00:00Z")
+      : null;
+    const rsvp = deadline
+      ? new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
+          .format(deadline)
+          .replace(/\.$/, "") +
+        ". " +
+        deadline.getUTCDate()
+      : "";
+    return ui`<div class="event-meta event-information-invitation"><div class="invitation-date" ${edit("date")}>${escape(date)}</div>${event.time ? ui`<div class="invitation-time" ${edit("time")}>${escape(event.time)}</div>` : ""}${event.address ? ui`<div class="invitation-address" ${edit("eventAddress")}>${escape(event.address)}</div>` : ""}${deadline ? ui`<div class="invitation-rsvp"><span>${C("Kindly RSVP by")}</span> <span ${edit("deadline")}>${escape(rsvp)}</span></div>` : ""}</div>`;
+  }
+  return ui`<div class="event-meta"><div><b>When</b><span ${edit("date")}>${escape(dateLabel(event.date))}</span><span ${edit("time")}>${escape(event.time)}</span></div>${event.address ? ui`<div><b>Where</b><span class="event-details" ${edit("eventAddress")}>${escape(event.address)}</span></div>` : ""}</div>${event.deadline ? ui`<div class="event-deadline"><b>RSVP By</b><span ${edit("deadline")}>${escape(dateLabel(event.deadline))}</span></div>` : ""}`;
 }

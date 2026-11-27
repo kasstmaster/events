@@ -10,6 +10,9 @@ import { accountControls, recoveryUI } from "/account-controls.js";
 import { personalTools } from "/personal-ui.js";
 import { householdGroups } from "/address-system.js";
 import {
+  dateLabel,
+  eventInformation,
+  eventIntroduction,
   renderInformation,
   readInformation,
   bindInformationEditor,
@@ -132,13 +135,6 @@ const area = (label, name, value = "", extra = "") =>
   ui`<label>${label}<textarea aria-label="${label}" name="${name}" ${M(extra)}>${escape(value)}</textarea></label>`;
 const select = (label, name, options, value, extra = "") =>
   ui`<label>${label}<select aria-label="${label}" name="${name}" ${extra}>${options.map(([key, label]) => ui`<option value="${escape(key)}" ${key === value ? "selected" : ""}>${escape(label)}</option>`).join("")}</select></label>`;
-const dateLabel = (value) =>
-  value
-    ? new Intl.DateTimeFormat(undefined, {
-        dateStyle: "long",
-        timeZone: "UTC",
-      }).format(new Date(value + "T12:00:00Z"))
-    : C("Date to come");
 function applyDesign(settings = {}, target = document.documentElement) {
   const d = categoryDesign({
     ...roleDefaults,
@@ -790,44 +786,6 @@ function eventCard(event) {
     .join("")}</div></article>`;
 }
 
-function eventInformation(
-  event,
-  preview = false,
-  layout = event.informationLayout,
-) {
-  const edit = (name) =>
-    preview ? 'data-host-content=""' : `data-event-edit="${name}"`;
-  if (layout === "invitation") {
-    const parts = event.date
-      ? Object.fromEntries(
-          new Intl.DateTimeFormat("en-US", {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-            year: "numeric",
-            timeZone: "UTC",
-          })
-            .formatToParts(new Date(event.date + "T12:00:00Z"))
-            .map((p) => [p.type, p.value]),
-        )
-      : null;
-    const date = parts
-      ? `${parts.weekday} ${parts.month} ${parts.day} ${parts.year}`
-      : String(C("Date to come"));
-    const deadline = event.deadline
-      ? new Date(event.deadline + "T12:00:00Z")
-      : null;
-    const rsvp = deadline
-      ? new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" })
-          .format(deadline)
-          .replace(/\.$/, "") +
-        ". " +
-        deadline.getUTCDate()
-      : "";
-    return ui`<div class="event-meta event-information-invitation"><div class="invitation-date" ${edit("date")}>${escape(date)}</div>${event.time ? ui`<div class="invitation-time" ${edit("time")}>${escape(event.time)}</div>` : ""}${event.address ? ui`<div class="invitation-address" ${edit("eventAddress")}>${escape(event.address)}</div>` : ""}${deadline ? ui`<div class="invitation-rsvp"><span>${C("Kindly RSVP by")}</span> <span ${edit("deadline")}>${escape(rsvp)}</span></div>` : ""}</div>`;
-  }
-  return ui`<div class="event-meta"><div><b>When</b><span ${edit("date")}>${escape(dateLabel(event.date))}</span><span ${edit("time")}>${escape(event.time)}</span></div>${event.address ? ui`<div><b>Where</b><span class="event-details" ${edit("eventAddress")}>${escape(event.address)}</span></div>` : ""}</div>${event.deadline ? ui`<div class="event-deadline"><b>RSVP By</b><span ${edit("deadline")}>${escape(dateLabel(event.deadline))}</span></div>` : ""}`;
-}
 function eventHasPassed(event) {
   if (!event.date) return false;
   const now = new Date();
@@ -839,7 +797,7 @@ function eventHasPassed(event) {
 function eventPage(event) {
   const archived = eventHasPassed(event);
   const own = event.response || { version: 0, attendance: {}, claims: {} };
-  const content = ui`<section class="event-hero">${event.icon ? ui`<img class="event-icon" data-event-edit="iconUpload" src="${escape(event.icon)}" alt="Event artwork">` : ""}<h1 data-event-edit="title">${escape(event.title)}</h1><p class="event-details" data-event-edit="description">${escape(event.description)}</p>${eventInformation(event)}</section><div class="row no-print" data-event-actions>${archived ? "" : button("rsvp", C("RSVP"), "", "")}${(event.extraPages || []).map((p) => button("event-extra-page", escape(p.title), `data-id="${escape(p.id)}"`)).join("")}${!archived && state.hostOnly && state.session.role === "host" && !event.invitingHousehold ? button("event-pages-manage", H("Manage event pages")) : ""}${(event.registries || []).length ? ui`<div class="registry-buttons" aria-label="Gift registries">${event.registries.map((r) => ui`<a class="button registry-button" href="${escape(r.url)}" target="_blank" rel="noopener noreferrer">${escape(r.title)}</a>`).join("")}</div>` : ""}${event.uploadURL ? ui`<a class="button" data-event-edit="uploadURL" href="${escape(event.uploadURL)}" target="_blank" rel="noopener noreferrer">Upload Photos & Videos</a>` : ""}${event.viewURL ? ui`<a class="button" data-event-edit="viewURL" href="${escape(event.viewURL)}" target="_blank" rel="noopener noreferrer">View Photos & Videos</a>` : ""}</div><div class="grid">${(event.information || []).some((run) => run.text.trim()) ? ui`<section class="panel" data-event-section="additional-information"><h2>Information</h2><div class="event-additional-content" data-event-edit="information" data-host-content>${renderInformation(event.information)}</div></section>` : ""}${!archived && event.menu.length ? ui`<section class="panel" data-event-section="menus"><p class="eyebrow">Something to share</p><h2>At the table</h2>${event.menu.length ? event.menu.map((item) => ui`<div class="menu-item" data-event-edit="table" data-menu-item="${escape(item.id)}"><div><strong>${escape(item.name)}</strong><div class="muted small">${item.kind === "drink" ? C("Drinks") : C("Potluck")}</div></div><span class="pill">${Math.max(0, item.quantity - (item.claimed || 0))} needed</span></div>`).join("") : M('<p class="muted">Just bring yourself. Your host hasn’t added any menu items yet.</p>')}</section>` : ""}${
+  const content = ui`${eventIntroduction(event)}<div class="row no-print" data-event-actions>${archived ? "" : button("rsvp", C("RSVP"), "", "")}${(event.extraPages || []).map((p) => button("event-extra-page", escape(p.title), `data-id="${escape(p.id)}"`)).join("")}${!archived && state.hostOnly && state.session.role === "host" && !event.invitingHousehold ? button("event-pages-manage", H("Manage event pages")) : ""}${(event.registries || []).length ? ui`<div class="registry-buttons" aria-label="Gift registries">${event.registries.map((r) => ui`<a class="button registry-button" href="${escape(r.url)}" target="_blank" rel="noopener noreferrer">${escape(r.title)}</a>`).join("")}</div>` : ""}${event.uploadURL ? ui`<a class="button" data-event-edit="uploadURL" href="${escape(event.uploadURL)}" target="_blank" rel="noopener noreferrer">Upload Photos & Videos</a>` : ""}${event.viewURL ? ui`<a class="button" data-event-edit="viewURL" href="${escape(event.viewURL)}" target="_blank" rel="noopener noreferrer">View Photos & Videos</a>` : ""}</div><div class="grid">${(event.information || []).some((run) => run.text.trim()) ? ui`<section class="panel" data-event-section="additional-information"><h2>Information</h2><div class="event-additional-content" data-event-edit="information" data-host-content>${renderInformation(event.information)}</div></section>` : ""}${!archived && event.menu.length ? ui`<section class="panel" data-event-section="menus"><p class="eyebrow">Something to share</p><h2>At the table</h2>${event.menu.length ? event.menu.map((item) => ui`<div class="menu-item" data-event-edit="table" data-menu-item="${escape(item.id)}"><div><strong>${escape(item.name)}</strong><div class="muted small">${item.kind === "drink" ? C("Drinks") : C("Potluck")}</div></div><span class="pill">${Math.max(0, item.quantity - (item.claimed || 0))} needed</span></div>`).join("") : M('<p class="muted">Just bring yourself. Your host hasn’t added any menu items yet.</p>')}</section>` : ""}${
     archived
       ? ""
       : own
