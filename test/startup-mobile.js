@@ -343,6 +343,14 @@ test(
       await noScriptPage.locator("#main > .hero h1").waitFor();
       await noScriptPage.locator("#gather-initial-theme").waitFor();
       assert.equal(
+        await noScriptPage.locator("#top-navigation .app-topbar").count(),
+        1,
+      );
+      assert.equal(
+        await noScriptPage.locator("#app > .toolbar [data-action=home]").count(),
+        1,
+      );
+      assert.equal(
         await noScriptPage.locator('[data-action="new-event"]').count(),
         1,
       );
