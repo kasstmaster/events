@@ -190,7 +190,10 @@ test("HTML-first release verifies the exact static sign-in transform on both ori
 <script type="module" src="/app.js"></script>
 </head><body><main id="main"><p>Getting things ready…</p></main></body></html>`;
   const document = reviewedSignInShell(Buffer.from(source));
-  assert.doesNotMatch(document, /data-gather-home|modulepreload|src="\/app.js"/);
+  assert.doesNotMatch(
+    document,
+    /data-gather-home|modulepreload|src="\/app.js"/,
+  );
   assert.match(document, /data-gather-transfer/);
   const manifest = {
     "public/index.html": hashBytes(source),
