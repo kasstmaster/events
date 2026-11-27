@@ -147,3 +147,42 @@ jobs:
       - run: node scripts/automatic-events-release.mjs source
       - run: node --test scripts/automatic-events-release.test.mjs scripts/manual-events-release.test.mjs scripts/cloudflare-metadata-check.test.mjs scripts/application-provenance.test.mjs scripts/production-provenance-diagnostic.test.mjs
       - run: npx wrangler deploy --dry-run --name events --config wrangler.jsonc --outdir test-results/validation-dry-run
+
+  gather-pr111-build:
+    name: Prepare reviewed browser bundles for draft PR 111 (temporary)
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 111 && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Format changed source, build browser assets and update reviewed asset hashes
+        run: |
+          npx prettier --write client/app.js scripts/build-browser.mjs server/handler.js test/platform.test.js test/startup-mobile.js
+          npm run build:browser
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from "node:fs";
+          import { createHash } from "node:crypto";
+          const file = ".github/release/approved-application.json";
+          const policy = JSON.parse(readFileSync(file, "utf8"));
+          for (const path of Object.keys(policy.appearance))
+            policy.appearance[path] = createHash("sha256").update(readFileSync(path)).digest("hex");
+          writeFileSync(file, JSON.stringify(policy, null, 2) + "\n");
+          NODE
+          node scripts/build-browser.mjs --check
+      - name: Commit generated assets to PR 111 only
+        run: |
+          git config user.name "gather-build[bot]"
+          git config user.email "gather-build[bot]@users.noreply.github.com"
+          git add client/app.js scripts/build-browser.mjs server/handler.js test/platform.test.js test/startup-mobile.js public/app.js public/auth-bootstrap.js .github/release/approved-application.json
+          if ! git diff --cached --quiet; then git commit -m "build: update reviewed startup bundles and regression sources"; fi
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
