@@ -1,3 +1,4 @@
+import { initialHomeHtml } from "./initial-home.js";
 import { validFirebaseHostSession } from "./firebase-host-admin.js";
 import { hostFirebaseEnabled, hostFirebaseConfig } from "./firebase-host.js";
 import { weddingImportAPI } from "./wedding-import.js";
@@ -626,7 +627,7 @@ export function createHandler({
       const pageSlug = path.match(/^\/h\/([A-Za-z0-9_-]+)$/)?.[1];
       if (selected && pageSlug && pageSlug !== selected.slug)
         fail(404, "This household address is unavailable.");
-      if (method === "GET" && !path.startsWith("/api/")) {
+      if (method === "GET" && !path.startsWith("/api/") && !(replacement && path === "/" && (!requireAdmin || store.adminSetupComplete()))) {
         const entry =
           (/^\/(?:(?:invite|event)\/[A-Za-z0-9_-]{43}|[a-z0-9][a-z0-9-]{1,61}[a-z0-9])$/.test(
             path,
@@ -864,7 +865,7 @@ export function createHandler({
           ),
         )
         ?.split("=")[1];
-      const authStarted = startup ? performance.now() : 0;
+      const authStarted = performance.now();
       let session = store.session(raw, origin, !selected);
       if (replacement && session) {
         const proof = store.get(
@@ -1131,6 +1132,31 @@ export function createHandler({
                 : null,
             }
           : { role: null };
+      // The validated host home is meaningful in the first HTML response.
+      // HTML stays no-store; session, Firebase and tenant checks above remain
+      // authoritative. Never read host data before those checks complete.
+      if (replacement && method === "GET" && path === "/") {
+        const current = sessionSnapshot();
+        let household = null;
+        let events = [];
+        if (current.role === "host") {
+          requireRole("host");
+          household = store.household(session.household);
+          // Avoid heavy guest, RSVP, roster, contacts and editor projections.
+          events = store.list("event", session.household);
+        }
+        const content = (await readAsset("index.html")).toString().replace(
+          '<main id="main"><p>Getting things ready…</p></main>',
+          () => `<main id="main">${initialHomeHtml({ household, events })}</main>`,
+        );
+        res.setHeader(
+          "Server-Timing",
+          `auth;dur=${(performance.now() - authStarted).toFixed(1)}`,
+        );
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(content);
+        return;
+      }
       if (startup) {
         const snapshotStarted = performance.now();
         const current = sessionSnapshot();
