@@ -316,13 +316,14 @@ try {
     .locator(".family-item-title")
     .getByText("Reconnect item", { exact: true })
     .waitFor();
-  await kid.context.route("**/api/startup", (route) => route.abort("failed"));
+  const startup = (url) => url.pathname === "/api/startup";
+  await kid.context.route(startup, (route) => route.abort("failed"));
   await kid.page.evaluate(() => window.dispatchEvent(new Event("online")));
   await kid.page
     .locator("#sync-status")
     .filter({ hasText: "Connection paused" })
     .waitFor();
-  await kid.context.unroute("**/api/startup");
+  await kid.context.unroute(startup);
   await kid.page.evaluate(() => window.dispatchEvent(new Event("online")));
   await kid.page.waitForFunction(
     () =>

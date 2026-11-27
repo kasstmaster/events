@@ -23,12 +23,21 @@ cache, authorization shortcut, gateway change or database change is introduced.
 Home declares its data request in the document so the browser can start it
 while fetching both JavaScript entries. Transfer documents wait for any
 browser-bound redemption before starting their data request. Home uses
-`GET /api/startup` for setup status, public interface configuration and the
-current session. Where the session authorizes host access, that same request
-includes the existing host projection. The response is no-store and goes through
-the existing origin, session renewal, provider revocation, and household role
-checks. Navigation back to Home uses the current in-document data. A fresh load
-or a protected operation still validates its session on the server.
+`GET /api/startup?view=home` for setup status, public interface configuration
+and the current session. Once authorized, a replacement-mode host receives the
+household and its event views. Contact and address records, roster data, saved
+menus, and editing templates are read on demand through `/api/host/workspace`.
+Concurrent requests for the same in-memory Home snapshot share one read.
+Navigation can reuse that data until a new snapshot replaces it. Family
+Workspace keeps its own data when returning to Home within a validated session.
+Refresh and account changes invalidate inactive data. Existing consumers of
+`/api/startup` and `/api/host` can still request the full projection.
+
+These responses are no-store and apply the existing origin, session renewal,
+provider revocation, and household role checks. The startup response reports
+`auth` and `snapshot` durations through `Server-Timing` where supported by the
+runtime. This excludes edge transit and browser work. A fresh load or protected
+operation still validates its session on the server.
 
 Direct public event links send the shared event introduction and allowlisted
 public snapshot with the HTML. Visitors can read the title, description, date

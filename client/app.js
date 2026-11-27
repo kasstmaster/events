@@ -1,4 +1,4 @@
-import { takeStartupRequest } from "/auth-bootstrap.js";
+import { startupRoute, takeStartupRequest } from "/auth-bootstrap.js";
 import { weddingImportUI } from "/wedding-import-ui.js";
 import { eventPagesUI } from "/event-pages-ui.js";
 import { recipientManagementUI } from "/recipient-management-ui.js";
@@ -298,23 +298,50 @@ function renderRefresh(preserveScroll) {
   render();
   if (position) window.scrollTo({ ...position, behavior: "instant" });
 }
+// Workspace data is scoped to the validated Home snapshot that requested it.
+let workspaceRead;
+async function ensureWorkspace() {
+  const snapshot = state.data;
+  if (
+    !state.hostOnly ||
+    state.session?.role !== "host" ||
+    Object.hasOwn(snapshot, "guests")
+  )
+    return true;
+  if (workspaceRead?.snapshot !== snapshot) {
+    const request = { snapshot, result: api("/api/host/workspace") };
+    workspaceRead = request;
+    request.result
+      .finally(() => {
+        if (workspaceRead === request) workspaceRead = null;
+      })
+      .catch(() => {});
+  }
+  const workspace = await workspaceRead.result;
+  if (state.data !== snapshot) return false;
+  Object.assign(snapshot, workspace);
+  state.templates = workspace.templates;
+  return true;
+}
+
 async function load({ background = false, routeHome = false } = {}) {
   if (background && isEditing()) return;
   const generation = ++loadGeneration;
   const current = () =>
     generation === loadGeneration && !(background && isEditing());
   try {
-    let publicReference = location.pathname.match(
-      /^\/event\/([A-Za-z0-9_-]{43})$/,
-    )?.[1];
-    const legacyReference = location.pathname.match(
-      /^\/invite\/([A-Za-z0-9_-]{43})$/,
-    )?.[1];
-    const query = new URLSearchParams();
-    if (legacyReference) query.set("invitation", legacyReference);
-    if (routeHome) query.set("home", "1");
-    if (state.preview || hostAuth.authEntry()) query.set("sessionOnly", "1");
-    const startup = () => api("/api/startup" + (query.size ? "?" + query : ""));
+    const route = startupRoute(location.pathname, {
+      home: routeHome,
+      sessionOnly: !!state.preview,
+      workspace:
+        state.hostOnly &&
+        state.session?.role === "host" &&
+        (state.view !== "home" ||
+          state.settingsOpen ||
+          (!background && Object.hasOwn(state.data || {}, "guests"))),
+    });
+    let { publicReference } = route;
+    const startup = () => api(route.url);
     let boot = publicReference ? null : await startup();
     if (!current()) return;
     if (boot?.event) {
@@ -498,7 +525,7 @@ async function load({ background = false, routeHome = false } = {}) {
           legacyAdministrators: admin.legacyAdministrators,
         });
       }
-      if (session.role === "host") templates = data.templates;
+      if (session.role === "host") templates = data.templates || [];
     }
     const familyData =
       session.role === "family"
@@ -534,6 +561,13 @@ async function load({ background = false, routeHome = false } = {}) {
           publicHousehold,
           familyData || state.familyData,
         ]);
+    if (
+      (background && state.hostOnly && !familyData) ||
+      state.session?.role !== session.role ||
+      state.session?.user !== session.user ||
+      state.session?.household?.id !== session.household?.id
+    )
+      state.familyData = null;
     if (familyData) state.familyData = familyData;
     if (
       state.hostOnly &&
@@ -2644,6 +2678,22 @@ document.addEventListener("click", async (event) => {
     if (!personal.leave(action, target)) return;
     if (!tools.leaveCard(action)) return;
     if (!leaveEventLayout(target)) return;
+    if (
+      ![
+        "home",
+        "open-event",
+        "logout",
+        "family-workspace",
+        "settings",
+        "reload",
+      ].includes(action) &&
+      state.hostOnly &&
+      state.session?.role === "host" &&
+      !Object.hasOwn(state.data, "guests")
+    ) {
+      const navigation = loadGeneration;
+      if (!(await ensureWorkspace()) || navigation !== loadGeneration) return;
+    }
     if (await appearance.action(action, target)) return;
     if (
       appearance.active() &&
@@ -3138,7 +3188,7 @@ document.addEventListener("click", async (event) => {
       state.event = null;
       state.settingsOpen = false;
       state.editingGuest = null;
-      family.reset();
+      family.reset({ preserveData: state.hostOnly });
       state.view = "home";
       render();
       return;
