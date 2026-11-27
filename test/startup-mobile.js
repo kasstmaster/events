@@ -110,6 +110,38 @@ test(
       title,
       date: "2030-05-07",
     });
+    // The first response includes readable, escaped host content without
+    // waiting for JavaScript. Anonymous documents never contain private events.
+    const firstDocument = await f.request("/", { cookie: connected.cookie });
+    assert.equal(firstDocument.status, 200);
+    assert.match(firstDocument.body, /Your gathering place/);
+    assert.ok(
+      firstDocument.body.includes(
+        "Fixture &lt;/script&gt;&lt;img id=&quot;unescaped-event&quot;&gt;",
+      ),
+    );
+    assert.doesNotMatch(firstDocument.body, /<img id="unescaped-event">/);
+    assert.doesNotMatch(firstDocument.body, /Getting things ready/);
+    assert.doesNotMatch(firstDocument.body, /data-gather-home/);
+    const embeddedPayload = (document) => {
+      const [, payload] = document.split(
+        '<script id="gather-public-event" type="application/json">',
+      );
+      return payload?.split("</script>")[0];
+    };
+    const signedInBootstrap = JSON.parse(embeddedPayload(firstDocument.body));
+    assert.equal(signedInBootstrap.session.role, "host");
+    assert.equal(signedInBootstrap.host.events[0].id, event.id);
+    assert.equal(signedInBootstrap.host.guests, undefined);
+    const anonymousDocument = await f.request("/");
+    assert.equal(anonymousDocument.status, 200);
+    assert.match(anonymousDocument.body, /Welcome to Gather/);
+    assert.doesNotMatch(anonymousDocument.body, /Fixture/);
+    const anonymousBootstrap = JSON.parse(
+      embeddedPayload(anonymousDocument.body),
+    );
+    assert.equal(anonymousBootstrap.session.role, null);
+    assert.equal(anonymousBootstrap.host, undefined);
     const reference = publicEventReference(
       f.store,
       host.household.id,
@@ -273,6 +305,12 @@ test(
         };
       };
       await measure("cold signed out", "login", () => page.goto(appOrigin));
+      assert.deepEqual(
+        backendPaths["cold signed out"].filter((p) =>
+          p.startsWith("/api/startup"),
+        ),
+        [],
+      );
       const coldScripts = requested
         .filter((path) => path.endsWith(".js"))
         .sort();
@@ -287,6 +325,31 @@ test(
       );
       const sdkExtraReads = await page.evaluate(() => window.sdkExtraReads);
       await measure("signed-in refresh", "home", () => page.reload());
+      assert.deepEqual(
+        backendPaths["signed-in refresh"].filter((p) =>
+          p.startsWith("/api/startup"),
+        ),
+        [],
+      );
+      // A host should see their household and event summaries before any
+      // JavaScript executes. The existing CSP/session checks still apply.
+      const noScriptPage = await context.newPage();
+      await noScriptPage.route("**/*.js", (route) => route.abort());
+      const noScriptStarted = Date.now();
+      const noScriptResponse = await noScriptPage.goto(appOrigin, {
+        waitUntil: "domcontentloaded",
+      });
+      assert.equal(noScriptResponse.status(), 200);
+      await noScriptPage.locator("#main > .hero h1").waitFor();
+      assert.equal(
+        await noScriptPage.locator(".home-invitations h2").first().innerText(),
+        title,
+      );
+      assert.equal(await noScriptPage.locator("#main > p").count(), 0);
+      t.diagnostic(
+        `HTML-first host document without JavaScript: ${Date.now() - noScriptStarted}ms`,
+      );
+      await noScriptPage.close();
       await page.locator('[data-action="open-event"]').first().click();
       await measure(
         "Home",
@@ -397,13 +460,13 @@ test(
       assert.deepEqual(errors, []);
       assert.deepEqual(coldScripts, ["/app.js", "/auth-bootstrap.js"]);
       assert.deepEqual(backendPaths, {
-        "cold signed out": ["/api/startup"],
+        "cold signed out": [],
         "Firebase sign-in": [
           "/api/host-auth/login",
           "/api/host-auth/firebase",
           "/api/startup",
         ],
-        "signed-in refresh": ["/api/startup"],
+        "signed-in refresh": [],
         Home: [],
         "sign-out": ["/api/logout"],
         "direct public event": [],
@@ -417,12 +480,8 @@ test(
           label,
         );
         assert.equal(result.documents, sameDocument ? 0 : 1, label);
-        const initialInvitation = /event|invitation/.test(label);
-        assert.equal(
-          result.loading,
-          initialInvitation ? 0 : result.documents,
-          label,
-        );
+        // The document contains usable HTML, not a full-page loading view.
+        assert.equal(result.loading, 0, label);
       }
       assert.equal(measurements["Firebase sign-in"].lookups, 1);
       assert.equal(measurements["signed-in refresh"].lookups, 1);
@@ -447,11 +506,16 @@ test(
         await slowPage.getByText("May 7, 2030", { exact: true }).waitFor();
         assert.equal(await slowPage.locator("#unescaped-event").count(), 0);
         assert.equal(await slowPage.locator('[data-action="rsvp"]').count(), 0);
-        const preload = slowPage.waitForRequest(
-          (request) => new URL(request.url()).pathname === "/api/startup",
-        );
+        let redundantStartup = 0;
+        slowPage.on("request", (request) => {
+          if (new URL(request.url()).pathname === "/api/startup")
+            redundantStartup++;
+        });
         await slowPage.goto(appOrigin, { waitUntil: "commit" });
-        await preload;
+        await slowPage
+          .getByRole("heading", { name: "Welcome to Gather" })
+          .waitFor();
+        assert.equal(redundantStartup, 0);
       } finally {
         releaseModules();
       }
@@ -581,7 +645,8 @@ test(
       await p.reload();
       await p.locator('[data-action="open-event"]').first().waitFor();
       assert.equal(calls.length, 3);
-      assert.deepEqual(startup, [alpha, alpha]);
+      // A validated HTML-first refresh reuses its embedded snapshot.
+      assert.deepEqual(startup, [alpha]);
       assert.deepEqual(errors, []);
       apps.length = 0;
       const callback = await c.newPage();

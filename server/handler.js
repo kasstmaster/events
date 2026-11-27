@@ -1,3 +1,4 @@
+import { initialHomeHtml } from "./initial-home.js";
 import { validFirebaseHostSession } from "./firebase-host-admin.js";
 import { hostFirebaseEnabled, hostFirebaseConfig } from "./firebase-host.js";
 import { weddingImportAPI } from "./wedding-import.js";
@@ -626,7 +627,15 @@ export function createHandler({
       const pageSlug = path.match(/^\/h\/([A-Za-z0-9_-]+)$/)?.[1];
       if (selected && pageSlug && pageSlug !== selected.slug)
         fail(404, "This household address is unavailable.");
-      if (method === "GET" && !path.startsWith("/api/")) {
+      if (
+        method === "GET" &&
+        !path.startsWith("/api/") &&
+        !(
+          replacement &&
+          path === "/" &&
+          (!requireAdmin || store.adminSetupComplete())
+        )
+      ) {
         const entry =
           (/^\/(?:(?:invite|event)\/[A-Za-z0-9_-]{43}|[a-z0-9][a-z0-9-]{1,61}[a-z0-9])$/.test(
             path,
@@ -864,7 +873,7 @@ export function createHandler({
           ),
         )
         ?.split("=")[1];
-      const authStarted = startup ? performance.now() : 0;
+      const authStarted = performance.now();
       let session = store.session(raw, origin, !selected);
       if (replacement && session) {
         const proof = store.get(
@@ -1131,6 +1140,49 @@ export function createHandler({
                 : null,
             }
           : { role: null };
+      // HTML-first Home reuses the same authorized startup snapshot the app
+      // normally fetches. A single request validates the session and returns
+      // both readable content and its hydration data, without a second Firebase
+      // validation or /api/startup call after the browser downloads JavaScript.
+      if (replacement && method === "GET" && path === "/") {
+        const snapshotStarted = performance.now();
+        const current = sessionSnapshot();
+        const ui = effectiveUI(store);
+        const snapshot = {
+          setup: setupStatus(),
+          config: authConfiguration(),
+          session: current,
+          ui,
+          household: publicHousehold(ui),
+          ...(current.role === "host"
+            ? { host: hostSnapshot({ workspace: false }) }
+            : {}),
+        };
+        const household = snapshot.host?.household || null;
+        const events = snapshot.host?.events || [];
+        // Script data is inert, and '<' cannot close its HTML script element.
+        const payload = JSON.stringify(snapshot).replaceAll("<", "\\u003c");
+        const content = (await readAsset("index.html"))
+          .toString()
+          .replace(/\s*<link\s[^>]*\bdata-gather-home\b[^>]*>/, "")
+          .replace(
+            '<main id="main"><p>Getting things ready…</p></main>',
+            () =>
+              `<main id="main">${initialHomeHtml({ household, events })}</main>`,
+          )
+          .replace(
+            "</body>",
+            () =>
+              `<script id="gather-public-event" type="application/json">${payload}</script></body>`,
+          );
+        res.setHeader(
+          "Server-Timing",
+          `auth;dur=${(snapshotStarted - authStarted).toFixed(1)}, snapshot;dur=${(performance.now() - snapshotStarted).toFixed(1)}`,
+        );
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(content);
+        return;
+      }
       if (startup) {
         const snapshotStarted = performance.now();
         const current = sessionSnapshot();
