@@ -558,6 +558,7 @@ try {
     window.refreshObserver = new MutationObserver(() => window.pageRefreshes++);
     window.refreshObserver.observe(document.querySelector("#app"), {
       childList: true,
+      subtree: true,
     });
     window.scrollTo(0, 300);
     window.readingPosition = scrollY;
