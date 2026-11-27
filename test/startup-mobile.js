@@ -341,6 +341,56 @@ test(
       });
       assert.equal(noScriptResponse.status(), 200);
       await noScriptPage.locator("#main > .hero h1").waitFor();
+      await noScriptPage
+        .locator("#gather-initial-theme")
+        .waitFor({ state: "attached" });
+      assert.equal(
+        await noScriptPage.locator("#top-navigation .app-topbar").count(),
+        1,
+      );
+      assert.equal(
+        await noScriptPage
+          .locator("#app > .toolbar [data-action=home]")
+          .count(),
+        1,
+      );
+      assert.equal(
+        await noScriptPage.locator('[data-action="new-event"]').count(),
+        1,
+      );
+      assert.equal(
+        await noScriptPage.locator('[data-action="open-event"]').count(),
+        1,
+      );
+      assert.equal(
+        await noScriptPage
+          .locator('[data-action="event-action-dashboard"]')
+          .count(),
+        1,
+      );
+      assert.equal(
+        await noScriptPage.locator('[data-action="addresses"]').count(),
+        1,
+      );
+      assert.equal(
+        await noScriptPage.locator('[data-action="cards"]').count(),
+        1,
+      );
+      assert.equal(
+        await noScriptPage.locator('[data-action="family-workspace"]').count(),
+        1,
+      );
+      const initialThemeMatchesSavedDesign = await noScriptPage.evaluate(() => {
+        const snapshot = JSON.parse(
+          document.querySelector("#gather-public-event").textContent,
+        );
+        return (
+          getComputedStyle(document.documentElement)
+            .getPropertyValue("--bg")
+            .trim() === snapshot.host.ui.design.background
+        );
+      });
+      assert.equal(initialThemeMatchesSavedDesign, true);
       assert.equal(
         await noScriptPage.locator(".home-invitations h2").first().innerText(),
         title,
