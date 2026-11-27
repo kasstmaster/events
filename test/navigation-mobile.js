@@ -764,6 +764,7 @@ try {
     { ...syncJob, state: "complete", updated: 1 },
     syncJob.version,
   );
+  await p.evaluate(() => window.dispatchEvent(new Event("online")));
   await p.getByText(/15551230000/).waitFor();
   await p.getByText("Contacts synced.", { exact: true }).waitFor();
   assert.equal(
