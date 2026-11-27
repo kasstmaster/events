@@ -80,10 +80,7 @@ export function initialThemeStyle(design = {}, defaults = {}) {
     "dangerBackground",
     "notesBackground",
   ])
-    set(
-      "--" + key.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase()),
-      d[key],
-    );
+    set("--" + key.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase()), d[key]);
   for (const prefix of ["title", "description", "text"]) {
     set(
       `--${prefix}-weight`,
