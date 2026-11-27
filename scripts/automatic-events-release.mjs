@@ -1064,8 +1064,11 @@ export async function run(mode, options = {}) {
       "verification",
       "Active version or merged-source annotation differs from deployment receipt.",
     );
-    let healthy = true;
-    for (const origin of policy.public_origins) {
+    // HTML-first Home is personalized. Use the same reviewed, exact-byte
+    // /signin transformation here as the successful preflight and verify all
+    // other static assets on both approved origins. This must never silently
+    // accept a changed, absent or redirected asset.
+    for (const origin of policy.public_origins)
       must(
         [
           "https://events.kassandraraudman.workers.dev",
@@ -1074,23 +1077,24 @@ export async function run(mode, options = {}) {
         "health",
         "Unapproved health-check origin.",
       );
-      for (const [path, hash] of Object.entries(policy.appearance)) {
-        const url =
-          origin +
-          "/" +
-          (path === "public/index.html" ? "" : path.slice("public/".length));
-        try {
-          const r = await fetcher(url, {
-            method: "GET",
-            redirect: "error",
-            signal: AbortSignal.timeout(20000),
-          });
-          if (!r.ok || sha(Buffer.from(await r.arrayBuffer())) !== hash)
-            healthy = false;
-        } catch {
-          healthy = false;
-        }
-      }
+    const reviewedIndex =
+      options.reviewedIndex ||
+      execFileSync("git", ["show", `${release}:public/index.html`], {
+        cwd: root,
+        maxBuffer: 8000000,
+      });
+    let healthy = true;
+    try {
+      await verifyAssetBytes(policy.appearance, fetcher, { reviewedIndex });
+    } catch (error) {
+      if (
+        !(error instanceof ProvenanceError) ||
+        !["PUBLIC_ASSET_BYTES_MISMATCH", "PUBLIC_ASSET_READ_FAILED"].includes(
+          error.code,
+        )
+      )
+        throw error;
+      healthy = false;
     }
     if (healthy) {
       await writeFile(
