@@ -366,12 +366,17 @@ test(
         await noScriptPage.locator('[data-action="family-workspace"]').count(),
         1,
       );
-      assert.equal(
-        await noScriptPage.evaluate(
-          () => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim(),
-        ),
-        "#f3eee8",
-      );
+      const initialThemeMatchesSavedDesign = await noScriptPage.evaluate(() => {
+        const snapshot = JSON.parse(
+          document.querySelector("#gather-public-event").textContent,
+        );
+        return (
+          getComputedStyle(document.documentElement)
+            .getPropertyValue("--bg")
+            .trim() === snapshot.host.ui.design.background
+        );
+      });
+      assert.equal(initialThemeMatchesSavedDesign, true);
       assert.equal(
         await noScriptPage.locator(".home-invitations h2").first().innerText(),
         title,
