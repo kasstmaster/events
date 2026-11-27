@@ -460,13 +460,13 @@ test(
       assert.deepEqual(errors, []);
       assert.deepEqual(coldScripts, ["/app.js", "/auth-bootstrap.js"]);
       assert.deepEqual(backendPaths, {
-        "cold signed out": ["/api/startup"],
+        "cold signed out": [],
         "Firebase sign-in": [
           "/api/host-auth/login",
           "/api/host-auth/firebase",
           "/api/startup",
         ],
-        "signed-in refresh": ["/api/startup"],
+        "signed-in refresh": [],
         Home: [],
         "sign-out": ["/api/logout"],
         "direct public event": [],
@@ -480,12 +480,8 @@ test(
           label,
         );
         assert.equal(result.documents, sameDocument ? 0 : 1, label);
-        const initialInvitation = /event|invitation/.test(label);
-        assert.equal(
-          result.loading,
-          initialInvitation ? 0 : result.documents,
-          label,
-        );
+        // The document contains usable HTML, not a full-page loading view.
+        assert.equal(result.loading, 0, label);
       }
       assert.equal(measurements["Firebase sign-in"].lookups, 1);
       assert.equal(measurements["signed-in refresh"].lookups, 1);
@@ -510,11 +506,14 @@ test(
         await slowPage.getByText("May 7, 2030", { exact: true }).waitFor();
         assert.equal(await slowPage.locator("#unescaped-event").count(), 0);
         assert.equal(await slowPage.locator('[data-action="rsvp"]').count(), 0);
-        const preload = slowPage.waitForRequest(
-          (request) => new URL(request.url()).pathname === "/api/startup",
-        );
+        let redundantStartup = 0;
+        slowPage.on("request", (request) => {
+          if (new URL(request.url()).pathname === "/api/startup")
+            redundantStartup++;
+        });
         await slowPage.goto(appOrigin, { waitUntil: "commit" });
-        await preload;
+        await slowPage.getByRole("heading", { name: "Welcome to Gather" }).waitFor();
+        assert.equal(redundantStartup, 0);
       } finally {
         releaseModules();
       }
