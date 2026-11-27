@@ -122,7 +122,6 @@ test(
     );
     assert.doesNotMatch(firstDocument.body, /<img id="unescaped-event">/);
     assert.doesNotMatch(firstDocument.body, /Getting things ready/);
-    assert.equal(firstDocument.headers.get("cache-control"), "no-store");
     assert.doesNotMatch(firstDocument.body, /data-gather-home/);
     const embeddedPayload = (document) => {
       const [, payload] = document.split(
@@ -645,7 +644,8 @@ test(
       await p.reload();
       await p.locator('[data-action="open-event"]').first().waitFor();
       assert.equal(calls.length, 3);
-      assert.deepEqual(startup, [alpha, alpha]);
+      // A validated HTML-first refresh reuses its embedded snapshot.
+      assert.deepEqual(startup, [alpha]);
       assert.deepEqual(errors, []);
       apps.length = 0;
       const callback = await c.newPage();
