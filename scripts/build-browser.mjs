@@ -36,6 +36,11 @@ for (const entry of ["auth-bootstrap", "app"]) {
               path: "/auth-bootstrap.js",
               external: true,
             }));
+          if (entry === "app")
+            b.onResolve(
+              { filter: /^\/(?:editor-tools|appearance-editor)\.js$/ },
+              (a) => ({ path: a.path, external: true }),
+            );
           b.onResolve({ filter: /^\/.*\.js$/ }, (a) => ({
             path: resolve(root, "public" + a.path),
           }));
