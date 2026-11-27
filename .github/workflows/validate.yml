@@ -113,6 +113,9 @@ jobs:
         run: |
           node test/host-model-mobile.js
           node test/host-model-features-mobile.js
+      - name: Cold startup dependencies, signed-in sessions and direct invitations
+        if: matrix.group == 'accounts'
+        run: node --test test/startup-mobile.js
       - name: Preserve approved Home, Event and Address Book pixels
         if: matrix.group == 'accounts'
         run: node test/approved-design-mobile.js

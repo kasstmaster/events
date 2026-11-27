@@ -307,7 +307,21 @@ async function load({ background = false } = {}) {
     let publicReference = location.pathname.match(
       /^\/event\/([A-Za-z0-9_-]{43})$/,
     )?.[1];
-    const setupRequest = api("/api/setup");
+    // A direct invitation is public and never needs the administrator setup gate.
+    const setupRequest = publicReference ? null : api("/api/setup");
+    // Only plain Home may read the session early: link redemption/handoffs must
+    // finish before reading their newly issued session on the sign-in routes.
+    const homeRequests =
+      !background && location.pathname === "/"
+        ? Promise.all([
+            api("/api/public/context"),
+            api("/api/interface"),
+            api("/api/session"),
+          ]).then(
+            (data) => ({ data }),
+            (error) => ({ error }),
+          )
+        : null;
     let eventRequest = publicReference
       ? api(`/api/public/events/${publicReference}`).then(
           (data) => ({ data }),
@@ -320,7 +334,7 @@ async function load({ background = false } = {}) {
           (config) => ({ config }),
           (error) => ({ error }),
         );
-    const setup = await setupRequest;
+    const setup = publicReference ? { required: false } : await setupRequest;
     state.setup = setup;
     if (setup.required) {
       if (generation !== loadGeneration || (background && isEditing())) return;
@@ -386,11 +400,13 @@ async function load({ background = false } = {}) {
       return;
     // Legacy sign-in initialization can redeem a link and set the session.
     if (!state.hostOnly) await passwordless.initialize(passwordlessConfig);
+    const homeResult = homeRequests ? await homeRequests : null;
+    if (homeResult?.error) throw homeResult.error;
     const [context, platform, session] = await Promise.all([
-      api("/api/public/context"),
-      api("/api/interface"),
-      api("/api/session"),
-      state.hostOnly ? hostAuth.initialize() : null,
+      homeResult ? homeResult.data[0] : api("/api/public/context"),
+      homeResult ? homeResult.data[1] : api("/api/interface"),
+      homeResult ? homeResult.data[2] : api("/api/session"),
+      state.hostOnly ? hostAuth.initialize(passwordlessConfig.hostAuth) : null,
     ]);
     state.platformUI = platform.ui;
     if (session.role !== "admin" && !session.platformAdmin) {
