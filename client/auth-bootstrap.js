@@ -66,6 +66,30 @@ addEventListener("hashchange", () => {
   }
 });
 
+let startupRead;
+function startStartupRead() {
+  const path = location.pathname;
+  const event = path.match(/^\/event\/([A-Za-z0-9_-]{43})$/)?.[1];
+  const invitation = path.match(/^\/invite\/([A-Za-z0-9_-]{43})$/)?.[1];
+  const query = new URLSearchParams();
+  if (invitation) query.set("invitation", invitation);
+  if (["/host-signup", "/host-recovery"].includes(path))
+    query.set("sessionOnly", "1");
+  const url = event
+    ? "/api/public/events/" + event
+    : "/api/startup" + (query.size ? "?" + query : "");
+  const response = fetch(url, { credentials: "same-origin" });
+  // Store the original promise so the app handles failures through its usual UI.
+  response.catch(() => {});
+  startupRead = { url, response };
+}
+export function takeStartupRequest(url) {
+  if (startupRead?.url !== url) return;
+  const { response } = startupRead;
+  startupRead = null;
+  return response;
+}
+
 // /signin uses this small entry instead of loading the complete application at
 // every browser-bound transfer hop. Ordinary pages retain parallel entry loading.
 if (document.querySelector("script[data-gather-transfer]")) {
@@ -107,6 +131,7 @@ if (document.querySelector("script[data-gather-transfer]")) {
       // The full shared UI provides existing recovery/sign-in errors. Keep the
       // fragment only in module memory so authorization can resume after sign-in.
     }
+    startStartupRead();
     await import("/app.js");
   };
   start().catch(() => {
@@ -115,4 +140,4 @@ if (document.querySelector("script[data-gather-transfer]")) {
       status.textContent =
         "Couldn’t open this page. Please reload and try again.";
   });
-}
+} else startStartupRead();

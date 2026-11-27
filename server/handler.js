@@ -32,7 +32,7 @@ import {
   centralMembershipAPI,
   centralMemberForActor,
 } from "./central-membership.js";
-import { handoffAPI } from "./auth-handoff.js";
+import { accountHome, handoffAPI } from "./auth-handoff.js";
 import {
   publicInvitationsAPI,
   publicEventReference,
@@ -41,6 +41,7 @@ import { rsvpCardsAPI } from "./rsvp-cards.js";
 import { gatherAppAPI } from "./gather-app.js";
 import {
   passwordlessAPI,
+  passwordlessConfiguration,
   validPasswordlessSession,
   passwordlessEnabled,
   universalEnabled,
@@ -541,18 +542,26 @@ export function createHandler({
           410,
           "Guest sign-in is retired. Open the event link shared by your host.",
         );
+      const authConfiguration = () =>
+        replacement
+          ? {
+              enabled: false,
+              universal: false,
+              firebase: null,
+              hostOnly: true,
+              hostAuth: hostAuthConfiguration(
+                env,
+                origin,
+                hostVerificationSender,
+              ),
+            }
+          : passwordlessConfiguration(env, origin);
       if (
         replacement &&
         path === "/api/passwordless/config" &&
         method === "GET"
       ) {
-        json(res, {
-          enabled: false,
-          universal: false,
-          firebase: null,
-          hostOnly: true,
-          hostAuth: hostAuthConfiguration(env, origin, hostVerificationSender),
-        });
+        json(res, authConfiguration());
         return;
       }
       if (replacement && path === "/api/host-auth/config" && method === "GET") {
@@ -580,6 +589,28 @@ export function createHandler({
             ? "active"
             : "pending",
       });
+      const startup = path === "/api/startup" && method === "GET";
+      const invitation =
+        startup && replacement && url.searchParams.get("invitation");
+      const setupStatus = () => {
+        const required = !selected && !store.adminSetupComplete();
+        return {
+          required,
+          enabled:
+            required &&
+            typeof setupSecret === "string" &&
+            setupSecret.length >= 32 &&
+            setupSecret.length <= 256,
+        };
+      };
+      const publicHousehold = (platformUI) =>
+        selected
+          ? {
+              ...selected,
+              defaults: platformUI.design,
+              ui: effectiveUI(store, store.household(selected.id)),
+            }
+          : null;
       if (selected && (path === "/setup" || path === "/api/setup")) {
         if (method === "GET" && path === "/api/setup") {
           json(res, { required: false, enabled: false });
@@ -691,14 +722,32 @@ export function createHandler({
         json(res, importAnyList(store, env, await body(req), guestInput));
         return;
       }
+      if (invitation) {
+        if (!/^[A-Za-z0-9_-]{43}$/.test(invitation))
+          fail(404, "Event unavailable.");
+        await publicInvitationsAPI({
+          path: "/api/public/invitations/" + invitation,
+          method,
+          req,
+          res,
+          store,
+          env,
+          selected,
+          body,
+          json,
+          includeEvent: true,
+        });
+        return;
+      }
+      const setup = startup || path === "/api/setup" ? setupStatus() : null;
+      if (startup && setup.required) {
+        json(res, { setup });
+        return;
+      }
       if (path === "/api/setup") {
-        const required = !store.adminSetupComplete();
-        const enabled =
-          typeof setupSecret === "string" &&
-          setupSecret.length >= 32 &&
-          setupSecret.length <= 256;
+        const { required, enabled } = setup;
         if (method === "GET") {
-          json(res, { required, enabled: required && enabled });
+          json(res, setup);
           return;
         }
         if (method === "POST") {
@@ -907,6 +956,125 @@ export function createHandler({
           10,
         );
       };
+      const hostSnapshot = () => {
+        requireRole("host");
+        const household = session.household;
+        const house = store.household(household);
+        return {
+          household: presentHousehold(house),
+          personal:
+            session.role === "host"
+              ? replacement
+                ? hostRosterProjection(store, session)
+                : accountProjection(store, session)
+              : null,
+          receivedEvents:
+            session.role === "host" &&
+            !replacement &&
+            !isolatedAddressBook(store, household)
+              ? invitationsForIdentity(
+                  store,
+                  privateIdentity(store, session),
+                ).events.filter((e) => e.invitingHousehold?.slug !== house.slug)
+              : [],
+          guests: store
+            .list("guest", household)
+            .map((g) => guestContact(store, g, household)),
+          hostFamily: hostFamilyMembers(store, household),
+          integrations: integrationCapabilities(store, env, household),
+          savedMenu: store.list("menu-saved", household),
+          tableTemplates: store.list("table-template", household),
+          addresses: store.list("address", household),
+          events: store.list("event", household).map((e) => {
+            const family = store.hostFamilyEvent(e, household);
+            return {
+              ...e,
+              ...(replacement
+                ? {
+                    extraPages: eventPages(store, e, household).map(
+                      pageMetadata,
+                    ),
+                  }
+                : {}),
+              members: family.members,
+              response: family.response,
+              menu: family.menu,
+              totals: family.totals,
+              ui: effectiveUI(store, house, e),
+            };
+          }),
+          templates: store.list("template", "platform"),
+          defaults: effectiveUI(store).design,
+          ui: effectiveUI(store, house),
+        };
+      };
+      const sessionSnapshot = () =>
+        session
+          ? {
+              adminStepUpAvailable:
+                adminSessionRestricted(store, session) &&
+                platformAdministrator(store, {
+                  ...session,
+                  token: undefined,
+                }),
+              passwordless: !!store.get(
+                "passwordless-session",
+                session.token,
+                "platform",
+              ),
+              role:
+                session.role === "admin" &&
+                adminSessionRestricted(store, session)
+                  ? "admin-pending"
+                  : !replacement && ["host", "family"].includes(session.role)
+                    ? manager(familyMember(store, session))
+                      ? "host"
+                      : "family"
+                    : session.role,
+              platformAdmin: platformAdministrator(store, session),
+              householdRole: ["host", "family"].includes(session.role)
+                ? familyMember(store, session).role
+                : null,
+              household: session.household
+                ? session.role === "guest"
+                  ? store.publicHousehold(
+                      guestBrandHousehold(store, session).slug,
+                    )
+                  : ["host", "family"].includes(session.role) &&
+                      !manager(familyMember(store, session))
+                    ? store.publicHousehold(
+                        store.household(session.household).slug,
+                      )
+                    : presentHousehold(store.household(session.household))
+                : null,
+            }
+          : { role: null };
+      if (startup) {
+        const current = sessionSnapshot();
+        const home =
+          replacement &&
+          current.role === "host" &&
+          current.passwordless &&
+          url.searchParams.get("home") === "1"
+            ? accountHome(store, session, householdHosts, origin)
+            : null;
+        if (home && home !== origin) {
+          json(res, { setup, config: authConfiguration(), home });
+          return;
+        }
+        const ui = effectiveUI(store);
+        json(res, {
+          setup,
+          config: authConfiguration(),
+          session: current,
+          ui,
+          household: publicHousehold(ui),
+          ...(current.role === "host" && !url.searchParams.has("sessionOnly")
+            ? { host: hostSnapshot() }
+            : {}),
+        });
+        return;
+      }
       if (
         replacement &&
         ["/api/sign-in", "/api/login"].includes(path) &&
@@ -1576,49 +1744,7 @@ export function createHandler({
       )
         return;
       if (path === "/api/session" && method === "GET") {
-        json(
-          res,
-          session
-            ? {
-                adminStepUpAvailable:
-                  adminSessionRestricted(store, session) &&
-                  platformAdministrator(store, {
-                    ...session,
-                    token: undefined,
-                  }),
-                passwordless: !!store.get(
-                  "passwordless-session",
-                  session.token,
-                  "platform",
-                ),
-                role:
-                  session.role === "admin" &&
-                  adminSessionRestricted(store, session)
-                    ? "admin-pending"
-                    : !replacement && ["host", "family"].includes(session.role)
-                      ? manager(familyMember(store, session))
-                        ? "host"
-                        : "family"
-                      : session.role,
-                platformAdmin: platformAdministrator(store, session),
-                householdRole: ["host", "family"].includes(session.role)
-                  ? familyMember(store, session).role
-                  : null,
-                household: session.household
-                  ? session.role === "guest"
-                    ? store.publicHousehold(
-                        guestBrandHousehold(store, session).slug,
-                      )
-                    : ["host", "family"].includes(session.role) &&
-                        !manager(familyMember(store, session))
-                      ? store.publicHousehold(
-                          store.household(session.household).slug,
-                        )
-                      : presentHousehold(store.household(session.household))
-                  : null,
-              }
-            : { role: null },
-        );
+        json(res, sessionSnapshot());
         return;
       }
       if (path === "/api/register" && method === "POST") {
@@ -1682,13 +1808,7 @@ export function createHandler({
       }
       if (path === "/api/public/context" && method === "GET") {
         json(res, {
-          household: selected
-            ? {
-                ...selected,
-                defaults: effectiveUI(store).design,
-                ui: effectiveUI(store, store.household(selected.id)),
-              }
-            : null,
+          household: selected ? publicHousehold(effectiveUI(store)) : null,
         });
         return;
       }
@@ -1873,63 +1993,13 @@ export function createHandler({
         json(res, store.list("template", "platform"));
         return;
       }
+      if (path === "/api/host" && method === "GET") {
+        json(res, hostSnapshot());
+        return;
+      }
       if (path.startsWith("/api/host")) {
         requireRole("host");
         const household = session.household;
-        if (path === "/api/host" && method === "GET") {
-          json(res, {
-            household: presentHousehold(store.household(household)),
-            personal:
-              session.role === "host"
-                ? replacement
-                  ? hostRosterProjection(store, session)
-                  : accountProjection(store, session)
-                : null,
-            receivedEvents:
-              session.role === "host" &&
-              !replacement &&
-              !isolatedAddressBook(store, household)
-                ? invitationsForIdentity(
-                    store,
-                    privateIdentity(store, session),
-                  ).events.filter(
-                    (e) =>
-                      e.invitingHousehold?.slug !==
-                      store.household(household).slug,
-                  )
-                : [],
-            guests: store
-              .list("guest", household)
-              .map((g) => guestContact(store, g, household)),
-            hostFamily: hostFamilyMembers(store, household),
-            integrations: integrationCapabilities(store, env, household),
-            savedMenu: store.list("menu-saved", household),
-            tableTemplates: store.list("table-template", household),
-            addresses: store.list("address", household),
-            events: store.list("event", household).map((e) => {
-              const family = store.hostFamilyEvent(e, household);
-              return {
-                ...e,
-                ...(replacement
-                  ? {
-                      extraPages: eventPages(store, e, household).map(
-                        pageMetadata,
-                      ),
-                    }
-                  : {}),
-                members: family.members,
-                response: family.response,
-                menu: family.menu,
-                totals: family.totals,
-                ui: effectiveUI(store, store.household(household), e),
-              };
-            }),
-            templates: store.list("template", "platform"),
-            defaults: effectiveUI(store).design,
-            ui: effectiveUI(store, store.household(household)),
-          });
-          return;
-        }
         if (
           path === "/api/host/integrations/anylist" &&
           ["GET", "POST"].includes(method)
@@ -2235,7 +2305,7 @@ export function createHandler({
               suffix: guest.suffix,
             },
             events: view.events,
-            personal: accountProjection(store, session),
+            personal: central,
             defaults: effectiveUI(store).design,
             ui: entry
               ? effectiveUI(store, store.household(entry))

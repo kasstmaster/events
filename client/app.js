@@ -1,3 +1,4 @@
+import { takeStartupRequest } from "/auth-bootstrap.js";
 import { weddingImportUI } from "/wedding-import-ui.js";
 import { eventPagesUI } from "/event-pages-ui.js";
 import { recipientManagementUI } from "/recipient-management-ui.js";
@@ -105,15 +106,16 @@ const notify = (message) => {
   noticeTimer = setTimeout(() => ($("#notice").textContent = ""), 6000);
 };
 async function api(path, { method = "GET", data, version } = {}) {
-  const response = await fetch(path, {
-    method,
-    credentials: "same-origin",
-    headers: {
-      ...(data ? { "Content-Type": "application/json" } : {}),
-      ...(version !== undefined ? { "If-Match": String(version) } : {}),
-    },
-    body: data ? JSON.stringify(data) : undefined,
-  });
+  const response = await ((method === "GET" && takeStartupRequest(path)) ||
+    fetch(path, {
+      method,
+      credentials: "same-origin",
+      headers: {
+        ...(data ? { "Content-Type": "application/json" } : {}),
+        ...(version !== undefined ? { "If-Match": String(version) } : {}),
+      },
+      body: data ? JSON.stringify(data) : undefined,
+    }));
   const result = await response.json();
   if (!response.ok) {
     const error = new Error(String(C(result.error || "Unable to save.")));
@@ -300,45 +302,69 @@ function renderRefresh(preserveScroll) {
   render();
   if (position) window.scrollTo({ ...position, behavior: "instant" });
 }
-async function load({ background = false } = {}) {
+async function load({ background = false, routeHome = false } = {}) {
   if (background && isEditing()) return;
   const generation = ++loadGeneration;
+  const current = () =>
+    generation === loadGeneration && !(background && isEditing());
   try {
     let publicReference = location.pathname.match(
       /^\/event\/([A-Za-z0-9_-]{43})$/,
     )?.[1];
-    // A direct invitation is public and never needs the administrator setup gate.
-    const setupRequest = publicReference ? null : api("/api/setup");
-    // Only plain Home may read the session early: link redemption/handoffs must
-    // finish before reading their newly issued session on the sign-in routes.
-    const homeRequests =
-      !background && location.pathname === "/"
-        ? Promise.all([
-            api("/api/public/context"),
-            api("/api/interface"),
-            api("/api/session"),
-          ]).then(
-            (data) => ({ data }),
-            (error) => ({ error }),
-          )
-        : null;
-    let eventRequest = publicReference
-      ? api(`/api/public/events/${publicReference}`).then(
-          (data) => ({ data }),
-          (error) => ({ error }),
-        )
-      : null;
-    const configRequest = publicReference
-      ? null
-      : api("/api/passwordless/config").then(
-          (config) => ({ config }),
-          (error) => ({ error }),
-        );
-    const setup = publicReference ? { required: false } : await setupRequest;
-    state.setup = setup;
-    if (setup.required) {
-      if (generation !== loadGeneration || (background && isEditing())) return;
+    const legacyReference = location.pathname.match(
+      /^\/invite\/([A-Za-z0-9_-]{43})$/,
+    )?.[1];
+    const query = new URLSearchParams();
+    if (legacyReference) query.set("invitation", legacyReference);
+    if (routeHome) query.set("home", "1");
+    if (state.preview || hostAuth.authEntry()) query.set("sessionOnly", "1");
+    const startup = () => api("/api/startup" + (query.size ? "?" + query : ""));
+    let boot = publicReference ? null : await startup();
+    if (!current()) return;
+    if (boot?.event) {
+      publicReference = boot.path.match(/^\/event\/([A-Za-z0-9_-]{43})$/)?.[1];
+      if (!publicReference) throw new Error("This invitation is unavailable.");
+      history.replaceState(null, "", boot.path);
+    }
+    if (publicReference) {
+      const data =
+        boot?.event || (await api(`/api/public/events/${publicReference}`));
+      if (!current()) return;
+      state.visitor =
+        state.visitor?.reference === publicReference
+          ? state.visitor
+          : { reference: publicReference };
+      const alreadyVisible = state.session?.role === "visitor";
+      state.visitor.publicEvent = data.events[0];
+      if (data.hostOnly) {
+        state.hostOnly = true;
+        hostAuth.metadata({ role: "visitor" }, data.household);
+      }
+      const show = () => {
+        if (background && JSON.stringify(data) === JSON.stringify(state.data))
+          return;
+        Object.assign(state, {
+          data,
+          platformUI: data.ui,
+          session: { role: "visitor" },
+          publicHousehold: null,
+          event: data.events[0].id,
+        });
+        renderRefresh(background);
+      };
+      if (!alreadyVisible) show();
+      const adoptPrivatePages = await extraPages.hydrate(data, state.visitor);
+      if (!current()) return;
+      adoptPrivatePages?.();
+      if (alreadyVisible) show();
+      else if (adoptPrivatePages && state.view === "home" && !isEditing())
+        renderRefresh(true);
+      return;
+    }
+    state.setup = boot.setup;
+    if (boot.setup.required) {
       Object.assign(state, {
+        hostOnly: false,
         session: { role: null },
         data: null,
         publicHousehold: null,
@@ -346,69 +372,24 @@ async function load({ background = false } = {}) {
       render();
       return;
     }
-    const configResult = await configRequest;
-    if (configResult?.error) throw configResult.error;
-    const passwordlessConfig = configResult?.config;
-    const legacyReference = location.pathname.match(
-      /^\/invite\/([A-Za-z0-9_-]{43})$/,
-    )?.[1];
-    if (passwordlessConfig?.hostOnly && legacyReference) {
-      const direct = await api(`/api/public/invitations/${legacyReference}`);
-      if (generation !== loadGeneration) return;
-      publicReference = direct.path.match(
-        /^\/event\/([A-Za-z0-9_-]{43})$/,
-      )?.[1];
-      if (!publicReference) throw new Error("This invitation is unavailable.");
-      history.replaceState(null, "", direct.path);
-      eventRequest = api(`/api/public/events/${publicReference}`).then(
-        (data) => ({ data }),
-        (error) => ({ error }),
-      );
-    }
-    if (publicReference) {
-      const { data, error } = await eventRequest;
-      if (error) throw error;
-      if (generation !== loadGeneration || (background && isEditing())) return;
-      state.visitor =
-        state.visitor?.reference === publicReference
-          ? state.visitor
-          : { reference: publicReference };
-      await extraPages.hydrate(data, publicReference);
-      if (generation !== loadGeneration || (background && isEditing())) return;
-      if (background && JSON.stringify(data) === JSON.stringify(state.data))
-        return;
-      if (data.hostOnly) {
-        state.hostOnly = true;
-        hostAuth.metadata({ role: "visitor" }, data.household);
-      }
-      state.platformUI = data.ui;
-      Object.assign(state, {
-        data,
-        session: { role: "visitor" },
-        publicHousehold: null,
-        event: data.events[0].id,
-      });
-      renderRefresh(background);
-      return;
-    }
+    const passwordlessConfig = boot.config;
     state.hostOnly = passwordlessConfig.hostOnly === true;
-    if (
-      state.hostOnly &&
-      !background &&
-      (await hostAuth.route(() => api("/api/session")))
-    )
-      return;
-    // Legacy sign-in initialization can redeem a link and set the session.
-    if (!state.hostOnly) await passwordless.initialize(passwordlessConfig);
-    const homeResult = homeRequests ? await homeRequests : null;
-    if (homeResult?.error) throw homeResult.error;
-    const [context, platform, session] = await Promise.all([
-      homeResult ? homeResult.data[0] : api("/api/public/context"),
-      homeResult ? homeResult.data[1] : api("/api/interface"),
-      homeResult ? homeResult.data[2] : api("/api/session"),
-      state.hostOnly ? hostAuth.initialize(passwordlessConfig.hostAuth) : null,
-    ]);
-    state.platformUI = platform.ui;
+    if (state.hostOnly) {
+      if (boot.home && hostAuth.navigateHome(boot.home)) return;
+      if (!background) {
+        const route = await hostAuth.route(boot.session);
+        if (route === "redirect") return;
+        if (route === "redeemed") boot = await startup();
+      }
+      await hostAuth.initialize(passwordlessConfig.hostAuth);
+    } else {
+      const route = await passwordless.initialize(passwordlessConfig);
+      if (route === "redirect") return;
+      if (route === "redeemed") boot = await startup();
+    }
+    if (!current()) return;
+    const { session, ui: platformUI } = boot;
+    state.platformUI = platformUI;
     if (session.role !== "admin" && !session.platformAdmin) {
       state.adminMode = false;
       if (state.view.startsWith("admin-") && state.view !== "host-admin-stepup")
@@ -454,7 +435,7 @@ async function load({ background = false } = {}) {
     }
     let data = null,
       templates = [],
-      publicHousehold = context.household;
+      publicHousehold = boot.household;
     if (
       !session.role &&
       passwordlessConfig.universal &&
@@ -496,13 +477,14 @@ async function load({ background = false } = {}) {
       return;
     if (session.role) {
       const [accountData, adminData] = await Promise.all([
-        api(
-          session.role === "admin-pending"
-            ? "/api/passwordless/security"
-            : session.role === "admin"
-              ? "/api/admin"
-              : `/api/${session.role}`,
-        ),
+        boot.host ||
+          api(
+            session.role === "admin-pending"
+              ? "/api/passwordless/security"
+              : session.role === "admin"
+                ? "/api/admin"
+                : `/api/${session.role}`,
+          ),
         session.role === "host" &&
         session.platformAdmin &&
         (state.adminMode ||
@@ -520,8 +502,7 @@ async function load({ background = false } = {}) {
           legacyAdministrators: admin.legacyAdministrators,
         });
       }
-      if (session.role === "guest") templates = await api("/api/templates");
-      else if (session.role === "host") templates = data.templates;
+      if (session.role === "host") templates = data.templates;
     }
     const familyData =
       session.role === "family"
@@ -574,6 +555,7 @@ async function load({ background = false } = {}) {
       data,
       templates,
       publicHousehold,
+      entryHousehold: boot.household,
       lastSync: new Date(),
     });
     if (!background && state.passwordless?.universal)
@@ -3192,12 +3174,6 @@ document.addEventListener("click", async (event) => {
       render();
       return;
     }
-    if (
-      action === "home" &&
-      state.session?.passwordless &&
-      (state.hostOnly ? await hostAuth.goHome() : await passwordless.goHome())
-    )
-      return;
     if (action === "home") {
       resetContactInvites();
       closeModal();
@@ -3207,7 +3183,6 @@ document.addEventListener("click", async (event) => {
       family.reset();
       state.view = "home";
       render();
-      await load({ background: true });
       return;
     }
     if (action === "recipient-sign-out") {
@@ -3217,7 +3192,14 @@ document.addEventListener("click", async (event) => {
         method: "DELETE",
         data: { grant },
       });
-      window.location.reload();
+      ++loadGeneration;
+      const { publicEvent } = state.visitor;
+      state.visitor = { reference, publicEvent };
+      state.data.events = [publicEvent];
+      state.editingResponse = null;
+      state.rsvpMarkup = "";
+      state.view = "home";
+      render();
       return;
     }
     if (action === "logout") {
@@ -3229,8 +3211,29 @@ document.addEventListener("click", async (event) => {
       closeModal();
       state.event = null;
       state.view = "home";
-      state.publicHousehold = null;
-      await load();
+      ++loadGeneration;
+      Object.assign(state, {
+        session: { role: null },
+        data: null,
+        templates: [],
+        publicHousehold: state.entryHousehold,
+        familyData: null,
+        hostAccount: null,
+        adminMode: false,
+      });
+      if (state.hostOnly)
+        hostAuth.metadata(state.session, state.publicHousehold);
+      if (!state.hostOnly) {
+        if (location.pathname !== "/") {
+          await load();
+          return;
+        }
+        if (
+          await passwordless.routeSignIn(state.session, state.publicHousehold)
+        )
+          return;
+      }
+      render();
       return;
     }
     if (action === "open-event") {

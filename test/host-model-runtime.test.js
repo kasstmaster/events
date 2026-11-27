@@ -66,6 +66,11 @@ test(
         },
         body: data ? JSON.stringify(data) : undefined,
       });
+    const beforeSetup = await call("/api/startup");
+    assert.equal(beforeSetup.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await beforeSetup.json(), {
+      setup: { required: true, enabled: true },
+    });
     const created = await call("/api/setup", {
       token: "synthetic-native-setup-token-with-more-than-32-characters",
       email: "admin@example.test",
@@ -75,6 +80,12 @@ test(
     assert.equal(created.status, 201);
     const cookie = created.headers.get("set-cookie").split(";")[0];
     assert.ok(cookie.startsWith("__Host-events_session="));
+    const startup = await (await call("/api/startup", null, cookie)).json();
+    assert.equal(startup.session.role, "admin");
+    assert.equal(startup.host, undefined);
+    const anonymous = await (await call("/api/startup")).json();
+    assert.deepEqual(anonymous.session, { role: null });
+    assert.equal(anonymous.host, undefined);
     const invite = await call(
       "/api/admin/host-signup-invitations",
       { email: "synthetic@example.test", password },

@@ -140,6 +140,18 @@ function partyView(store, event, household, subject) {
     partyVersions: party.partyVersions,
   };
 }
+function eventSnapshot(store, env, event, household) {
+  return {
+    hostOnly: hostOnlyMode(env),
+    household: {
+      name: household.name,
+      slug: household.slug,
+      logo: household.logo,
+    },
+    ui: effectiveUI(store, household),
+    events: [publicEventView(store, event, household)],
+  };
+}
 export async function publicInvitationsAPI(ctx) {
   const {
     path,
@@ -167,7 +179,19 @@ export async function publicInvitationsAPI(ctx) {
     )
       unavailable();
     const reference = publicEventReference(store, ref.household, ref.event);
-    json(res, { path: `/event/${reference}` });
+    const destination = `/event/${reference}`;
+    if (ctx.includeEvent) {
+      store.limit(`public-invitation:${req.socket.remoteAddress}`, 100, 60000);
+      const { event, household } = resolvePublicEvent(
+        store,
+        reference,
+        selected,
+      );
+      json(res, {
+        path: destination,
+        event: eventSnapshot(store, env, event, household),
+      });
+    } else json(res, { path: destination });
     return true;
   }
   const host = path.match(
@@ -214,16 +238,7 @@ export async function publicInvitationsAPI(ctx) {
   if (hostOnlyMode(env) && !isolatedAddressBook(store, link.household))
     unavailable();
   if (!visitor[2] && method === "GET") {
-    json(res, {
-      hostOnly: hostOnlyMode(env),
-      household: {
-        name: household.name,
-        slug: household.slug,
-        logo: household.logo,
-      },
-      ui: effectiveUI(store, household),
-      events: [publicEventView(store, event, household)],
-    });
+    json(res, eventSnapshot(store, env, event, household));
     return true;
   }
   if (visitor[2] === "access" && method === "POST") {

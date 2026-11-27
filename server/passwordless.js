@@ -531,6 +531,17 @@ export function completePasswordless(
     return { session, entry: row.entry, invitation: row.invitation };
   });
 }
+export function passwordlessConfiguration(env, origin) {
+  return {
+    enabled: passwordlessEnabled(env),
+    firebase: origin === GATHER_ORIGIN ? firebaseConfig(env) : null,
+    firebaseEnabled: firebaseEnabled(env),
+    firebaseOrigin: GATHER_ORIGIN,
+    enrollmentAvailable: true,
+    universal: universalEnabled(env),
+    pwa: universalEnabled(env) && env.GATHER_PWA_ENABLED === "true",
+  };
+}
 export async function passwordlessAPI(ctx) {
   const {
     path,
@@ -555,15 +566,7 @@ export async function passwordlessAPI(ctx) {
   )
     return false;
   if (path === "/api/passwordless/config" && method === "GET") {
-    json(res, {
-      enabled: passwordlessEnabled(env),
-      firebase: origin === GATHER_ORIGIN ? firebaseConfig(env) : null,
-      firebaseEnabled: firebaseEnabled(env),
-      firebaseOrigin: GATHER_ORIGIN,
-      enrollmentAvailable: true,
-      universal: universalEnabled(env),
-      pwa: universalEnabled(env) && env.GATHER_PWA_ENABLED === "true",
-    });
+    json(res, passwordlessConfiguration(env, origin));
     return true;
   }
   const existingDevice =

@@ -50,26 +50,31 @@ export function hostAuthUI({
   });
   let config = {},
     invitationContext = null,
-    hostPWA = false;
+    invitationRead,
+    hostPWA;
 
   const central = () => config.centralOrigin || "https://gather.ilymmd.com";
   let firebaseClient, firebasePendingRegistration;
   async function firebase() {
     if (!config.firebase || location.origin !== central())
       throw Error("Use the shared Gather host sign-in page.");
-    if (firebaseClient) return firebaseClient;
-    const [app, sdk] = await Promise.all([
-      import("https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js"),
-      import("https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js"),
-    ]);
-    const application =
-      app.getApps().find((a) => a.name === "gather-host") ||
-      app.initializeApp(config.firebase, "gather-host");
-    const auth = sdk.getAuth(application);
-    // The durable Gather session is HttpOnly; do not save Firebase credentials
-    // in local storage or expose them to guest event pages.
-    await sdk.setPersistence(auth, sdk.inMemoryPersistence);
-    firebaseClient = { auth, sdk };
+    const settings = config.firebase;
+    firebaseClient ||= (async () => {
+      const [app, sdk] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js"),
+      ]);
+      const application =
+        app.getApps().find((a) => a.name === "gather-host") ||
+        app.initializeApp(settings, "gather-host");
+      const auth = sdk.getAuth(application);
+      // The durable Gather session is HttpOnly; keep Firebase state in memory.
+      await sdk.setPersistence(auth, sdk.inMemoryPersistence);
+      return { auth, sdk };
+    })().catch((error) => {
+      firebaseClient = null;
+      throw error;
+    });
     return firebaseClient;
   }
   async function firebaseSignIn(
@@ -126,7 +131,6 @@ export function hostAuthUI({
         );
       }
     }
-    await sdk.reload(auth.currentUser);
     if (!auth.currentUser.emailVerified) {
       if (intent === "signup")
         await sdk.sendEmailVerification(auth.currentUser);
@@ -139,7 +143,7 @@ export function hostAuthUI({
     }
     const data = {
       intent,
-      idToken: await auth.currentUser.getIdToken(true),
+      idToken: await auth.currentUser.getIdToken(),
       ...(intent === "signup" ? { ...values, invite } : {}),
       ...(intent === "connect"
         ? { currentPassword: values.currentPassword }
@@ -149,7 +153,6 @@ export function hostAuthUI({
     await api("/api/host-auth/firebase", { method: "POST", data });
     await sdk.signOut(auth);
     firebasePendingRegistration = null;
-    history.replaceState(null, "", "/");
     await finishSignIn("host");
     return true;
   }
@@ -157,13 +160,10 @@ export function hostAuthUI({
     screen = "login";
     history.replaceState(null, "", "/");
     state.view = "home";
-    if (!request && role === "host" && (await goHome({ role }))) return;
-    await load();
+    await load({ routeHome: !request && role === "host" });
   }
-  async function goHome(session = state.session) {
-    if (session?.role !== "host") return false;
-    const result = await api("/api/host-auth/home");
-    const target = new URL(result.home);
+  function navigateHome(home) {
+    const target = new URL(home);
     if (target.origin === location.origin) return false;
     location.replace(
       target.origin +
@@ -171,18 +171,6 @@ export function hostAuthUI({
         encodeURIComponent(location.origin),
     );
     return true;
-  }
-  async function hostFirebaseGoHome() {
-    if (!request && state.session?.role === "host") {
-      const result = await api("/api/host-auth/home");
-      const destination = new URL(result.home);
-      if (destination.origin !== location.origin)
-        location.replace(
-          destination.origin +
-            "/signin#host-transfer-start=" +
-            encodeURIComponent(location.origin),
-        );
-    }
   }
 
   async function navigateTransfer(data) {
@@ -194,6 +182,7 @@ export function hostAuthUI({
   }
   return {
     metadata(session, household) {
+      const previous = hostPWA;
       hostPWA = session?.role === "host";
       let favicon = document.querySelector(
         'link[rel="icon"][data-gather-host]',
@@ -204,17 +193,20 @@ export function hostAuthUI({
         favicon.dataset.gatherHost = "true";
         document.head.append(favicon);
       }
-      favicon.href = household?.logo || "/gather-192.png";
+      const icon = household?.logo || "/gather-192.png";
+      if (favicon.getAttribute("href") !== icon) favicon.href = icon;
       let manifest = document.querySelector('link[rel="manifest"]');
-      if (session?.role === "host") {
+      if (hostPWA) {
         if (!manifest) {
           manifest = document.createElement("link");
           manifest.rel = "manifest";
           document.head.append(manifest);
         }
-        manifest.href = "/api/app/manifest?v=" + (household?.version || 0);
-        navigator.serviceWorker?.register("/gather-sw.js").catch(() => {});
-      } else {
+        const href = "/api/app/manifest?v=" + (household?.version || 0);
+        if (manifest.getAttribute("href") !== href) manifest.href = href;
+        if (!previous)
+          navigator.serviceWorker?.register("/gather-sw.js").catch(() => {});
+      } else if (previous !== false) {
         manifest?.remove();
         navigator.serviceWorker
           ?.getRegistrations()
@@ -245,26 +237,36 @@ export function hostAuthUI({
     authEntry: () =>
       ["/host-signup", "/host-recovery"].includes(location.pathname),
     async initialize(initialConfig) {
-      config = initialConfig || (await api("/api/host-auth/config"));
-      if (invite && screen === "signup") {
-        try {
-          invitationContext = await api("/api/host-signup/context", {
+      config = initialConfig;
+      if (!invite || screen !== "signup") return;
+      const current = invite;
+      if (invitationRead?.invite !== current) {
+        invitationRead = {
+          invite: current,
+          result: api("/api/host-signup/context", {
             method: "POST",
-            data: { invite },
-          });
-        } catch {
-          message = "Registration invitation unavailable or expired.";
-          screen = "login";
-          invite = "";
-        }
+            data: { invite: current },
+          }),
+        };
+      }
+      try {
+        const context = await invitationRead.result;
+        if (invite === current && screen === "signup")
+          invitationContext = context;
+      } catch {
+        if (invite !== current || screen !== "signup") return;
+        message = "Registration invitation unavailable or expired.";
+        screen = "login";
+        invite = "";
+        invitationRead = null;
       }
     },
-    async route(getSession) {
+    async route(session) {
       if (source) {
         const value = source;
         source = "";
         await navigateTransfer({ action: "prepare", input: { source: value } });
-        return true;
+        return "redirect";
       }
       if (transfer) {
         const [reference, token] = transfer.split(".");
@@ -278,28 +280,29 @@ export function hostAuthUI({
           "",
           redeemed.next === "account" ? "/?account=1" : "/",
         );
-        return false;
+        return "redeemed";
       }
-      if (request && (await getSession()).role === "host") {
+      if (request && session?.role === "host") {
         const value = request;
         request = "";
         await navigateTransfer({
           action: "authorize",
           input: { request: value },
         });
-        return true;
+        return "redirect";
       }
       if (
         parameters.get("host") === "complete" &&
         !completed &&
-        (await getSession()).role === "host"
+        session?.role === "host"
       ) {
         completed = true;
-        return this.goHome({ role: "host" });
+        const { home } = await api("/api/host-auth/home");
+        if (navigateHome(home)) return "redirect";
       }
       return false;
     },
-    goHome,
+    navigateHome,
     page() {
       const title =
         screen === "signup"
@@ -383,6 +386,9 @@ export function hostAuthUI({
         return true;
       }
       if (kind === "host-login") {
+        // The SDK download can run during the administrator password check.
+        if (config.firebase && location.origin === central())
+          firebase().catch(() => {});
         let result;
         try {
           result = await api("/api/host-auth/login", {
@@ -453,10 +459,7 @@ export function hostAuthUI({
         });
         verification = "";
         invite = "";
-        history.replaceState(null, "", "/");
-        state.view = "home";
-        await load();
-        await this.goHome();
+        await finishSignIn("host");
       }
       if (config.firebase && kind === "host-recover") {
         const { auth, sdk } = await firebase();
