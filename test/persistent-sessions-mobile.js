@@ -13,17 +13,17 @@ await test(
   "remembered SMS device survives actual browser profile restart and simulated months; Sign Out remains revoked",
   { timeout: 90000 },
   async (t) => {
-    const f = await deviceFixture(t);
-    await f.event(f.host, [], { title: "Remembered event" });
-    const directory = await mkdtemp(join(tmpdir(), "gather-device-browser-"));
-    t.after(() => rm(directory, { recursive: true, force: true }));
-    let context;
+    let context, directory;
     const errors = [];
     const nativeNow = Date.now;
     t.after(async () => {
       Date.now = nativeNow;
       if (context) await context.close();
+      if (directory) await rm(directory, { recursive: true, force: true });
     });
+    const f = await deviceFixture(t);
+    await f.event(f.host, [], { title: "Remembered event" });
+    directory = await mkdtemp(join(tmpdir(), "gather-device-browser-"));
     async function open(width = 390) {
       context = await chromium.launchPersistentContext(directory, {
         headless: true,

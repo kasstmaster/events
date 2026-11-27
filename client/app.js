@@ -1,4 +1,4 @@
-import { takeStartupRequest } from "/auth-bootstrap.js";
+import { startupRoute, takeStartupRequest } from "/auth-bootstrap.js";
 import { weddingImportUI } from "/wedding-import-ui.js";
 import { eventPagesUI } from "/event-pages-ui.js";
 import { recipientManagementUI } from "/recipient-management-ui.js";
@@ -17,7 +17,6 @@ import {
   readInformation,
   bindInformationEditor,
 } from "/event-information.js";
-import { appearanceEditor } from "/appearance-editor.js";
 import {
   bindBrowseMenus,
   addressBookDescription,
@@ -36,7 +35,6 @@ import { addressPicker } from "/address-picker.js";
 import { exampleState, annotateExample } from "/default-examples.js";
 import { familyTools } from "/family-ui.js";
 import { ui, M, C, H, configureCopy } from "/ui-runtime.js";
-import { featureTools } from "/editor-tools.js";
 import {
   resolveUI,
   order,
@@ -298,23 +296,50 @@ function renderRefresh(preserveScroll) {
   render();
   if (position) window.scrollTo({ ...position, behavior: "instant" });
 }
+// Workspace data is scoped to the validated Home snapshot that requested it.
+let workspaceRead;
+async function ensureWorkspace() {
+  const snapshot = state.data;
+  if (
+    !state.hostOnly ||
+    state.session?.role !== "host" ||
+    Object.hasOwn(snapshot, "guests")
+  )
+    return true;
+  if (workspaceRead?.snapshot !== snapshot) {
+    const request = { snapshot, result: api("/api/host/workspace") };
+    workspaceRead = request;
+    request.result
+      .finally(() => {
+        if (workspaceRead === request) workspaceRead = null;
+      })
+      .catch(() => {});
+  }
+  const workspace = await workspaceRead.result;
+  if (state.data !== snapshot) return false;
+  Object.assign(snapshot, workspace);
+  state.templates = workspace.templates;
+  return true;
+}
+
 async function load({ background = false, routeHome = false } = {}) {
   if (background && isEditing()) return;
   const generation = ++loadGeneration;
   const current = () =>
     generation === loadGeneration && !(background && isEditing());
   try {
-    let publicReference = location.pathname.match(
-      /^\/event\/([A-Za-z0-9_-]{43})$/,
-    )?.[1];
-    const legacyReference = location.pathname.match(
-      /^\/invite\/([A-Za-z0-9_-]{43})$/,
-    )?.[1];
-    const query = new URLSearchParams();
-    if (legacyReference) query.set("invitation", legacyReference);
-    if (routeHome) query.set("home", "1");
-    if (state.preview || hostAuth.authEntry()) query.set("sessionOnly", "1");
-    const startup = () => api("/api/startup" + (query.size ? "?" + query : ""));
+    const route = startupRoute(location.pathname, {
+      home: routeHome,
+      sessionOnly: !!state.preview,
+      workspace:
+        state.hostOnly &&
+        state.session?.role === "host" &&
+        (state.view !== "home" ||
+          state.settingsOpen ||
+          (!background && Object.hasOwn(state.data || {}, "guests"))),
+    });
+    let { publicReference } = route;
+    const startup = () => api(route.url);
     let boot = publicReference ? null : await startup();
     if (!current()) return;
     if (boot?.event) {
@@ -498,7 +523,34 @@ async function load({ background = false, routeHome = false } = {}) {
           legacyAdministrators: admin.legacyAdministrators,
         });
       }
-      if (session.role === "host") templates = data.templates;
+      if (session.role === "host") templates = data.templates || [];
+    }
+    // Home refreshes request only essential host data. Carry workspace records
+    // forward within the same validated session instead of discarding them and
+    // forcing a second request or full-page redraw after a prior Address Book visit.
+    if (
+      background &&
+      state.hostOnly &&
+      session.role === "host" &&
+      state.session?.role === session.role &&
+      state.session?.user === session.user &&
+      state.session?.household?.id === session.household?.id &&
+      state.data &&
+      Object.hasOwn(state.data, "guests") &&
+      data &&
+      !Object.hasOwn(data, "guests")
+    ) {
+      for (const key of [
+        "personal",
+        "guests",
+        "hostFamily",
+        "savedMenu",
+        "tableTemplates",
+        "addresses",
+        "templates",
+      ])
+        if (Object.hasOwn(state.data, key)) data[key] = state.data[key];
+      templates = state.templates;
     }
     const familyData =
       session.role === "family"
@@ -512,6 +564,11 @@ async function load({ background = false, routeHome = false } = {}) {
     // Never adopt newer versions behind an older unsaved form.
     if (generation !== loadGeneration || (background && isEditing())) return;
     const preserveScroll = background && state.session?.role === session.role;
+    const originalHomeData = state.data;
+    const originalHomeSession = state.session;
+    const originalHomeTemplates = state.templates;
+    const originalHomeFamily = state.familyData;
+    const originalHomeHousehold = state.publicHousehold;
     const previousSync = state.data?.integrations?.anylistStatus;
     const nextSync = data?.integrations?.anylistStatus;
     const syncCompleted =
@@ -534,6 +591,13 @@ async function load({ background = false, routeHome = false } = {}) {
           publicHousehold,
           familyData || state.familyData,
         ]);
+    if (
+      (background && state.hostOnly && !familyData) ||
+      state.session?.role !== session.role ||
+      state.session?.user !== session.user ||
+      state.session?.household?.id !== session.household?.id
+    )
+      state.familyData = null;
     if (familyData) state.familyData = familyData;
     if (
       state.hostOnly &&
@@ -556,7 +620,28 @@ async function load({ background = false, routeHome = false } = {}) {
     });
     if (!background && state.passwordless?.universal)
       await passwordless.resolveInvitation();
-    if (!unchanged) renderRefresh(preserveScroll);
+    // A background update that changes only the event list need not remount
+    // toolbars, Quick Actions, or the rest of Home. Keep active scrolling and
+    // expansion controls intact, and fall back to a full render otherwise.
+    const sameHomeFrame =
+      background &&
+      state.view === "home" &&
+      !state.event &&
+      !state.settingsOpen &&
+      !state.adminMode &&
+      originalHomeData &&
+      originalHomeSession?.role === session.role &&
+      JSON.stringify(originalHomeSession) === JSON.stringify(session) &&
+      JSON.stringify({
+        ...originalHomeData,
+        events: null,
+        receivedEvents: null,
+      }) === JSON.stringify({ ...data, events: null, receivedEvents: null }) &&
+      JSON.stringify(originalHomeTemplates) === JSON.stringify(templates) &&
+      JSON.stringify(originalHomeFamily) === JSON.stringify(state.familyData) &&
+      JSON.stringify(originalHomeHousehold) === JSON.stringify(publicHousehold);
+    if (!unchanged && !(sameHomeFrame && patchHomeCollections()))
+      renderRefresh(preserveScroll);
     else $("#sync-status")?.replaceChildren();
     if (syncCompleted && state.view === "contacts")
       notify(C("Contacts synced."));
@@ -784,6 +869,72 @@ function eventCard(event) {
       button("event-action-" + action, H(label), `data-id="${event.id}"`),
     )
     .join("")}</div></article>`;
+}
+
+// Home's event collection can be updated without replacing the surrounding
+// toolbar, quick actions, focused controls, or scrollable document.
+function homeEventCollections(role, events, receivedEvents = []) {
+  const homeEvents =
+    role === "host"
+      ? events.filter((event) => !eventHasPassed(event))
+      : orderedInvitations(events);
+  const archivedEvents = role === "host" ? events.filter(eventHasPassed) : [];
+  const home =
+    homeEvents.length || archivedEvents.length
+      ? ui`<section class="home-invitations">${role === "host" ? ui`<p class="eyebrow">${C("Your events")}</p>` : ui`<h2 class="invitations-title">${C("You’re invited to gather")}</h2>`}${homeEvents.length ? ui`<section class="grid home-events ${homeEvents.length > 1 ? "multiple-events" : "single-event"}" aria-label="Events">${homeEvents.map(eventCard).join("")}</section>` : ""}${archivedEvents.length ? ui`<details class="panel"><summary>${C("Archived events")}</summary><section class="grid home-events" aria-label="${H("Archived events")}">${archivedEvents.map(eventCard).join("")}</section></details>` : ""}</section>`
+      : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`;
+  const received =
+    role === "host" && receivedEvents.length
+      ? ui`<section class="home-invitations received-invitations"><h2 class="invitations-title">${C("You’re invited to gather")}</h2><section class="grid home-events multiple-events">${orderedInvitations(receivedEvents).map(eventCard).join("")}</section></section>`
+      : "";
+  return { home, received };
+}
+
+function patchHomeCollections() {
+  const main = $("#main");
+  if (!main || !main.querySelector(":scope > .hero")) return false;
+  const role = state.session?.role;
+  if (!state.data?.events || !["host", "guest"].includes(role)) return false;
+  const { home, received } = homeEventCollections(
+    role,
+    state.data.events,
+    state.data.receivedEvents || [],
+  );
+  const previous = main.querySelector(
+    ":scope > .home-invitations:not(.received-invitations), :scope > .panel.empty",
+  );
+  if (!previous) return false;
+  const archivedOpen = previous.querySelector("details")?.open === true;
+  const replacement = document.createRange().createContextualFragment(home);
+  const updated = replacement.firstElementChild;
+  previous.replaceWith(updated);
+  if (archivedOpen) {
+    const archived = updated.querySelector("details");
+    if (archived) archived.open = true;
+  }
+  const oldReceived = main.querySelector(":scope > .received-invitations");
+  if (received) {
+    const replacementReceived = document
+      .createRange()
+      .createContextualFragment(received).firstElementChild;
+    if (oldReceived) oldReceived.replaceWith(replacementReceived);
+    else updated.after(replacementReceived);
+  } else oldReceived?.remove();
+  for (const card of main.querySelectorAll(".home-invitations article.card")) {
+    const key = card.querySelector('[data-action="open-event"]')?.dataset.id;
+    const invitation = [
+      ...state.data.events,
+      ...(state.data.receivedEvents || []),
+    ].find((event) => (event.invitationKey || event.id) === key);
+    if (invitation)
+      applyDesign(
+        invitation.invitingHousehold?.ui?.design ||
+          state.data.ui?.design ||
+          state.data.household.design,
+        card,
+      );
+  }
+  return true;
 }
 
 function eventHasPassed(event) {
@@ -1184,12 +1335,6 @@ function render(target = $("#app"), example = false) {
     if (event) content = eventPage(event);
     else {
       state.event = null;
-      const homeEvents =
-        role === "host"
-          ? state.data.events.filter((event) => !eventHasPassed(event))
-          : orderedInvitations(state.data.events);
-      const archivedEvents =
-        role === "host" ? state.data.events.filter(eventHasPassed) : [];
       content =
         (role === "host"
           ? topbar({
@@ -1206,7 +1351,7 @@ function render(target = $("#app"), example = false) {
                 : [],
             })
           : "") +
-        ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : C("Welcome")}</p><h1>${escape(role === "guest" ? state.data.personal?.person.name || fullName(state.data.guest) : state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? personal.homeActions() : ""}${homeEvents.length || archivedEvents.length ? ui`<section class="home-invitations">${role === "host" ? ui`<p class="eyebrow">${C("Your events")}</p>` : ui`<h2 class="invitations-title">${C("You’re invited to gather")}</h2>`}${homeEvents.length ? ui`<section class="grid home-events ${homeEvents.length > 1 ? "multiple-events" : "single-event"}" aria-label="Events">${homeEvents.map(eventCard).join("")}</section>` : ""}${archivedEvents.length ? ui`<details class="panel"><summary>${C("Archived events")}</summary><section class="grid home-events" aria-label="${H("Archived events")}">${archivedEvents.map(eventCard).join("")}</section></details>` : ""}</section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
+        ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : C("Welcome")}</p><h1>${escape(role === "guest" ? state.data.personal?.person.name || fullName(state.data.guest) : state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? personal.homeActions() : ""}${homeEventCollections(role, state.data.events).home}`;
     }
   }
   if (
@@ -1216,7 +1361,11 @@ function render(target = $("#app"), example = false) {
     !state.adminMode &&
     state.data.receivedEvents?.length
   )
-    content += ui`<section class="home-invitations received-invitations"><h2 class="invitations-title">${C("You’re invited to gather")}</h2><section class="grid home-events multiple-events">${orderedInvitations(state.data.receivedEvents).map(eventCard).join("")}</section></section>`;
+    content += homeEventCollections(
+      role,
+      state.data.events,
+      state.data.receivedEvents,
+    ).received;
   target.innerHTML = ui`<header class="top-shell no-print ${event ? "event-toolbar" : ""}"><div class="top-primary"><a class="brand" href="/" data-action="home">gather<span>＊</span></a>${event ? eventSummary(event) : ""}<div id="top-navigation">${topActions(event)}</div></div><div id="appearance-toolbar"></div></header><main id="main">${content}${role && state.view !== "card-editor" ? '<p id="sync-status" class="connection" role="status" aria-live="polite"></p>' : ""}</main>${role || state.preview ? toolbar(event) : ""}`;
   if (keepGuest)
     target
@@ -2644,6 +2793,22 @@ document.addEventListener("click", async (event) => {
     if (!personal.leave(action, target)) return;
     if (!tools.leaveCard(action)) return;
     if (!leaveEventLayout(target)) return;
+    if (
+      ![
+        "home",
+        "open-event",
+        "logout",
+        "family-workspace",
+        "settings",
+        "reload",
+      ].includes(action) &&
+      state.hostOnly &&
+      state.session?.role === "host" &&
+      !Object.hasOwn(state.data, "guests")
+    ) {
+      const navigation = loadGeneration;
+      if (!(await ensureWorkspace()) || navigation !== loadGeneration) return;
+    }
     if (await appearance.action(action, target)) return;
     if (
       appearance.active() &&
@@ -2782,6 +2947,7 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "admin-approvals" || action === "admin-hosts") {
+      if (action === "admin-hosts") await ensureTools();
       closeModal();
       state.view = action;
       render();
@@ -3138,7 +3304,7 @@ document.addEventListener("click", async (event) => {
       state.event = null;
       state.settingsOpen = false;
       state.editingGuest = null;
-      family.reset();
+      family.reset({ preserveData: state.hostOnly });
       state.view = "home";
       render();
       return;
@@ -3867,19 +4033,41 @@ function measureChrome() {
 }
 window.addEventListener("resize", measureChrome);
 document.fonts?.ready.then(measureChrome);
-const appearance = appearanceEditor({
-  field,
-  select,
-  fileData,
-  notify,
-  apply: applyDesign,
-  mount: () => {
-    const header = document.querySelector(".top-shell");
-    header.classList.add("appearance-active");
-    return header.querySelector("#appearance-toolbar");
-  },
-  measure: measureChrome,
-});
+// Appearance editing is not needed to render or navigate ordinary pages.
+// Preserve the synchronous inactive contract until the editor is requested.
+let appearance = {
+  active: () => false,
+  chrome: () => {},
+  action: async () => false,
+  input: async () => {},
+  leave: async () => true,
+};
+let appearanceRequest;
+async function ensureAppearance() {
+  if (!appearanceRequest)
+    appearanceRequest = import("/appearance-editor.js")
+      .then(({ appearanceEditor }) => {
+        appearance = appearanceEditor({
+          field,
+          select,
+          fileData,
+          notify,
+          apply: applyDesign,
+          mount: () => {
+            const header = document.querySelector(".top-shell");
+            header.classList.add("appearance-active");
+            return header.querySelector("#appearance-toolbar");
+          },
+          measure: measureChrome,
+        });
+        return appearance;
+      })
+      .catch((error) => {
+        appearanceRequest = null;
+        throw error;
+      });
+  return appearanceRequest;
+}
 let appearanceModeSaving = false;
 function settingsAppearanceEvent() {
   return state.settingsEvent
@@ -3973,6 +4161,7 @@ async function startAppearance(scope, globalOptions) {
   const record = event || household;
   const initial =
     globalOptions?.design || event?.ui?.design || state.data.ui.design;
+  await ensureAppearance();
   appearance.start({
     design: initial,
     contentActions: [],
@@ -4168,26 +4357,101 @@ const personal = personalTools({
   load,
 });
 personal.bind();
-const tools = featureTools({
-  openRSVPCards: (event, card) => rsvpCards.open(event, card),
-  state,
-  api,
-  modal,
-  button,
-  field,
-  area,
-  select,
-  escape,
-  notify,
-  saved,
-  load,
-  fileData,
-  selectedEvent,
-  renderDefaultExample,
-  render,
-  startAppearance,
-});
-tools.bind();
+// Card tools are an isolated feature. Do not block first paint by downloading
+// their renderer and editor until a card or advanced administrator action needs it.
+let loadedTools, toolsRequest;
+async function ensureTools() {
+  if (!toolsRequest)
+    toolsRequest = import("/editor-tools.js")
+      .then(({ featureTools }) => {
+        loadedTools = featureTools({
+          openRSVPCards: (event, card) => rsvpCards.open(event, card),
+          state,
+          api,
+          modal,
+          button,
+          field,
+          area,
+          select,
+          escape,
+          notify,
+          saved,
+          load,
+          fileData,
+          selectedEvent,
+          renderDefaultExample,
+          render,
+          startAppearance,
+        });
+        loadedTools.bind();
+        return loadedTools;
+      })
+      .catch((error) => {
+        toolsRequest = null;
+        throw error;
+      });
+  return toolsRequest;
+}
+const toolActions = new Set([
+  "global-defaults",
+  "preview-guest",
+  "host-ui",
+  "exit-preview",
+  "cards",
+  "new-card",
+  "edit-private-template",
+  "edit-card",
+  "use-card-template",
+  "remove-card",
+  "card-tools-toggle",
+  "unused-card-tools-toggle",
+  "card-editor-back",
+  "add-card-variable",
+  "add-qr-text",
+  "add-card-field",
+  "remove-card-field",
+  "download-png",
+  "rsvp-card-open",
+  "download-card",
+  "print-card",
+  "share-card",
+  "email-card",
+  "visual-up",
+  "visual-down",
+  "layout-up",
+  "layout-down",
+  "delete-host",
+  "card-preview-edit",
+  "card-save",
+  "card-tool-category",
+  "card-tool-action",
+  "card-preview-back",
+]);
+const toolForms = new Set([
+  "ui-settings",
+  "choose-scope",
+  "admin-preview",
+  "card",
+  "delete-host",
+]);
+const tools = {
+  leaveCard: (...args) => loadedTools?.leaveCard(...args) ?? true,
+  input: (event) => loadedTools?.input(event),
+  action: async (action, target) =>
+    toolActions.has(action)
+      ? (await ensureTools()).action(action, target)
+      : false,
+  submit: async (form, kind) =>
+    toolForms.has(kind) ? (await ensureTools()).submit(form, kind) : false,
+  invitation: async () => (await ensureTools()).invitation(),
+  cardsPage: () => loadedTools?.cardsPage() || "",
+  cardPreviewPage: () => loadedTools?.cardPreviewPage() || "",
+  cardEditorPage: () => loadedTools?.cardEditorPage() || "",
+  cardTopbar: () => loadedTools?.cardTopbar() || "",
+  cleanupPanel: () => loadedTools?.cleanupPanel() || "",
+  mountCardPreview: () => loadedTools?.mountCardPreview(),
+  mountCardEditor: () => loadedTools?.mountCardEditor(),
+};
 await load();
 let refreshing = false;
 async function refreshInBackground() {

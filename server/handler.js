@@ -706,6 +706,24 @@ export function createHandler({
               );
           }
         }
+        // The document can contain personalized invitations and must never be
+        // cached. Version-neutral public files are identical across accounts;
+        // a brief browser cache avoids re-downloading the entire application on
+        // every refresh. Revalidation after expiry keeps deployments observable.
+        if (entry[0] !== "index.html") {
+          const etag = `"${createHash("sha256").update(content).digest("hex")}"`;
+          res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
+          res.setHeader("ETag", etag);
+          if (
+            req.headers["if-none-match"]
+              ?.split(",")
+              .some((value) => value.trim() === etag)
+          ) {
+            res.writeHead(304);
+            res.end();
+            return;
+          }
+        }
         res.writeHead(200, { "Content-Type": entry[1] });
         res.end(content);
         return;
@@ -846,6 +864,7 @@ export function createHandler({
           ),
         )
         ?.split("=")[1];
+      const authStarted = startup ? performance.now() : 0;
       let session = store.session(raw, origin, !selected);
       if (replacement && session) {
         const proof = store.get(
@@ -1016,18 +1035,28 @@ export function createHandler({
           10,
         );
       };
-      const hostSnapshot = () => {
+      const hostWorkspace = (household) => ({
+        personal:
+          session.role === "host"
+            ? replacement
+              ? hostRosterProjection(store, session)
+              : accountProjection(store, session)
+            : null,
+        guests: store
+          .list("guest", household)
+          .map((g) => guestContact(store, g, household)),
+        hostFamily: hostFamilyMembers(store, household),
+        savedMenu: store.list("menu-saved", household),
+        tableTemplates: store.list("table-template", household),
+        addresses: store.list("address", household),
+        templates: store.list("template", "platform"),
+      });
+      const hostSnapshot = ({ workspace = true } = {}) => {
         requireRole("host");
         const household = session.household;
         const house = store.household(household);
         return {
           household: presentHousehold(house),
-          personal:
-            session.role === "host"
-              ? replacement
-                ? hostRosterProjection(store, session)
-                : accountProjection(store, session)
-              : null,
           receivedEvents:
             session.role === "host" &&
             !replacement &&
@@ -1037,14 +1066,7 @@ export function createHandler({
                   privateIdentity(store, session),
                 ).events.filter((e) => e.invitingHousehold?.slug !== house.slug)
               : [],
-          guests: store
-            .list("guest", household)
-            .map((g) => guestContact(store, g, household)),
-          hostFamily: hostFamilyMembers(store, household),
           integrations: integrationCapabilities(store, env, household),
-          savedMenu: store.list("menu-saved", household),
-          tableTemplates: store.list("table-template", household),
-          addresses: store.list("address", household),
           events: store.list("event", household).map((e) => {
             const family = store.hostFamilyEvent(e, household);
             return {
@@ -1063,7 +1085,7 @@ export function createHandler({
               ui: effectiveUI(store, house, e),
             };
           }),
-          templates: store.list("template", "platform"),
+          ...(workspace ? hostWorkspace(household) : {}),
           defaults: effectiveUI(store).design,
           ui: effectiveUI(store, house),
         };
@@ -1110,6 +1132,7 @@ export function createHandler({
             }
           : { role: null };
       if (startup) {
+        const snapshotStarted = performance.now();
         const current = sessionSnapshot();
         const home =
           replacement &&
@@ -1123,16 +1146,28 @@ export function createHandler({
           return;
         }
         const ui = effectiveUI(store);
-        json(res, {
+        const payload = {
           setup,
           config: authConfiguration(),
           session: current,
           ui,
           household: publicHousehold(ui),
           ...(current.role === "host" && !url.searchParams.has("sessionOnly")
-            ? { host: hostSnapshot() }
+            ? {
+                host: hostSnapshot({
+                  workspace:
+                    !replacement ||
+                    url.searchParams.get("view") !== "home" ||
+                    url.searchParams.get("workspace") === "1",
+                }),
+              }
             : {}),
-        });
+        };
+        res.setHeader(
+          "Server-Timing",
+          `auth;dur=${(snapshotStarted - authStarted).toFixed(1)}, snapshot;dur=${(performance.now() - snapshotStarted).toFixed(1)}`,
+        );
+        json(res, payload);
         return;
       }
       if (
@@ -2051,6 +2086,11 @@ export function createHandler({
       if (path === "/api/templates" && method === "GET") {
         if (!session) fail(401, "Please sign in.");
         json(res, store.list("template", "platform"));
+        return;
+      }
+      if (path === "/api/host/workspace" && method === "GET") {
+        requireRole("host");
+        json(res, hostWorkspace(session.household));
         return;
       }
       if (path === "/api/host" && method === "GET") {

@@ -97,6 +97,14 @@ test(
       data: { intent: "connect", idToken: token, currentPassword: password },
     });
     assert.equal(connected.status, 200);
+    for (let index = 0; index < 250; index++) {
+      f.store.put("guest", "startup-contact-" + index, host.household.id, {
+        first: "Synthetic",
+        last: "Contact " + index,
+        parent: "",
+        address: "",
+      });
+    }
     const title = 'Fixture </script><img id="unescaped-event">';
     const event = await f.event({ ...host, cookie: connected.cookie }, [], {
       title,
@@ -286,6 +294,71 @@ test(
         () => page.locator('button[data-action="home"]').first().click(),
         { sameDocument: true },
       );
+      const slim = await f.request("/api/startup?view=home", {
+        cookie: connected.cookie,
+      });
+      assert.equal(
+        f.store.list("invitation-household", host.household.id).length,
+        0,
+      );
+      const full = await f.request("/api/startup", {
+        cookie: connected.cookie,
+      });
+      assert.equal(slim.body.host.guests, undefined);
+      assert.equal(full.body.host.guests.length, 250);
+      const slimBytes = Buffer.byteLength(JSON.stringify(slim.body));
+      const fullBytes = Buffer.byteLength(JSON.stringify(full.body));
+      assert.ok(slimBytes < fullBytes);
+      t.diagnostic(
+        `Host startup JSON with 250 synthetic contacts: ${fullBytes} → ${slimBytes} bytes`,
+      );
+      assert.equal((await f.request("/api/host/workspace")).status, 401);
+      requested.length = 0;
+      for (let visit = 0; visit < 2; visit++) {
+        await page.locator('[data-action="addresses"]:visible').first().click();
+        await page.locator(".address-book-shell").waitFor();
+        await page
+          .locator('button[data-action="home"]:visible')
+          .first()
+          .click();
+        await page.locator('[data-action="open-event"]').first().waitFor();
+      }
+      assert.deepEqual(
+        requested.filter((path) => path.startsWith("/api/")),
+        ["/api/host/workspace"],
+      );
+      assert.equal(
+        requested.includes("/editor-tools.js"),
+        false,
+        "regular Home and Address Book navigation must not download card editing code",
+      );
+      await page.evaluate(() => {
+        window.originalHomeHero = document.querySelector("#main > .hero");
+      });
+      await f.event({ ...host, cookie: connected.cookie }, [], {
+        title: "Synthetic background update",
+        date: "2030-05-08",
+      });
+      await page.evaluate(() => window.dispatchEvent(new Event("online")));
+      await page
+        .getByText("Synthetic background update", { exact: true })
+        .waitFor();
+      assert.equal(
+        await page.evaluate(
+          () =>
+            document.querySelector("#main > .hero") === window.originalHomeHero,
+        ),
+        true,
+        "event-only background updates preserve the original Home hero node",
+      );
+      await page.locator('[data-action="cards"]:visible').first().click();
+      await page.locator('[data-action="new-card"]:visible').first().waitFor();
+      assert.ok(
+        requested.includes("/editor-tools.js"),
+        "card editing code must load only on first Cards & Invites visit",
+      );
+      await page.locator('button[data-action="home"]:visible').first().click();
+      await page.locator('[data-action="open-event"]').first().waitFor();
       await page.locator('.toolbar [data-action="settings"]').click();
       await measure(
         "sign-out",

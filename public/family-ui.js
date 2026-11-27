@@ -77,8 +77,12 @@ export function familyTools(ctx) {
       .map((r) => [r.id, r.title]),
   ];
   async function refresh() {
-    state.familyData = await api("/api/family");
-    if (state.session.role === "family") state.data = state.familyData;
+    const session = state.session;
+    const result = await api("/api/family");
+    if (state.session !== session) return false;
+    state.familyData = result;
+    if (state.session.role === "family") state.data = result;
+    return true;
   }
   function preferences(extra = {}) {
     return api("/api/family/preferences", {
@@ -640,14 +644,14 @@ export function familyTools(ctx) {
       addItemOpen = false;
       return true;
     },
-    reset() {
+    reset({ preserveData = false } = {}) {
       itemDrafts.clear();
       selected = "";
       section = "";
       showSearch = false;
       addItemOpen = false;
       search = "";
-      state.familyData = null;
+      if (!preserveData) state.familyData = null;
     },
     render: renderWorkspace,
     renderExample(key = "") {
@@ -734,7 +738,8 @@ export function familyTools(ctx) {
         selected = "";
         section = "";
         search = "";
-        await refresh();
+        if ((!state.hostOnly || !state.familyData) && !(await refresh()))
+          return true;
         state.view = "family";
         state.event = null;
         render();

@@ -66,20 +66,31 @@ addEventListener("hashchange", () => {
   }
 });
 
+export function startupRoute(
+  path,
+  { home = false, sessionOnly = false, workspace = false } = {},
+) {
+  const publicReference = path.match(/^\/event\/([A-Za-z0-9_-]{43})$/)?.[1];
+  const invitation = path.match(/^\/invite\/([A-Za-z0-9_-]{43})$/)?.[1];
+  const query = new URLSearchParams({ view: "home" });
+  if (invitation) query.set("invitation", invitation);
+  if (home) query.set("home", "1");
+  if (sessionOnly || ["/host-signup", "/host-recovery"].includes(path))
+    query.set("sessionOnly", "1");
+  if (workspace) query.set("workspace", "1");
+  return {
+    publicReference,
+    url: publicReference
+      ? "/api/public/events/" + publicReference
+      : "/api/startup?" + query,
+  };
+}
+
 let startupRead;
 function startStartupRead() {
   const path = location.pathname;
-  const event = path.match(/^\/event\/([A-Za-z0-9_-]{43})$/)?.[1];
-  const invitation = path.match(/^\/invite\/([A-Za-z0-9_-]{43})$/)?.[1];
-  const query = new URLSearchParams();
-  if (invitation) query.set("invitation", invitation);
-  if (["/host-signup", "/host-recovery"].includes(path))
-    query.set("sessionOnly", "1");
-  const url = event
-    ? "/api/public/events/" + event
-    : "/api/startup" + (query.size ? "?" + query : "");
-  const initialEvent =
-    (event || invitation) && document.querySelector("#gather-public-event");
+  const { url } = startupRoute(path);
+  const initialEvent = document.querySelector("#gather-public-event");
   const response = initialEvent
     ? Promise.resolve(new Response(initialEvent.textContent))
     : fetch(url, { credentials: path === "/" ? "include" : "same-origin" });
