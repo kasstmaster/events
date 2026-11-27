@@ -1,4 +1,8 @@
-import { initialHomeHtml, initialHomeTopbar, initialHomeBottomBar } from "./initial-home.js";
+import {
+  initialHomeHtml,
+  initialHomeTopbar,
+  initialHomeBottomBar,
+} from "./initial-home.js";
 import { initialThemeStyle } from "./initial-theme.js";
 import { validFirebaseHostSession } from "./firebase-host-admin.js";
 import { hostFirebaseEnabled, hostFirebaseConfig } from "./firebase-host.js";
@@ -1163,6 +1167,10 @@ export function createHandler({
         const events = snapshot.host?.events || [];
         // Script data is inert, and '<' cannot close its HTML script element.
         const payload = JSON.stringify(snapshot).replaceAll("<", "\\u003c");
+        const initialTop = snapshot.host
+          ? `<div id="top-navigation">${initialHomeTopbar()}</div>`
+          : "";
+        const initialBottom = snapshot.host ? initialHomeBottomBar() : "";
         const content = (await readAsset("index.html"))
           .toString()
           .replace(/\s*<link\s[^>]*\bdata-gather-home\b[^>]*>/, "")
@@ -1174,12 +1182,12 @@ export function createHandler({
           .replace(
             '<a class="brand" href="/">gather<span>＊</span></a>',
             () =>
-              `<a class="brand" href="/" data-action="home">gather<span>＊</span></a>${snapshot.host ? `<div id="top-navigation">${initialHomeTopbar()}</div>` : ""}`,
+              `<a class="brand" href="/" data-action="home">gather<span>＊</span></a>${initialTop}`,
           )
           .replace(
             '<main id="main"><p>Getting things ready…</p></main>',
             () =>
-              `<main id="main">${initialHomeHtml({ household, events })}</main>${snapshot.host ? initialHomeBottomBar() : ""}`,
+              `<main id="main">${initialHomeHtml({ household, events })}</main>${initialBottom}`,
           )
           .replace(
             "</body>",
