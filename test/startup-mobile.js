@@ -351,7 +351,9 @@ test(
         1,
       );
       assert.equal(
-        await noScriptPage.locator('[data-action="event-action-dashboard"]').count(),
+        await noScriptPage
+          .locator('[data-action="event-action-dashboard"]')
+          .count(),
         1,
       );
       assert.equal(
