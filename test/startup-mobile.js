@@ -512,7 +512,9 @@ test(
             redundantStartup++;
         });
         await slowPage.goto(appOrigin, { waitUntil: "commit" });
-        await slowPage.getByRole("heading", { name: "Welcome to Gather" }).waitFor();
+        await slowPage
+          .getByRole("heading", { name: "Welcome to Gather" })
+          .waitFor();
         assert.equal(redundantStartup, 0);
       } finally {
         releaseModules();
