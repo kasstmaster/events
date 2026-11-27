@@ -1,0 +1,27 @@
+name: Format fast Gather browser regressions (temporary)
+on:
+  push:
+    branches: [perf/fast-gather-startup-20261127]
+permissions:
+  contents: write
+jobs:
+  format:
+    if: github.repository == 'kasstmaster/events' && github.ref == 'refs/heads/perf/fast-gather-startup-20261127'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx prettier --write test/mobile.cjs test/family-mobile.js test/navigation-mobile.js test/approved-design-mobile.js
+      - name: Commit test formatting on PR branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- test/mobile.cjs test/family-mobile.js test/navigation-mobile.js test/approved-design-mobile.js
+          if ! git diff --cached --quiet; then
+            git commit -m "Format updated fast startup browser checks"
+            git push origin HEAD:perf/fast-gather-startup-20261127
+          fi
