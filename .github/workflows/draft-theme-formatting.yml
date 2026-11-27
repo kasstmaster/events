@@ -1,0 +1,21 @@
+name: Draft formatting diagnostics
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  format-diff:
+    if: github.event.pull_request.draft == true
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Show formatter output without changing the branch
+        run: |
+          npx prettier --write test/startup-mobile.js
+          git diff --unified=1 -- test/startup-mobile.js
