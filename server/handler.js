@@ -1140,26 +1140,44 @@ export function createHandler({
                 : null,
             }
           : { role: null };
-      // The validated host home is meaningful in the first HTML response.
-      // HTML stays no-store; session, Firebase and tenant checks above remain
-      // authoritative. Never read host data before those checks complete.
+      // HTML-first Home reuses the same authorized startup snapshot the app
+      // normally fetches. A single request validates the session and returns
+      // both readable content and its hydration data, without a second Firebase
+      // validation or /api/startup call after the browser downloads JavaScript.
       if (replacement && method === "GET" && path === "/") {
+        const snapshotStarted = performance.now();
         const current = sessionSnapshot();
-        let household = null;
-        let events = [];
-        if (current.role === "host") {
-          requireRole("host");
-          household = store.household(session.household);
-          // Avoid heavy guest, RSVP, roster, contacts and editor projections.
-          events = store.list("event", session.household);
-        }
-        const content = (await readAsset("index.html")).toString().replace(
-          '<main id="main"><p>Getting things ready…</p></main>',
-          () => `<main id="main">${initialHomeHtml({ household, events })}</main>`,
-        );
+        const ui = effectiveUI(store);
+        const snapshot = {
+          setup: setupStatus(),
+          config: authConfiguration(),
+          session: current,
+          ui,
+          household: publicHousehold(ui),
+          ...(current.role === "host"
+            ? { host: hostSnapshot({ workspace: false }) }
+            : {}),
+        };
+        const household = snapshot.host?.household || null;
+        const events = snapshot.host?.events || [];
+        // Script data is inert, and '<' cannot close its HTML script element.
+        const payload = JSON.stringify(snapshot).replaceAll("<", "\\u003c");
+        const content = (await readAsset("index.html"))
+          .toString()
+          .replace(/\s*<link\s[^>]*\bdata-gather-home\b[^>]*>/, "")
+          .replace(
+            '<main id="main"><p>Getting things ready…</p></main>',
+            () =>
+              `<main id="main">${initialHomeHtml({ household, events })}</main>`,
+          )
+          .replace(
+            "</body>",
+            () =>
+              `<script id="gather-public-event" type="application/json">${payload}</script></body>`,
+          );
         res.setHeader(
           "Server-Timing",
-          `auth;dur=${(performance.now() - authStarted).toFixed(1)}`,
+          `auth;dur=${(snapshotStarted - authStarted).toFixed(1)}, snapshot;dur=${(performance.now() - snapshotStarted).toFixed(1)}`,
         );
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(content);
