@@ -85,6 +85,12 @@ test("image-based household themes retain data URL MIME separators", () => {
     backgroundImage: "data:image/png;base64,AAAA",
     containerImage: "data:image/png;base64,BBBB",
   });
-  assert.match(markup, /--background-image:url\("data:image\/png;base64,AAAA"\)/);
-  assert.match(markup, /--container-image:url\("data:image\/png;base64,BBBB"\)/);
+  assert.match(
+    markup,
+    /--background-image:url\("data:image\/png;base64,AAAA"\)/,
+  );
+  assert.match(
+    markup,
+    /--container-image:url\("data:image\/png;base64,BBBB"\)/,
+  );
 });
