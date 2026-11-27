@@ -2,22 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { initialHomeHtml } from "../server/initial-home.js";
 
-test(
-  "initial HTML needs no JavaScript and exposes no account details to visitors",
-  () => {
-    const output = initialHomeHtml();
-    assert.match(output, /Welcome to Gather/);
-    assert.match(output, /href="\/signin"/);
-    assert.doesNotMatch(output, /Getting things ready/);
-  },
-);
+test("initial HTML needs no JavaScript and exposes no account details to visitors", () => {
+  const output = initialHomeHtml();
+  assert.match(output, /Welcome to Gather/);
+  assert.match(output, /href="\/signin"/);
+  assert.doesNotMatch(output, /Getting things ready/);
+});
 
 test("validated host gets escaped, lightweight event summaries", () => {
   const output = initialHomeHtml({
     household: { name: '<script id="secret">&</script>' },
     events: [
       {
-        title: '<img src=x onerror=alert(1)>',
+        title: "<img src=x onerror=alert(1)>",
         description: "Hello & welcome",
         date: "2030-02-10",
       },
