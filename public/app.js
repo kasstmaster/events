@@ -1589,7 +1589,10 @@ function householdDetails() {
   modal(C("Details"), householdDetailsFields(), "household");
 }
 function inlineHouseholdDetails() {
-  if (state.session.role !== "host" || (state.hostOnly && !state.settingsSection))
+  if (
+    state.session.role !== "host" ||
+    (state.hostOnly && !state.settingsSection)
+  )
     return "";
   const event = settingsAppearanceEvent();
   if (state.settingsEvent && !event) return "";
