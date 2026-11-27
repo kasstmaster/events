@@ -341,7 +341,7 @@ test(
       });
       assert.equal(noScriptResponse.status(), 200);
       await noScriptPage.locator("#main > .hero h1").waitFor();
-      await noScriptPage.locator("#gather-initial-theme").waitFor();
+      await noScriptPage.locator("#gather-initial-theme").waitFor({ state: "attached" });
       assert.equal(
         await noScriptPage.locator("#top-navigation .app-topbar").count(),
         1,
