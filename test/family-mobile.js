@@ -371,6 +371,7 @@ try {
     .fill("America/Los_Angeles");
   await owner.page.getByLabel("Repeat", { exact: true }).selectOption("daily");
   await save(owner.page);
+  await kid.page.evaluate(() => window.dispatchEvent(new Event("online")));
   await click(kid.page, "All household tools");
   await click(kid.page, "Chores");
   await kid.page
