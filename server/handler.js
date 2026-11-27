@@ -627,7 +627,15 @@ export function createHandler({
       const pageSlug = path.match(/^\/h\/([A-Za-z0-9_-]+)$/)?.[1];
       if (selected && pageSlug && pageSlug !== selected.slug)
         fail(404, "This household address is unavailable.");
-      if (method === "GET" && !path.startsWith("/api/") && !(replacement && path === "/" && (!requireAdmin || store.adminSetupComplete()))) {
+      if (
+        method === "GET" &&
+        !path.startsWith("/api/") &&
+        !(
+          replacement &&
+          path === "/" &&
+          (!requireAdmin || store.adminSetupComplete())
+        )
+      ) {
         const entry =
           (/^\/(?:(?:invite|event)\/[A-Za-z0-9_-]{43}|[a-z0-9][a-z0-9-]{1,61}[a-z0-9])$/.test(
             path,
