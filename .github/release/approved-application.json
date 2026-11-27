@@ -144,7 +144,7 @@
     "public/account-controls.js": "ceba0e52e661d947d6df58b39cf25e19cd11c95cc6c5a12f84c8539d807345f7",
     "public/address-picker.js": "5ba784a86da007428e23ba0b513b97eb472a3bdecdab06f673d99c975493dafa",
     "public/address-system.js": "103209806c9b577541d3793f11fb79837bcc333a24f865d36661ac0fa7c26cf4",
-    "public/app.js": "7e3cbc522b62d8e0d79d0eb5b8b0d90e38e3ed2092fd91ce125804e378e2c047",
+    "public/app.js": "8ca0ec49223cc4e585c771357ee4c2abe2f8443945c30534279365a6658644a1",
     "public/appearance-editor.js": "25b5adac65b6a433366c15adf700cdf94ed51896ef75881870f90cf36fa1d2fa",
     "public/auth-bootstrap.js": "5b5a6514df8bfab19f64e55bbc2767c4e01388b5aafb0df721780092b90522fb",
     "public/browse-ui.js": "fe132bff70d5ff3f4dbfe9ce4ad362ed01ccaf1a711baefdb81cccfedf120c60",
