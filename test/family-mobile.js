@@ -230,6 +230,7 @@ try {
   await click(kid.page, "Add Item");
   await kid.page.getByLabel("New item", { exact: true }).fill("Bread");
   await click(kid.page, "Add item");
+  await owner.page.evaluate(() => window.dispatchEvent(new Event("online")));
   await owner.page
     .locator(".family-item-title")
     .getByText("Bread", { exact: true })
@@ -238,6 +239,7 @@ try {
     .locator(".family-item-title")
     .getByText("Bread", { exact: true })
     .dblclick();
+  await owner.page.evaluate(() => window.dispatchEvent(new Event("online")));
   await owner.page.getByLabel("Complete Bread", { exact: true }).waitFor();
   await owner.page.waitForFunction(
     () => document.querySelector('[aria-label="Complete Bread"]').checked,
@@ -309,11 +311,13 @@ try {
     .locator(".family-item-title")
     .getByText("Reconnect item", { exact: true })
     .waitFor();
+  await owner.page.evaluate(() => window.dispatchEvent(new Event("online")));
   await owner.page
     .locator(".family-item-title")
     .getByText("Reconnect item", { exact: true })
     .waitFor();
   await kid.context.route("**/api/setup", (route) => route.abort("failed"));
+  await kid.page.evaluate(() => window.dispatchEvent(new Event("online")));
   await kid.page
     .locator("#sync-status")
     .filter({ hasText: "Connection paused" })
