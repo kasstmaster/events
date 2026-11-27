@@ -91,65 +91,60 @@ export function familyTools(ctx) {
     });
   }
   function renderWorkspace() {
+    if (selected === "__settings__")
+      return ui`${topbar({ title: C("Settings"), back: "family-back" })}<ul class="browse-rows">${state.hostOnly ? ctx.appearanceSettings?.() || "" : ""}${ctx.eventSettings?.() || ""}${row({ title: C("Notification settings"), action: "family-preferences", symbol: "settings" })}${row({ title: C("Change Password"), action: state.hostOnly && state.session.role === "host" ? "host-account" : "family-password", symbol: "edit" })}${["owner", "administrator"].includes(state.session.householdRole ?? data()?.member?.role) ? row({ title: C("Family Members"), action: "family-members", symbol: "contacts" }) : ""}${state.hostOnly ? "" : ctx.appearanceSettings?.() || ""}${row({ title: C("Sign Out"), action: "logout", symbol: "logout" })}</ul>${ctx.householdDetails?.() || ""}`;
     const d = data(),
       r = record();
     const selectedSection =
       r?.type === "folder" ? section : sectionFor(r?.type) || section;
-    const title =
-      selected === "__settings__"
-        ? C("Settings")
-        : r
-          ? escape(r.title)
-          : selected === "__mine__"
-            ? C("My Tasks")
-            : selectedSection
-              ? C(
-                  sections.find((s) => s[0] === selectedSection)?.[1] ||
-                    "Lists",
-                )
-              : C("Family Workspace");
+    const title = r
+      ? escape(r.title)
+      : selected === "__mine__"
+        ? C("My Tasks")
+        : selectedSection
+          ? C(sections.find((s) => s[0] === selectedSection)?.[1] || "Lists")
+          : C("Family Workspace");
     const type = {
       lists: "list",
       tasks: "task",
       records: "record",
       chores: "chore",
     }[selectedSection];
-    const plus =
-      adult() && selected !== "__settings__"
-        ? [
-            { action: "family-new-folder", label: "Create folder" },
-            ...(type
-              ? [
+    const plus = adult()
+      ? [
+          { action: "family-new-folder", label: "Create folder" },
+          ...(type
+            ? [
+                {
+                  action: "family-new-" + type,
+                  label: {
+                    list: "Create list",
+                    task: "Create task",
+                    record: "Create record",
+                    chore: "Create chore",
+                  }[type],
+                },
+              ]
+            : sections.map(([key, label]) => ({
+                action:
+                  "family-new-" +
                   {
-                    action: "family-new-" + type,
-                    label: {
-                      list: "Create list",
-                      task: "Create task",
-                      record: "Create record",
-                      chore: "Create chore",
-                    }[type],
-                  },
-                ]
-              : sections.map(([key, label]) => ({
-                  action:
-                    "family-new-" +
-                    {
-                      lists: "list",
-                      tasks: "task",
-                      records: "record",
-                      chores: "chore",
-                    }[key],
-                  label:
-                    "Create " +
-                    {
-                      lists: "list",
-                      tasks: "task",
-                      records: "record",
-                      chores: "chore",
-                    }[key],
-                }))),
-          ]
-        : [];
+                    lists: "list",
+                    tasks: "task",
+                    records: "record",
+                    chores: "chore",
+                  }[key],
+                label:
+                  "Create " +
+                  {
+                    lists: "list",
+                    tasks: "task",
+                    records: "record",
+                    chores: "chore",
+                  }[key],
+              }))),
+        ]
+      : [];
     const options = [
       ...sorting(
         "family-",
@@ -175,18 +170,16 @@ export function familyTools(ctx) {
           ? `${count.filter((i) => !i.completed).length} ${H("of")} ${count.length} ${H("items remaining")}`
           : "",
       back: selected || section ? "family-back" : null,
-      search: selected === "__settings__" ? null : "family-search",
+      search: "family-search",
       plus,
-      sort: selected === "__settings__" ? [] : options,
+      sort: options,
       extra:
         r?.type === "list"
           ? tool("family-add-open", "Add Item", "", "plus")
           : "",
     });
     let content = "";
-    if (selected === "__settings__")
-      content = `<ul class="browse-rows">${state.hostOnly ? ctx.appearanceSettings?.() || "" : ""}${ctx.eventSettings?.() || ""}${row({ title: C("Notification settings"), action: "family-preferences", symbol: "settings" })}${row({ title: C("Change Password"), action: state.hostOnly && state.session.role === "host" ? "host-account" : "family-password", symbol: "edit" })}${manager() ? row({ title: C("Family Members"), action: "family-members", symbol: "contacts" }) : ""}${state.hostOnly ? "" : ctx.appearanceSettings?.() || ""}${row({ title: C("Sign Out"), action: "logout", symbol: "logout" })}</ul>${ctx.householdDetails?.() || ""}`;
-    else if (search) {
+    if (search) {
       const found = ordered(
         d.records.filter((r) =>
           [
@@ -675,6 +668,12 @@ export function familyTools(ctx) {
     async action(actionName, target) {
       if (!actionName.startsWith("family-")) return false;
       const key = target.dataset.id;
+      if (
+        selected === "__settings__" &&
+        !state.familyData &&
+        ["family-preferences", "family-members"].includes(actionName)
+      )
+        await refresh();
       if (actionName === "family-section") {
         section = key;
         selected = "";
@@ -683,7 +682,6 @@ export function familyTools(ctx) {
         return true;
       }
       if (actionName === "family-settings") {
-        if (!state.familyData) await refresh();
         state.view = "family";
         state.event = null;
         selected = "__settings__";

@@ -237,8 +237,12 @@ export function hostAuthUI({
           method: "POST",
           data: { request: reference, token },
         });
-        location.replace(redeemed.next === "account" ? "/?account=1" : "/");
-        return true;
+        history.replaceState(
+          null,
+          "",
+          redeemed.next === "account" ? "/?account=1" : "/",
+        );
+        return false;
       }
       if (request && (await getSession()).role === "host") {
         const value = request;
