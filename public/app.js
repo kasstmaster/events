@@ -308,6 +308,12 @@ async function load({ background = false } = {}) {
       /^\/event\/([A-Za-z0-9_-]{43})$/,
     )?.[1];
     const setupRequest = api("/api/setup");
+    const eventRequest = publicReference
+      ? api(`/api/public/events/${publicReference}`).then(
+          (data) => ({ data }),
+          (error) => ({ error }),
+        )
+      : null;
     const configRequest = publicReference
       ? null
       : api("/api/passwordless/config").then(
@@ -327,13 +333,17 @@ async function load({ background = false } = {}) {
       return;
     }
     if (publicReference) {
-      const data = await api(`/api/public/events/${publicReference}`);
+      const { data, error } = await eventRequest;
+      if (error) throw error;
       if (generation !== loadGeneration || (background && isEditing())) return;
       state.visitor =
         state.visitor?.reference === publicReference
           ? state.visitor
           : { reference: publicReference };
       await extraPages.hydrate(data, publicReference);
+      if (generation !== loadGeneration || (background && isEditing())) return;
+      if (background && JSON.stringify(data) === JSON.stringify(state.data))
+        return;
       if (data.hostOnly) {
         state.hostOnly = true;
         hostAuth.metadata({ role: "visitor" }, data.household);
