@@ -1237,6 +1237,10 @@ function render(target = $("#app"), example = false) {
         role === "host"
           ? state.data.events.filter((event) => !eventHasPassed(event))
           : orderedInvitations(state.data.events);
+      const archivedEvents =
+        role === "host"
+          ? state.data.events.filter(eventHasPassed)
+          : [];
       content =
         (role === "host"
           ? topbar({
@@ -1253,13 +1257,8 @@ function render(target = $("#app"), example = false) {
                 : [],
             })
           : "") +
-        ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : C("Welcome")}</p><h1>${escape(role === "guest" ? state.data.personal?.person.name || fullName(state.data.guest) : state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? personal.homeActions() : ""}${homeEvents.length ? ui`<section class="home-invitations"><h2 class="invitations-title">${role === "host" ? C("Your events") : C("You’re invited to gather")}</h2><section class="grid home-events ${homeEvents.length > 1 ? "multiple-events" : "single-event"}" aria-label="Events">${homeEvents.map(eventCard).join("")}</section></section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
+        ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : C("Welcome")}</p><h1>${escape(role === "guest" ? state.data.personal?.person.name || fullName(state.data.guest) : state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? personal.homeActions() : ""}${homeEvents.length || archivedEvents.length ? ui`<section class="home-invitations"><h2 class="invitations-title">${role === "host" ? C("Your events") : C("You’re invited to gather")}</h2>${homeEvents.length ? ui`<section class="grid home-events ${homeEvents.length > 1 ? "multiple-events" : "single-event"}" aria-label="Events">${homeEvents.map(eventCard).join("")}</section>` : ""}${archivedEvents.length ? ui`<details class="panel"><summary>${C("Archived events")}</summary><section class="grid home-events" aria-label="${H("Archived events")}">${archivedEvents.map(eventCard).join("")}</section></details>` : ""}</section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
     }
-  }
-  if (role === "host" && !event && state.view === "home" && !state.adminMode) {
-    const archived = state.data.events.filter(eventHasPassed);
-    if (archived.length)
-      content += ui`<section class="home-invitations"><details class="panel"><summary>${C("Archived events")}</summary><section class="grid home-events" aria-label="${H("Archived events")}">${archived.map(eventCard).join("")}</section></details></section>`;
   }
   if (
     role === "host" &&
