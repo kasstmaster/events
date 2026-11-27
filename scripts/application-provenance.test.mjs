@@ -11,6 +11,7 @@ import {
   assetRouting,
   approvedManifest,
   verifyAssetBytes,
+  reviewedSignInShell,
   protectedRuntime,
   fingerprint,
   hashBytes,
@@ -180,6 +181,46 @@ test("all assets are checked at both origins, including the last inventory entry
     /READ_FAILED/,
   );
 });
+test("HTML-first release verifies the exact static sign-in transform on both origins", async () => {
+  const source = `<!doctype html>
+<html><head>
+<link rel="preload" href="/api/startup?view=home" data-gather-home>
+<link rel="modulepreload" href="/app.js">
+<script type="module" src="/auth-bootstrap.js"></script>
+<script type="module" src="/app.js"></script>
+</head><body><main id="main"><p>Getting things ready…</p></main></body></html>`;
+  const document = reviewedSignInShell(Buffer.from(source));
+  assert.doesNotMatch(
+    document,
+    /data-gather-home|modulepreload|src="\/app.js"/,
+  );
+  assert.match(document, /data-gather-transfer/);
+  const manifest = {
+    "public/index.html": hashBytes(source),
+    "public/style.css": hashBytes("css"),
+  };
+  const paths = [];
+  const read = async (url) => {
+    paths.push(new URL(url).pathname);
+    return new Response(url.endsWith("/signin") ? document : "css");
+  };
+  await verifyAssetBytes(manifest, read, { reviewedIndex: source });
+  assert.deepEqual(paths, ["/signin", "/style.css", "/signin", "/style.css"]);
+  await assert.rejects(
+    verifyAssetBytes(
+      manifest,
+      async (url) =>
+        new Response(url.endsWith("/signin") ? document + " " : "css"),
+      { reviewedIndex: source },
+    ),
+    /PUBLIC_ASSET_BYTES_MISMATCH/,
+  );
+  await assert.rejects(
+    verifyAssetBytes(manifest, read, { reviewedIndex: source + "changed" }),
+    /REVIEWED_ASSET_SOURCE_MISMATCH/,
+  );
+});
+
 test("manifest loader covers the whole historical Git public tree and independently checks every blob", async (t) => {
   assert.equal(Object.keys(approvedManifest(COMMIT)).length, 27);
   const root = await mkdtemp(join(tmpdir(), "asset-manifest-test-"));
