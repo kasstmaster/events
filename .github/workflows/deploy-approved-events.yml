@@ -91,6 +91,7 @@ jobs:
           node test/host-model-mobile.js
           node test/host-model-features-mobile.js
           node test/approved-design-mobile.js
+          node --test test/startup-mobile.js
       - uses: actions/upload-artifact@v6
         if: failure()
         with:

@@ -6,7 +6,7 @@ import { recipientManagementAPI } from "./recipient-management-api.js";
 import { hostManagementAPI } from "./host-management-api.js";
 import { hostRosterProjection, saveHostRoster } from "./host-roster.js";
 import { hostOnlyMode, retiredGuestRoute } from "./host-model.js";
-import { hostAuthAPI } from "./host-auth-api.js";
+import { hostAuthAPI, hostAuthConfiguration } from "./host-auth-api.js";
 import { hostMailSender } from "./host-mail.js";
 import { hostTransitionAPI } from "./host-transition-api.js";
 import { isolatedAddressBook } from "./recipient-isolation.js";
@@ -551,6 +551,7 @@ export function createHandler({
           universal: false,
           firebase: null,
           hostOnly: true,
+          hostAuth: hostAuthConfiguration(env, origin, hostVerificationSender),
         });
         return;
       }

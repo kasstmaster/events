@@ -244,8 +244,8 @@ export function hostAuthUI({
     },
     authEntry: () =>
       ["/host-signup", "/host-recovery"].includes(location.pathname),
-    async initialize() {
-      config = await api("/api/host-auth/config");
+    async initialize(initialConfig) {
+      config = initialConfig || (await api("/api/host-auth/config"));
       if (invite && screen === "signup") {
         try {
           invitationContext = await api("/api/host-signup/context", {

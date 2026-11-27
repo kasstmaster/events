@@ -278,3 +278,38 @@ test("Google uses actual OIDC signatures, invited verified email and a one-shot 
     /verification/,
   );
 });
+
+test("startup host configuration matches the existing endpoint without changing providers or exposing secrets", async (t) => {
+  for (const firebase of [false, true]) {
+    await t.test(
+      firebase ? "ordinary Firebase host" : "Gather password host",
+      async (t) => {
+        const env = {
+          ...mode,
+          HOST_GOOGLE_CLIENT_ID: "synthetic.apps.googleusercontent.com",
+          HOST_GOOGLE_CLIENT_SECRET: "synthetic-private-oauth-secret",
+          HOST_FIREBASE_ENABLED: firebase ? "true" : "false",
+          HOST_FIREBASE_ACTIVATION_APPROVED: firebase ? "true" : "false",
+          FIREBASE_PROJECT_ID: "gather-58a79",
+          FIREBASE_AUTH_DOMAIN: "gather-58a79.firebaseapp.com",
+          FIREBASE_API_KEY: "AIza" + "a".repeat(35),
+          HOST_FIREBASE_ADMIN_PRIVATE_KEY: "synthetic-private-admin-secret",
+        };
+        const f = await application(t, env),
+          startup = await f.request("/api/passwordless/config"),
+          existing = await f.request("/api/host-auth/config");
+        assert.equal(startup.status, 200);
+        assert.equal(existing.status, 200);
+        assert.deepEqual(startup.body.hostAuth, existing.body);
+        assert.equal(!!startup.body.hostAuth.firebase, firebase);
+        assert.equal(startup.body.hostAuth.google, !firebase);
+        const output = JSON.stringify(startup.body);
+        assert.equal(output.includes(env.HOST_GOOGLE_CLIENT_SECRET), false);
+        assert.equal(
+          output.includes(env.HOST_FIREBASE_ADMIN_PRIVATE_KEY),
+          false,
+        );
+      },
+    );
+  }
+});

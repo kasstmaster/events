@@ -48,6 +48,16 @@ function availableHost(store, user) {
     store.get("host-membership", user.id, user.household)?.enabled !== false
   );
 }
+export function hostAuthConfiguration(env, origin, hostVerificationSender) {
+  return {
+    centralOrigin: hostAuthOrigin(origin),
+    enabled: hostOnlyMode(env),
+    signup: hostSignupEnabled(env),
+    google: !hostFirebaseEnabled(env) && googleHostConfigured(env),
+    emailVerification: !hostFirebaseEnabled(env) && !!hostVerificationSender,
+    firebase: hostFirebaseConfig(env),
+  };
+}
 export async function hostAuthAPI(ctx) {
   const {
     path,
@@ -73,14 +83,7 @@ export async function hostAuthAPI(ctx) {
   )
     return false;
   if (path === "/api/host-auth/config" && method === "GET") {
-    json(res, {
-      centralOrigin: hostAuthOrigin(origin),
-      enabled: hostOnlyMode(env),
-      signup: hostSignupEnabled(env),
-      google: !hostFirebaseEnabled(env) && googleHostConfigured(env),
-      emailVerification: !hostFirebaseEnabled(env) && !!hostVerificationSender,
-      firebase: hostFirebaseConfig(env),
-    });
+    json(res, hostAuthConfiguration(env, origin, hostVerificationSender));
     return true;
   }
   // Firebase verifies identity only; Gather controls which verified adult may host.
