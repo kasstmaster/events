@@ -347,7 +347,9 @@ test(
         1,
       );
       assert.equal(
-        await noScriptPage.locator("#app > .toolbar [data-action=home]").count(),
+        await noScriptPage
+          .locator("#app > .toolbar [data-action=home]")
+          .count(),
         1,
       );
       assert.equal(
