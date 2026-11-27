@@ -29,7 +29,14 @@ async function fixture(
   });
   const request = async (
     path,
-    { method = "GET", data, cookie, version, requestOrigin = origin, extraHeaders = {} } = {},
+    {
+      method = "GET",
+      data,
+      cookie,
+      version,
+      requestOrigin = origin,
+      extraHeaders = {},
+    } = {},
   ) => {
     const res = await fetch(base + path, {
       method,
@@ -743,7 +750,10 @@ test("QR links stay stable; templates are administrator managed; CSP and no-stor
   });
   assert.equal(revalidated.status, 304);
   assert.equal(revalidated.headers.get("etag"), etag);
-  assert.equal(revalidated.headers.get("cache-control"), appScript.headers.get("cache-control"));
+  assert.equal(
+    revalidated.headers.get("cache-control"),
+    appScript.headers.get("cache-control"),
+  );
   const sessionRead = await f.request("/api/session");
   assert.equal(sessionRead.headers.get("cache-control"), "no-store");
 });

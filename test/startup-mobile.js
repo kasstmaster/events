@@ -335,16 +335,18 @@ test(
       await page.evaluate(() => {
         window.originalHomeHero = document.querySelector("#main > .hero");
       });
-      await f.event(
-        { ...host, cookie: connected.cookie },
-        [],
-        { title: "Synthetic background update", date: "2030-05-08" },
-      );
+      await f.event({ ...host, cookie: connected.cookie }, [], {
+        title: "Synthetic background update",
+        date: "2030-05-08",
+      });
       await page.evaluate(() => window.dispatchEvent(new Event("online")));
-      await page.getByText("Synthetic background update", { exact: true }).waitFor();
+      await page
+        .getByText("Synthetic background update", { exact: true })
+        .waitFor();
       assert.equal(
-        await page.evaluate(() =>
-          document.querySelector("#main > .hero") === window.originalHomeHero,
+        await page.evaluate(
+          () =>
+            document.querySelector("#main > .hero") === window.originalHomeHero,
         ),
         true,
         "event-only background updates preserve the original Home hero node",

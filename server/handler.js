@@ -714,7 +714,11 @@ export function createHandler({
           const etag = `"${createHash("sha256").update(content).digest("hex")}"`;
           res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
           res.setHeader("ETag", etag);
-          if (req.headers["if-none-match"]?.split(",").some((value) => value.trim() === etag)) {
+          if (
+            req.headers["if-none-match"]
+              ?.split(",")
+              .some((value) => value.trim() === etag)
+          ) {
             res.writeHead(304);
             res.end();
             return;

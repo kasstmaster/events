@@ -541,8 +541,13 @@ async function load({ background = false, routeHome = false } = {}) {
       !Object.hasOwn(data, "guests")
     ) {
       for (const key of [
-        "personal", "guests", "hostFamily", "savedMenu", "tableTemplates",
-        "addresses", "templates",
+        "personal",
+        "guests",
+        "hostFamily",
+        "savedMenu",
+        "tableTemplates",
+        "addresses",
+        "templates",
       ])
         if (Object.hasOwn(state.data, key)) data[key] = state.data[key];
       templates = state.templates;
@@ -627,8 +632,11 @@ async function load({ background = false, routeHome = false } = {}) {
       originalHomeData &&
       originalHomeSession?.role === session.role &&
       JSON.stringify(originalHomeSession) === JSON.stringify(session) &&
-      JSON.stringify({ ...originalHomeData, events: null, receivedEvents: null }) ===
-        JSON.stringify({ ...data, events: null, receivedEvents: null }) &&
+      JSON.stringify({
+        ...originalHomeData,
+        events: null,
+        receivedEvents: null,
+      }) === JSON.stringify({ ...data, events: null, receivedEvents: null }) &&
       JSON.stringify(originalHomeTemplates) === JSON.stringify(templates) &&
       JSON.stringify(originalHomeFamily) === JSON.stringify(state.familyData) &&
       JSON.stringify(originalHomeHousehold) === JSON.stringify(publicHousehold);
@@ -1353,7 +1361,11 @@ function render(target = $("#app"), example = false) {
     !state.adminMode &&
     state.data.receivedEvents?.length
   )
-    content += homeEventCollections(role, state.data.events, state.data.receivedEvents).received;
+    content += homeEventCollections(
+      role,
+      state.data.events,
+      state.data.receivedEvents,
+    ).received;
   target.innerHTML = ui`<header class="top-shell no-print ${event ? "event-toolbar" : ""}"><div class="top-primary"><a class="brand" href="/" data-action="home">gather<span>＊</span></a>${event ? eventSummary(event) : ""}<div id="top-navigation">${topActions(event)}</div></div><div id="appearance-toolbar"></div></header><main id="main">${content}${role && state.view !== "card-editor" ? '<p id="sync-status" class="connection" role="status" aria-live="polite"></p>' : ""}</main>${role || state.preview ? toolbar(event) : ""}`;
   if (keepGuest)
     target
@@ -4381,17 +4393,46 @@ async function ensureTools() {
   return toolsRequest;
 }
 const toolActions = new Set([
-  "global-defaults", "preview-guest", "host-ui", "exit-preview", "cards",
-  "new-card", "edit-private-template", "edit-card", "use-card-template",
-  "remove-card", "card-tools-toggle", "unused-card-tools-toggle",
-  "card-editor-back", "add-card-variable", "add-qr-text", "add-card-field",
-  "remove-card-field", "download-png", "rsvp-card-open", "download-card",
-  "print-card", "share-card", "email-card", "visual-up", "visual-down",
-  "layout-up", "layout-down", "delete-host", "card-preview-edit",
-  "card-save", "card-tool-category", "card-tool-action", "card-preview-back",
+  "global-defaults",
+  "preview-guest",
+  "host-ui",
+  "exit-preview",
+  "cards",
+  "new-card",
+  "edit-private-template",
+  "edit-card",
+  "use-card-template",
+  "remove-card",
+  "card-tools-toggle",
+  "unused-card-tools-toggle",
+  "card-editor-back",
+  "add-card-variable",
+  "add-qr-text",
+  "add-card-field",
+  "remove-card-field",
+  "download-png",
+  "rsvp-card-open",
+  "download-card",
+  "print-card",
+  "share-card",
+  "email-card",
+  "visual-up",
+  "visual-down",
+  "layout-up",
+  "layout-down",
+  "delete-host",
+  "card-preview-edit",
+  "card-save",
+  "card-tool-category",
+  "card-tool-action",
+  "card-preview-back",
 ]);
 const toolForms = new Set([
-  "ui-settings", "choose-scope", "admin-preview", "card", "delete-host",
+  "ui-settings",
+  "choose-scope",
+  "admin-preview",
+  "card",
+  "delete-host",
 ]);
 const tools = {
   leaveCard: (...args) => loadedTools?.leaveCard(...args) ?? true,
@@ -4401,9 +4442,7 @@ const tools = {
       ? (await ensureTools()).action(action, target)
       : false,
   submit: async (form, kind) =>
-    toolForms.has(kind)
-      ? (await ensureTools()).submit(form, kind)
-      : false,
+    toolForms.has(kind) ? (await ensureTools()).submit(form, kind) : false,
   invitation: async () => (await ensureTools()).invitation(),
   cardsPage: () => loadedTools?.cardsPage() || "",
   cardPreviewPage: () => loadedTools?.cardPreviewPage() || "",
