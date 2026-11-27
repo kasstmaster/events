@@ -97,7 +97,7 @@ test(
       data: { intent: "connect", idToken: token, currentPassword: password },
     });
     assert.equal(connected.status, 200);
-    for (let index = 0; index < 50; index++) {
+    for (let index = 0; index < 250; index++) {
       f.store.put("guest", "startup-contact-" + index, host.household.id, {
         first: "Synthetic",
         last: "Contact " + index,
@@ -305,12 +305,12 @@ test(
         cookie: connected.cookie,
       });
       assert.equal(slim.body.host.guests, undefined);
-      assert.equal(full.body.host.guests.length, 50);
+      assert.equal(full.body.host.guests.length, 250);
       const slimBytes = Buffer.byteLength(JSON.stringify(slim.body));
       const fullBytes = Buffer.byteLength(JSON.stringify(full.body));
       assert.ok(slimBytes < fullBytes);
       t.diagnostic(
-        `Host startup JSON with 50 synthetic contacts: ${fullBytes} → ${slimBytes} bytes`,
+        `Host startup JSON with 250 synthetic contacts: ${fullBytes} → ${slimBytes} bytes`,
       );
       assert.equal((await f.request("/api/host/workspace")).status, 401);
       requested.length = 0;
@@ -327,6 +327,36 @@ test(
         requested.filter((path) => path.startsWith("/api/")),
         ["/api/host/workspace"],
       );
+      assert.equal(
+        requested.includes("/editor-tools.js"),
+        false,
+        "regular Home and Address Book navigation must not download card editing code",
+      );
+      await page.evaluate(() => {
+        window.originalHomeHero = document.querySelector("#main > .hero");
+      });
+      await f.event(
+        { ...host, cookie: connected.cookie },
+        [],
+        { title: "Synthetic background update", date: "2030-05-08" },
+      );
+      await page.evaluate(() => window.dispatchEvent(new Event("online")));
+      await page.getByText("Synthetic background update", { exact: true }).waitFor();
+      assert.equal(
+        await page.evaluate(() =>
+          document.querySelector("#main > .hero") === window.originalHomeHero,
+        ),
+        true,
+        "event-only background updates preserve the original Home hero node",
+      );
+      await page.locator('[data-action="cards"]:visible').first().click();
+      await page.locator('[data-action="new-card"]:visible').first().waitFor();
+      assert.ok(
+        requested.includes("/editor-tools.js"),
+        "card editing code must load only on first Cards & Invites visit",
+      );
+      await page.locator('button[data-action="home"]:visible').first().click();
+      await page.locator('[data-action="open-event"]').first().waitFor();
       await page.locator('.toolbar [data-action="settings"]').click();
       await measure(
         "sign-out",
