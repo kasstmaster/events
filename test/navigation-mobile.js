@@ -467,7 +467,10 @@ try {
     await click(p, "Home");
   }
   assert.equal(
-    await p.locator(".home-invitations > .eyebrow").getByText("Your events", { exact: true }).count(),
+    await p
+      .locator(".home-invitations > .eyebrow")
+      .getByText("Your events", { exact: true })
+      .count(),
     1,
   );
   assert.equal(await p.locator(".home-events .eyebrow").count(), 0);
