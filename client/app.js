@@ -503,7 +503,9 @@ async function load({ background = false } = {}) {
               ? "/api/admin"
               : `/api/${session.role}`,
         ),
-        session.role === "host" && session.platformAdmin
+        session.role === "host" &&
+        session.platformAdmin &&
+        (state.adminMode || ["admin-approvals", "admin-hosts"].includes(state.view))
           ? api("/api/admin")
           : null,
       ]);
@@ -2782,6 +2784,17 @@ document.addEventListener("click", async (event) => {
       state.session.role === "host"
     ) {
       if (!state.session.platformAdmin) return;
+      // Home and event navigation do not need the expensive platform directory.
+      // Fetch it only when an administrator actually opens a tool.
+      if (!state.data?.hosts) {
+        const admin = await api("/api/admin");
+        Object.assign(state.data, {
+          approvals: admin.approvals,
+          hosts: admin.hosts,
+          deletions: admin.deletions,
+          legacyAdministrators: admin.legacyAdministrators,
+        });
+      }
       state.adminMode = true;
     }
     if (
@@ -4222,7 +4235,12 @@ async function refreshInBackground() {
     refreshing = false;
   }
 }
-setInterval(refreshInBackground, 3000);
+// Three-second polling reloaded the entire household, session and admin state
+// constantly. Refresh on returning to the tab and use a modest fallback cadence.
+setInterval(refreshInBackground, 60000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshInBackground();
+});
 window.addEventListener("online", refreshInBackground);
 
 function applyPersonalLayouts(target, config) {
