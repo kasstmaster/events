@@ -503,7 +503,10 @@ async function load({ background = false } = {}) {
               ? "/api/admin"
               : `/api/${session.role}`,
         ),
-        session.role === "host" && session.platformAdmin
+        session.role === "host" &&
+        session.platformAdmin &&
+        (state.adminMode ||
+          ["admin-approvals", "admin-hosts"].includes(state.view))
           ? api("/api/admin")
           : null,
       ]);
@@ -1143,7 +1146,17 @@ function render(target = $("#app"), example = false) {
   )
     content = weddingImport.page();
   else if (state.hostOnly && state.view === "share-event" && role === "host")
-    content = ui`${topbar({ title: C("Share Invitation"), back: "page-back" })}<section class="panel"><ul class="browse-rows">${state.data.events.map((e) => row({ title: escape(e.title), action: "share-event-select", id: e.id, symbol: "share" })).join("")}</ul></section>`;
+    content = ui`${topbar({ title: C("Share Invitation"), back: "page-back" })}<section class="panel"><ul class="browse-rows">${state.data.events
+      .filter((e) => !eventHasPassed(e))
+      .map((e) =>
+        row({
+          title: escape(e.title),
+          action: "share-event-select",
+          id: e.id,
+          symbol: "share",
+        }),
+      )
+      .join("")}</ul></section>`;
   else if (
     ["event-extra-page", "event-pages-manage"].includes(state.view) &&
     role
@@ -1235,6 +1248,8 @@ function render(target = $("#app"), example = false) {
         role === "host"
           ? state.data.events.filter((event) => !eventHasPassed(event))
           : orderedInvitations(state.data.events);
+      const archivedEvents =
+        role === "host" ? state.data.events.filter(eventHasPassed) : [];
       content =
         (role === "host"
           ? topbar({
@@ -1251,13 +1266,8 @@ function render(target = $("#app"), example = false) {
                 : [],
             })
           : "") +
-        ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : C("Welcome")}</p><h1>${escape(role === "guest" ? state.data.personal?.person.name || fullName(state.data.guest) : state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? personal.homeActions() : ""}${homeEvents.length ? ui`<section class="home-invitations"><h2 class="invitations-title">${role === "host" ? C("Your events") : C("You’re invited to gather")}</h2><section class="grid home-events ${homeEvents.length > 1 ? "multiple-events" : "single-event"}" aria-label="Events">${homeEvents.map(eventCard).join("")}</section></section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
+        ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : C("Welcome")}</p><h1>${escape(role === "guest" ? state.data.personal?.person.name || fullName(state.data.guest) : state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? personal.homeActions() : ""}${homeEvents.length || archivedEvents.length ? ui`<section class="home-invitations">${role === "host" ? ui`<p class="eyebrow">${C("Your events")}</p>` : ui`<h2 class="invitations-title">${C("You’re invited to gather")}</h2>`}${homeEvents.length ? ui`<section class="grid home-events ${homeEvents.length > 1 ? "multiple-events" : "single-event"}" aria-label="Events">${homeEvents.map(eventCard).join("")}</section>` : ""}${archivedEvents.length ? ui`<details class="panel"><summary>${C("Archived events")}</summary><section class="grid home-events" aria-label="${H("Archived events")}">${archivedEvents.map(eventCard).join("")}</section></details>` : ""}</section>` : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`}`;
     }
-  }
-  if (role === "host" && !event && state.view === "home" && !state.adminMode) {
-    const archived = state.data.events.filter(eventHasPassed);
-    if (archived.length)
-      content += ui`<section class="home-invitations"><details class="panel"><summary>${C("Archived events")}</summary><section class="grid home-events" aria-label="${H("Archived events")}">${archived.map(eventCard).join("")}</section></details></section>`;
   }
   if (
     role === "host" &&
@@ -2782,6 +2792,17 @@ document.addEventListener("click", async (event) => {
       state.session.role === "host"
     ) {
       if (!state.session.platformAdmin) return;
+      // Home and event navigation do not need the expensive platform directory.
+      // Fetch it only when an administrator actually opens a tool.
+      if (!state.data?.hosts) {
+        const admin = await api("/api/admin");
+        Object.assign(state.data, {
+          approvals: admin.approvals,
+          hosts: admin.hosts,
+          deletions: admin.deletions,
+          legacyAdministrators: admin.legacyAdministrators,
+        });
+      }
       state.adminMode = true;
     }
     if (
@@ -4222,7 +4243,12 @@ async function refreshInBackground() {
     refreshing = false;
   }
 }
-setInterval(refreshInBackground, 3000);
+// Three-second polling reloaded the entire household, session and admin state
+// constantly. Refresh on returning to the tab and use a modest fallback cadence.
+setInterval(refreshInBackground, 60000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshInBackground();
+});
 window.addEventListener("online", refreshInBackground);
 
 function applyPersonalLayouts(target, config) {

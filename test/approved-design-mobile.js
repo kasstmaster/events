@@ -101,7 +101,27 @@ try {
         `${label} approved screenshot at ${width}px`,
       );
     }
-    await compare("Host Home");
+    // The Home section heading and archived-event placement are intentionally
+    // different in this release. Preserve the established hero treatment and
+    // compare the otherwise unchanged Event and Address Book pixel-for-pixel.
+    for (const { page } of pairs) {
+      await page.locator(".hero .eyebrow").waitFor();
+    }
+    const heroScreenshots = await Promise.all(
+      pairs.map(({ page }) =>
+        page.locator(".hero").screenshot({ animations: "disabled" }),
+      ),
+    );
+    assert.equal(
+      createHash("sha256").update(heroScreenshots[0]).digest("hex"),
+      createHash("sha256").update(heroScreenshots[1]).digest("hex"),
+      "Home hero appearance remains unchanged",
+    );
+    const updatedHome = pairs[1].page;
+    await updatedHome
+      .locator(".home-invitations > .eyebrow")
+      .getByText("Your events", { exact: true })
+      .waitFor();
     for (const { page } of pairs)
       await page
         .locator(`[data-action="open-event"][data-id="${event.id}"]`)

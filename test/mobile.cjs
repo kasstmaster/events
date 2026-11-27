@@ -366,7 +366,10 @@ const { existsSync, mkdirSync } = require("node:fs");
       .click();
     await alpha.page.getByText("Event saved.", { exact: true }).waitFor();
     await click(alpha.page, "Back");
-    // The second browser session refreshes itself through the normal polling path.
+    // A full-account background refresh now runs at a lower cadence to avoid
+    // repeated requests. A manual reload must still show saved changes promptly.
+    await secondDevice.page.reload();
+    await click(secondDevice.page, "View Event");
     await secondDevice.page
       .getByRole("link", { name: "Our wedding wishes", exact: true })
       .waitFor({ timeout: 15000 });

@@ -467,7 +467,10 @@ try {
     await click(p, "Home");
   }
   assert.equal(
-    await p.getByRole("heading", { name: "Your events", exact: true }).count(),
+    await p
+      .locator(".home-invitations > .eyebrow")
+      .getByText("Your events", { exact: true })
+      .count(),
     1,
   );
   assert.equal(await p.locator(".home-events .eyebrow").count(), 0);
@@ -568,12 +571,18 @@ try {
     { ...eventBeforeRefresh, description: "Background update after scrolling" },
     eventBeforeRefresh.version,
   );
+  await p.evaluate(() => window.dispatchEvent(new Event("online")));
   await p
     .getByText("Background update after scrolling", { exact: true })
     .waitFor();
   await p.waitForFunction(() => window.pageRefreshes >= 1);
   const refreshCount = await p.evaluate(() => window.pageRefreshes);
-  await p.waitForTimeout(3500);
+  await Promise.all([
+    p.waitForResponse(
+      (response) => response.url().includes("/api/session") && response.ok(),
+    ),
+    p.evaluate(() => window.dispatchEvent(new Event("online"))),
+  ]);
   assert.equal(
     await p.evaluate(() => window.pageRefreshes),
     refreshCount,
@@ -755,6 +764,7 @@ try {
     { ...syncJob, state: "complete", updated: 1 },
     syncJob.version,
   );
+  await p.evaluate(() => window.dispatchEvent(new Event("online")));
   await p.getByText(/15551230000/).waitFor();
   await p.getByText("Contacts synced.", { exact: true }).waitFor();
   assert.equal(
@@ -2052,7 +2062,9 @@ try {
   await p.getByRole("button", { name: "Back", exact: true }).click();
   await discardedDetails;
   await p.locator(".hero h1").waitFor();
-  await p.waitForTimeout(3500);
+  // Reopen with the latest household version after discarding a stale draft.
+  await p.reload();
+  await p.locator(".hero h1").waitFor();
   await click(p, "Settings");
   await p
     .locator("#top-navigation")
