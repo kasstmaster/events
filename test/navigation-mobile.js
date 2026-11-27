@@ -571,12 +571,16 @@ try {
     { ...eventBeforeRefresh, description: "Background update after scrolling" },
     eventBeforeRefresh.version,
   );
+  await p.evaluate(() => window.dispatchEvent(new Event("online")));
   await p
     .getByText("Background update after scrolling", { exact: true })
     .waitFor();
   await p.waitForFunction(() => window.pageRefreshes >= 1);
   const refreshCount = await p.evaluate(() => window.pageRefreshes);
-  await p.waitForTimeout(3500);
+  await p.evaluate(() => window.dispatchEvent(new Event("online")));
+  await p.waitForResponse((response) =>
+    response.url().includes("/api/session") && response.ok(),
+  ).catch(() => {});
   assert.equal(
     await p.evaluate(() => window.pageRefreshes),
     refreshCount,
