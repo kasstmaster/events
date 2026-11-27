@@ -578,8 +578,8 @@ try {
   await p.waitForFunction(() => window.pageRefreshes >= 1);
   const refreshCount = await p.evaluate(() => window.pageRefreshes);
   await Promise.all([
-    p.waitForResponse((response) =>
-      response.url().includes("/api/session") && response.ok(),
+    p.waitForResponse(
+      (response) => response.url().includes("/api/session") && response.ok(),
     ),
     p.evaluate(() => window.dispatchEvent(new Event("online"))),
   ]);
