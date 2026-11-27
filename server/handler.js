@@ -706,6 +706,20 @@ export function createHandler({
               );
           }
         }
+        // The document can contain personalized invitations and must never be
+        // cached. Version-neutral public files are identical across accounts;
+        // a brief browser cache avoids re-downloading the entire application on
+        // every refresh. Revalidation after expiry keeps deployments observable.
+        if (entry[0] !== "index.html") {
+          const etag = `"${createHash("sha256").update(content).digest("hex")}"`;
+          res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
+          res.setHeader("ETag", etag);
+          if (req.headers["if-none-match"]?.split(",").some((value) => value.trim() === etag)) {
+            res.writeHead(304);
+            res.end();
+            return;
+          }
+        }
         res.writeHead(200, { "Content-Type": entry[1] });
         res.end(content);
         return;
