@@ -332,6 +332,25 @@ test(
         ),
         [],
       );
+      // A host should see their household and event summaries before any
+      // JavaScript executes. The existing CSP/session checks still apply.
+      const noScriptPage = await context.newPage();
+      await noScriptPage.route("**/*.js", (route) => route.abort());
+      const noScriptStarted = Date.now();
+      const noScriptResponse = await noScriptPage.goto(appOrigin, {
+        waitUntil: "domcontentloaded",
+      });
+      assert.equal(noScriptResponse.status(), 200);
+      await noScriptPage.locator("#main > .hero h1").waitFor();
+      assert.equal(
+        await noScriptPage.locator(".home-invitations h2").first().innerText(),
+        title,
+      );
+      assert.equal(await noScriptPage.locator("#main > p").count(), 0);
+      t.diagnostic(
+        `HTML-first host document without JavaScript: ${Date.now() - noScriptStarted}ms`,
+      );
+      await noScriptPage.close();
       await page.locator('[data-action="open-event"]').first().click();
       await measure(
         "Home",
