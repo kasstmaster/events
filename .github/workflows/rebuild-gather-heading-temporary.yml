@@ -1,4 +1,4 @@
-name: Rebuild Gather events heading (temporary)
+name: Rebuild Gather event sharing and headings (temporary)
 on:
   push:
     branches: [perf/fast-gather-startup-20261127]
