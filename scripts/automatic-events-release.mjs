@@ -116,6 +116,7 @@ export async function validateSource(
         "--exclude-standard",
         "--",
         "public",
+        "client",
         "server",
         "cloudflare",
       ),

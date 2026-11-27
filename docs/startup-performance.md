@@ -1,3 +1,8 @@
+> The follow-up in [lightweight browser entry](lightweight-entry.md) replaces the
+> module-preload approach below with a verified single application build and tiny
+> authentication-transfer pages. The results below describe PR #106, not proof
+> that production loading was resolved.
+
 # Gather startup loading
 
 This correction starts from approved main `673e12f0556026a7bd3afc231d60014e622c3446`.

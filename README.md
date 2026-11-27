@@ -1,3 +1,7 @@
+Browser source lives in `client/` plus the shared `public/` UI modules. After
+editing it, run `npm run build:browser`; committed public entries are generated and
+verified by all test commands. See [lightweight entry and secure transfers](docs/lightweight-entry.md).
+
 > Current consolidated model: [Host-owned invitations and host authentication](docs/host-owned-invitations.md).
 > The replacement is implemented behind two absent/default-off flags. Hosts alone
 > have accounts; guests use public event links and host-local Household IDs. Legacy

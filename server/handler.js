@@ -602,7 +602,21 @@ export function createHandler({
           (/^\/h\/[A-Za-z0-9_-]+$/.test(path) ? files.get("/") : null);
         if (!entry) fail(404, "Page not found.");
         res.writeHead(200, { "Content-Type": entry[1] });
-        res.end(await readAsset(entry[0]));
+        const asset = await readAsset(entry[0]);
+        // Transfer hops need only the tiny credential-capture module. Avoid
+        // downloading the full application repeatedly across authenticated origins.
+        res.end(
+          path === "/signin"
+            ? asset
+                .toString()
+                .replace(/\s*<link rel="modulepreload"[^>]*>/g, "")
+                .replace('<script type="module" src="/app.js"></script>', "")
+                .replace(
+                  'src="/auth-bootstrap.js"',
+                  'src="/auth-bootstrap.js" data-gather-transfer',
+                )
+            : asset,
+        );
         return;
       }
       if (!["GET", "POST", "PUT", "DELETE"].includes(method))

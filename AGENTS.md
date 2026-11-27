@@ -1,3 +1,15 @@
+## Browser entry build and lightweight transfers
+
+Edit `client/app.js` and `client/auth-bootstrap.js`, not the generated public entry
+files. Shared UI/editor modules still live in `public/`. Run `npm run build:browser`
+after changing these sources and update the reviewed asset manifest. `npm test`
+checks that the committed build exactly matches its sources before any release.
+Keep auth-bootstrap external to the application bundle so fragment secrets are
+captured exactly once and stay only in module memory. `/signin` transfer documents
+load the tiny bootstrap, not the entire app. Preserve the existing server-side
+single-use/browser/origin/session checks. Load the shared app after redemption or
+when actual sign-in/recovery UI is required; never invent a separate login form.
+
 ## Current owner instruction: preserve design; host-owned replacement
 
 The consolidated owner ticket supplied on November 20, 2026 supersedes the older
@@ -60,7 +72,7 @@ These instructions apply to every change in this repository.
 9. **Test and document changes.** Use `npm ci` on Node.js 24. Run `npm test`, `npm run test:mobile`, `npm run test:cloudflare` and `npm run format:check` for application changes. Use synthetic isolated databases/browser sessions, never live guests or production endpoints. Cover multiple hosts/events, guests/children, appearance isolation, roles, competing writes and cross-device sync. Add meaningful regression coverage for changed behavior. Update README and security guidance when architecture, features, setup or limits change. Report actual passed/failed/unrun checks and documentation status.
 10. **Review and deployment safety.** Work in the existing checkout; do not create a worktree unless explicitly requested. Check the final diff for secrets, private data and unrelated changes. Create a dedicated feature branch, implement and validate the work, commit it, and push the completed branch to GitHub for owner handoff. Do not create pull requests, merge, enable auto-merge or deploy; the owner creates, reviews and merges PRs. Never migrate live data or alter production configuration without separate explicit authorization. Keep feature/PR validation non-deploying; only the owner-merged main release workflow described below may publish after all production guards pass. Cloudflare deployments must target the events-only Worker/database in the owner-selected account, with no existing gatherings routes or bindings. Browser administrator setup must require an owner-configured secret, exact-origin checks, persistent attempt limits and an atomic single-use completion marker. Never allow public first-user ownership claims or use setup to reset an existing administrator. Keep setup credentials out of URLs, logs, browser storage and API responses.
 
-Architecture reference: `server/model.js` owns storage and transactional rules; `server/handler.js` owns the shared authorized API; `server/app.js` and `server/node-store.js` adapt local Node HTTP/SQLite; `cloudflare/worker.js` adapts Cloudflare Fetch and durable SQLite; `public/app.js` owns shared views and editors; `public/style.css` owns responsive styling. Read [README.md](README.md), [docs/security.md](docs/security.md) and [docs/cloudflare.md](docs/cloudflare.md) before changing those boundaries. Keep this file aligned with the implemented system without weakening its privacy or shared-code requirements.
+Architecture reference: `server/model.js` owns storage and transactional rules; `server/handler.js` owns the shared authorized API; `server/app.js` and `server/node-store.js` adapt local Node HTTP/SQLite; `cloudflare/worker.js` adapts Cloudflare Fetch and durable SQLite; `client/app.js` owns shared views and editors; `public/style.css` owns responsive styling. Read [README.md](README.md), [docs/security.md](docs/security.md) and [docs/cloudflare.md](docs/cloudflare.md) before changing those boundaries. Keep this file aligned with the implemented system without weakening its privacy or shared-code requirements.
 
 ## Household hostname rules
 
