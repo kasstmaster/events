@@ -577,10 +577,12 @@ try {
     .waitFor();
   await p.waitForFunction(() => window.pageRefreshes >= 1);
   const refreshCount = await p.evaluate(() => window.pageRefreshes);
-  await p.evaluate(() => window.dispatchEvent(new Event("online")));
-  await p.waitForResponse((response) =>
-    response.url().includes("/api/session") && response.ok(),
-  ).catch(() => {});
+  await Promise.all([
+    p.waitForResponse((response) =>
+      response.url().includes("/api/session") && response.ok(),
+    ),
+    p.evaluate(() => window.dispatchEvent(new Event("online"))),
+  ]);
   assert.equal(
     await p.evaluate(() => window.pageRefreshes),
     refreshCount,
