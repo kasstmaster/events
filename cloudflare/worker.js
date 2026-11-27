@@ -347,36 +347,6 @@ export default {
         householdHostname = "";
       } else headers.set("x-events-verified-hostname", householdHostname);
     }
-    // Public, immutable-in-content application assets require no household DB read.
-    // Only the approved universal origin or already-configured, verified
-    // household gateways take this shortcut. Pending/dynamically claimed hosts
-    // still consult the Durable Object for routing-status enforcement, and
-    // HTML/API requests retain their existing authorization and personalization.
-    const assetPath = new URL(request.url).pathname;
-    const trustedStaticHost =
-      directUniversal ||
-      (householdHostname &&
-        configuredHosts(env.HOUSEHOLD_HOSTS).has(householdHostname));
-    const universalStaticAsset =
-      trustedStaticHost &&
-      request.method === "GET" &&
-      /^(?:\/(?:app|auth-bootstrap|account-controls|household-address|editor-tools|ui-system|ui-runtime|ui-copy|icons|card-system|reminder-time|family-ui|default-examples|passwordless-ui|address-picker|address-system|browse-ui|appearance-editor|host-auth-ui|host-admin-ui|recipient-management-ui|event-pages-ui|wedding-import-ui|event-information|personal-ui|gather-sw|rsvp-cards-ui)\.js|\/style\.css|\/gather-(?:192|512)\.png|\/card-qr-example\.svg)$/.test(assetPath);
-    if (universalStaticAsset) {
-      const response = await serve(request, {
-        store: null,
-        env,
-        origin: householdHostname
-          ? `https://${householdHostname}`
-          : GATHER_ORIGIN,
-        readAsset: async (file) => {
-          const asset = await env.ASSETS.fetch(new URL("/" + file, request.url));
-          if (!asset.ok) throw new Error("Missing frontend asset");
-          return Buffer.from(await asset.arrayBuffer());
-        },
-      });
-      response.headers.set("Server-Timing", 'asset;desc="edge"');
-      return response;
-    }
     if (
       householdHostname ||
       headers.has("x-events-verified-universal") ||
