@@ -2,12 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { initialHomeHtml } from "../server/initial-home.js";
 
-test("initial HTML needs no JavaScript and exposes no account details to visitors", () => {
+test(
+  "initial HTML needs no JavaScript and exposes no account details to visitors",
+  () => {
   const output = initialHomeHtml();
   assert.match(output, /Welcome to Gather/);
   assert.match(output, /href="\/signin"/);
-  assert.doesNotMatch(output, /Getting things ready/);
-});
+    assert.doesNotMatch(output, /Getting things ready/);
+  },
+);
 
 test("validated host gets escaped, lightweight event summaries", () => {
   const output = initialHomeHtml({
