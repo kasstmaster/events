@@ -1146,7 +1146,7 @@ function render(target = $("#app"), example = false) {
   )
     content = weddingImport.page();
   else if (state.hostOnly && state.view === "share-event" && role === "host")
-    content = ui`${topbar({ title: C("Share Invitation"), back: "page-back" })}<section class="panel"><ul class="browse-rows">${state.data.events.map((e) => row({ title: escape(e.title), action: "share-event-select", id: e.id, symbol: "share" })).join("")}</ul></section>`;
+    content = ui`${topbar({ title: C("Share Invitation"), back: "page-back" })}<section class="panel"><ul class="browse-rows">${state.data.events.filter((e) => !eventHasPassed(e)).map((e) => row({ title: escape(e.title), action: "share-event-select", id: e.id, symbol: "share" })).join("")}</ul></section>`;
   else if (
     ["event-extra-page", "event-pages-manage"].includes(state.view) &&
     role
