@@ -761,7 +761,18 @@ export async function run(mode, options = {}) {
           modules,
           manifestFor(anchor.release),
         );
-        await verifyAssetBytes(manifestFor(anchor.release), fetcher);
+        // The Home root is personalized after authentication. Verify the
+        // reviewed index blob through the exact public /signin transformation
+        // while still checking every asset byte on both configured origins.
+        const reviewedIndex =
+          options.reviewedIndex ||
+          execFileSync("git", ["show", `${anchor.release}:public/index.html`], {
+            cwd: root,
+            maxBuffer: 8000000,
+          });
+        await verifyAssetBytes(manifestFor(anchor.release), fetcher, {
+          reviewedIndex,
+        });
         const protectedRaw = protectedRuntime(raw);
         const expectedRuntime =
           anchor.application?.protected_runtime_sha256 ||
