@@ -117,7 +117,7 @@ test(
     assert.match(firstDocument.body, /Your gathering place/);
     assert.ok(
       firstDocument.body.includes(
-        'Fixture &lt;/script&gt;&lt;img id=&quot;unescaped-event&quot;&gt;',
+        "Fixture &lt;/script&gt;&lt;img id=&quot;unescaped-event&quot;&gt;",
       ),
     );
     assert.doesNotMatch(firstDocument.body, /<img id="unescaped-event">/);
