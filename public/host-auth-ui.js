@@ -104,7 +104,27 @@ export function hostAuthUI({
         );
       }
     } else {
-      await sdk.signInWithEmailAndPassword(auth, values.email, values.password);
+      try {
+        await sdk.signInWithEmailAndPassword(
+          auth,
+          values.email,
+          values.password,
+        );
+      } catch (error) {
+        if (
+          ![
+            "auth/invalid-credential",
+            "auth/wrong-password",
+            "auth/user-not-found",
+          ].includes(error?.code)
+        )
+          throw error;
+        throw Error(
+          intent === "connect"
+            ? "Firebase couldn’t sign you in. Use your Firebase password or Google to verify your email, then enter your existing Gather password."
+            : "Firebase couldn’t sign you in with that email and password. If you use an administrator account, choose Administrator sign-in and use your Gather password. Otherwise, try Google or reset your Firebase password.",
+        );
+      }
     }
     await sdk.reload(auth.currentUser);
     if (!auth.currentUser.emailVerified) {
@@ -285,9 +305,11 @@ export function hostAuthUI({
               ? "Recover host sign-in"
               : screen === "verify"
                 ? "Verify your email"
-                : "Host sign-in";
+                : screen === "admin"
+                  ? "Administrator sign-in"
+                  : "Host sign-in";
       const household = state.publicHousehold;
-      return ui`<section class="auth"><p class="eyebrow">${household ? escape(household.name) : C("Welcome to Gather")}</p><h1>${C(title)}</h1>${household ? ui`<p class="muted">Open the event link on your invitation to RSVP. Only hosts sign in here.</p>` : ""}<div class="panel">${message ? ui`<p role="status">${escape(message)}</p>` : ""}${screen === "sent" ? ui`<p>Check your email, then open the verification link in this browser. No account has been created yet.</p>` : screen === "verify" ? ui`<form data-form="host-verify"><p>Finish verifying your email to create your host account.</p><p class="form-error" role="alert"></p><button>Verify and continue</button></form>` : screen === "reset" ? ui`<form data-form="host-reset">${field(H("New password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Reset password</button></form>` : screen === "recover" ? ui`<form data-form="host-recover">${field(H("Email address"), "email", "", "email", 'required autocomplete="email"')}<p class="form-error" role="alert"></p><button>Send recovery email</button></form>` : ui`<form data-form="${screen === "signup" ? "host-signup" : screen === "connect" ? "host-connect-firebase" : "host-login"}">${field(H("Email address"), "email", screen === "signup" ? invitationContext?.email || "" : "", "email", 'required maxlength="254" autocomplete="username"' + (screen === "signup" && invitationContext?.email ? " readonly" : ""))}${screen === "signup" ? field(H("Family household name"), "name", invitationContext?.household?.name || "", "text", 'required maxlength="100"' + (invitationContext?.household ? " readonly" : "")) : ""}${field(H("Password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="current-password"')}${screen === "connect" ? field(H("Existing Gather host password"), "currentPassword", "", "password", 'required autocomplete="current-password"') : ""}${screen === "signup" && !invitationContext?.household ? familyLogoChoice() : ""}<p class="form-error" role="alert"></p><button>${C(screen === "signup" ? "Verify email and create account" : screen === "connect" ? "Connect existing host account" : "Sign in")}</button>${(config.google || config.firebase) && screen !== "admin" ? button("host-google", H(screen === "signup" ? "Sign up with Google" : "Sign in with Google")) : ""}</form>`}</div>${screen !== "signup" ? button("host-recovery", H("Forgot password?"), "", "quiet") : ""}${config.firebase && screen === "login" ? button("host-connect-screen", H("Connect an existing host account"), "", "quiet") : ""}${config.firebase && screen === "login" ? button("host-admin-screen", H("Administrator sign-in"), "", "quiet") : ""}${screen !== "login" ? button("host-login-screen", H("Sign in"), "", "quiet") : ""}<p class="small">New host accounts require an administrator-issued registration link.</p></section>`;
+      return ui`<section class="auth"><p class="eyebrow">${household ? escape(household.name) : C("Welcome to Gather")}</p><h1>${C(title)}</h1>${household ? ui`<p class="muted">Open the event link on your invitation to RSVP. Only hosts sign in here.</p>` : ""}<div class="panel">${message ? ui`<p role="status">${escape(message)}</p>` : ""}${screen === "sent" ? ui`<p>Check your email, then open the verification link in this browser. No account has been created yet.</p>` : screen === "verify" ? ui`<form data-form="host-verify"><p>Finish verifying your email to create your host account.</p><p class="form-error" role="alert"></p><button>Verify and continue</button></form>` : screen === "reset" ? ui`<form data-form="host-reset">${field(H("New password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Reset password</button></form>` : screen === "recover" ? ui`<form data-form="host-recover">${field(H("Email address"), "email", "", "email", 'required autocomplete="email"')}<p class="form-error" role="alert"></p><button>Send recovery email</button></form>` : ui`<form data-form="${screen === "signup" ? "host-signup" : screen === "connect" ? "host-connect-firebase" : "host-login"}">${field(H("Email address"), "email", screen === "signup" ? invitationContext?.email || "" : "", "email", 'required maxlength="254" autocomplete="username"' + (screen === "signup" && invitationContext?.email ? " readonly" : ""))}${screen === "signup" ? field(H("Family household name"), "name", invitationContext?.household?.name || "", "text", 'required maxlength="100"' + (invitationContext?.household ? " readonly" : "")) : ""}${field(H("Password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="current-password"')}${screen === "connect" ? field(H("Existing Gather host password"), "currentPassword", "", "password", 'required autocomplete="current-password"') : ""}${screen === "signup" && !invitationContext?.household ? familyLogoChoice() : ""}<p class="form-error" role="alert"></p><button>${C(screen === "signup" ? "Verify email and create account" : screen === "connect" ? "Connect existing host account" : "Sign in")}</button>${(config.google || config.firebase) && screen !== "admin" ? button("host-google", H(screen === "signup" ? "Sign up with Google" : "Sign in with Google")) : ""}</form>`}</div>${!["signup", "admin"].includes(screen) ? button("host-recovery", H("Forgot password?"), "", "quiet") : ""}${config.firebase && screen === "login" ? button("host-connect-screen", H("Connect an existing host account"), "", "quiet") : ""}${config.firebase && screen === "login" ? button("host-admin-screen", H("Administrator sign-in"), "", "quiet") : ""}${screen !== "login" ? button("host-login-screen", H("Back to host sign-in"), "", "quiet") : ""}<p class="small">New host accounts require an administrator-issued registration link.</p></section>`;
     },
     async submit(form) {
       const kind = form.dataset.form,
