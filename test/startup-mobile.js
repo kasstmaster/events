@@ -123,10 +123,24 @@ test(
     assert.doesNotMatch(firstDocument.body, /<img id="unescaped-event">/);
     assert.doesNotMatch(firstDocument.body, /Getting things ready/);
     assert.equal(firstDocument.headers.get("cache-control"), "no-store");
+    assert.doesNotMatch(firstDocument.body, /data-gather-home/);
+    const embeddedPayload = (document) =>
+      document.split(
+        '<script id="gather-public-event" type="application/json">',
+      )[1]?.split("</script>")[0];
+    const signedInBootstrap = JSON.parse(embeddedPayload(firstDocument.body));
+    assert.equal(signedInBootstrap.session.role, "host");
+    assert.equal(signedInBootstrap.host.events[0].id, event.id);
+    assert.equal(signedInBootstrap.host.guests, undefined);
     const anonymousDocument = await f.request("/");
     assert.equal(anonymousDocument.status, 200);
     assert.match(anonymousDocument.body, /Welcome to Gather/);
     assert.doesNotMatch(anonymousDocument.body, /Fixture/);
+    const anonymousBootstrap = JSON.parse(
+      embeddedPayload(anonymousDocument.body),
+    );
+    assert.equal(anonymousBootstrap.session.role, null);
+    assert.equal(anonymousBootstrap.host, undefined);
     const reference = publicEventReference(
       f.store,
       host.household.id,
@@ -290,6 +304,12 @@ test(
         };
       };
       await measure("cold signed out", "login", () => page.goto(appOrigin));
+      assert.deepEqual(
+        backendPaths["cold signed out"].filter((p) =>
+          p.startsWith("/api/startup"),
+        ),
+        [],
+      );
       const coldScripts = requested
         .filter((path) => path.endsWith(".js"))
         .sort();
@@ -304,6 +324,12 @@ test(
       );
       const sdkExtraReads = await page.evaluate(() => window.sdkExtraReads);
       await measure("signed-in refresh", "home", () => page.reload());
+      assert.deepEqual(
+        backendPaths["signed-in refresh"].filter((p) =>
+          p.startsWith("/api/startup"),
+        ),
+        [],
+      );
       await page.locator('[data-action="open-event"]').first().click();
       await measure(
         "Home",
