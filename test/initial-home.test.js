@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { initialHomeHtml } from "../server/initial-home.js";
+import {
+  initialHomeHtml,
+  initialHomeTopbar,
+  initialHomeBottomBar,
+} from "../server/initial-home.js";
 import { initialThemeStyle } from "../server/initial-theme.js";
 
 test("initial HTML needs no JavaScript and exposes no account details to visitors", () => {
@@ -39,7 +43,8 @@ test("first document includes real Home controls and event buttons", () => {
     household: { name: "Acme", logo: "/gather-192.png" },
     events: [{ id: "event123", title: "Picnic", totals: { attending: 3 } }],
   });
-  assert.match(markup, /data-action="new-event"/);
+  assert.match(initialHomeTopbar(), /data-action="new-event"/);
+  assert.match(initialHomeBottomBar(), /data-action="home"/);
   assert.match(markup, /data-action="addresses"/);
   assert.match(markup, /data-action="family-workspace"/);
   assert.match(markup, /data-action="cards"/);
