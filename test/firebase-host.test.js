@@ -74,6 +74,20 @@ const fetcher = async (url, options = {}) => {
   };
 };
 
+test("shared sign-in keeps the Gather password path restricted to platform administrators", async (t) => {
+  const f = await application(t, env);
+  await f.host("Alpha");
+  const signIn = (email) =>
+    f.request("/api/host-auth/login", {
+      method: "POST",
+      data: { email, password, platformAdmin: true },
+    });
+  const admin = await signIn("admin@example.test");
+  assert.equal(admin.status, 200);
+  assert.equal(admin.body.role, "admin");
+  assert.equal((await signIn("alpha@example.test")).status, 401);
+});
+
 test("host Firebase stays off unless both the model and provider are approved", () => {
   assert.equal(
     hostFirebaseEnabled({ ...env, HOST_FIREBASE_ACTIVATION_APPROVED: "false" }),
