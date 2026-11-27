@@ -48,7 +48,7 @@ function walk(node, parent, fn) {
   }
 }
 for (const file of [
-  "public/app.js",
+  "client/app.js",
   "public/host-auth-ui.js",
   "public/host-admin-ui.js",
   "public/recipient-management-ui.js",

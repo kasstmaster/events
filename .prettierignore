@@ -2,3 +2,7 @@ node_modules/
 var/
 package-lock.json
 test-results/
+
+# Generated and deterministically verified by build-browser.mjs
+public/app.js
+public/auth-bootstrap.js
