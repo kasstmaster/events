@@ -1,4 +1,5 @@
 import { initialHomeHtml } from "./initial-home.js";
+import { initialThemeStyle } from "./initial-theme.js";
 import { validFirebaseHostSession } from "./firebase-host-admin.js";
 import { hostFirebaseEnabled, hostFirebaseConfig } from "./firebase-host.js";
 import { weddingImportAPI } from "./wedding-import.js";
@@ -1165,6 +1166,11 @@ export function createHandler({
         const content = (await readAsset("index.html"))
           .toString()
           .replace(/\s*<link\s[^>]*\bdata-gather-home\b[^>]*>/, "")
+          .replace(
+            "</head>",
+            () =>
+              `${snapshot.host ? initialThemeStyle(snapshot.host.ui.design, snapshot.host.defaults) : ""}</head>`,
+          )
           .replace(
             '<main id="main"><p>Getting things ready…</p></main>',
             () =>
