@@ -203,8 +203,8 @@ export function assetRouting(version) {
 export function reviewedSignInShell(source) {
   return Buffer.from(source)
     .toString("utf8")
-    .replace(/\\s*<link\\s[^>]*\\bdata-gather-home\\b[^>]*>/, "")
-    .replace(/\\s*<link rel="modulepreload"[^>]*>/g, "")
+    .replace(/\s*<link\s[^>]*\bdata-gather-home\b[^>]*>/, "")
+    .replace(/\s*<link rel="modulepreload"[^>]*>/g, "")
     .replace('<script type="module" src="/app.js"></script>', "")
     .replace(
       'src="/auth-bootstrap.js"',
