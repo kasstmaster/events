@@ -17,7 +17,6 @@ import {
   readInformation,
   bindInformationEditor,
 } from "/event-information.js";
-import { appearanceEditor } from "/appearance-editor.js";
 import {
   bindBrowseMenus,
   addressBookDescription,
@@ -36,7 +35,6 @@ import { addressPicker } from "/address-picker.js";
 import { exampleState, annotateExample } from "/default-examples.js";
 import { familyTools } from "/family-ui.js";
 import { ui, M, C, H, configureCopy } from "/ui-runtime.js";
-import { featureTools } from "/editor-tools.js";
 import {
   resolveUI,
   order,
@@ -2832,6 +2830,7 @@ document.addEventListener("click", async (event) => {
       return;
     }
     if (action === "admin-approvals" || action === "admin-hosts") {
+      if (action === "admin-hosts") await ensureTools();
       closeModal();
       state.view = action;
       render();
@@ -3917,19 +3916,41 @@ function measureChrome() {
 }
 window.addEventListener("resize", measureChrome);
 document.fonts?.ready.then(measureChrome);
-const appearance = appearanceEditor({
-  field,
-  select,
-  fileData,
-  notify,
-  apply: applyDesign,
-  mount: () => {
-    const header = document.querySelector(".top-shell");
-    header.classList.add("appearance-active");
-    return header.querySelector("#appearance-toolbar");
-  },
-  measure: measureChrome,
-});
+// Appearance editing is not needed to render or navigate ordinary pages.
+// Preserve the synchronous inactive contract until the editor is requested.
+let appearance = {
+  active: () => false,
+  chrome: () => {},
+  action: async () => false,
+  input: async () => {},
+  leave: async () => true,
+};
+let appearanceRequest;
+async function ensureAppearance() {
+  if (!appearanceRequest)
+    appearanceRequest = import("/appearance-editor.js")
+      .then(({ appearanceEditor }) => {
+        appearance = appearanceEditor({
+          field,
+          select,
+          fileData,
+          notify,
+          apply: applyDesign,
+          mount: () => {
+            const header = document.querySelector(".top-shell");
+            header.classList.add("appearance-active");
+            return header.querySelector("#appearance-toolbar");
+          },
+          measure: measureChrome,
+        });
+        return appearance;
+      })
+      .catch((error) => {
+        appearanceRequest = null;
+        throw error;
+      });
+  return appearanceRequest;
+}
 let appearanceModeSaving = false;
 function settingsAppearanceEvent() {
   return state.settingsEvent
@@ -4023,6 +4044,7 @@ async function startAppearance(scope, globalOptions) {
   const record = event || household;
   const initial =
     globalOptions?.design || event?.ui?.design || state.data.ui.design;
+  await ensureAppearance();
   appearance.start({
     design: initial,
     contentActions: [],
@@ -4218,26 +4240,74 @@ const personal = personalTools({
   load,
 });
 personal.bind();
-const tools = featureTools({
-  openRSVPCards: (event, card) => rsvpCards.open(event, card),
-  state,
-  api,
-  modal,
-  button,
-  field,
-  area,
-  select,
-  escape,
-  notify,
-  saved,
-  load,
-  fileData,
-  selectedEvent,
-  renderDefaultExample,
-  render,
-  startAppearance,
-});
-tools.bind();
+// Card tools are an isolated feature. Do not block first paint by downloading
+// their renderer and editor until a card or advanced administrator action needs it.
+let loadedTools, toolsRequest;
+async function ensureTools() {
+  if (!toolsRequest)
+    toolsRequest = import("/editor-tools.js")
+      .then(({ featureTools }) => {
+        loadedTools = featureTools({
+          openRSVPCards: (event, card) => rsvpCards.open(event, card),
+          state,
+          api,
+          modal,
+          button,
+          field,
+          area,
+          select,
+          escape,
+          notify,
+          saved,
+          load,
+          fileData,
+          selectedEvent,
+          renderDefaultExample,
+          render,
+          startAppearance,
+        });
+        loadedTools.bind();
+        return loadedTools;
+      })
+      .catch((error) => {
+        toolsRequest = null;
+        throw error;
+      });
+  return toolsRequest;
+}
+const toolActions = new Set([
+  "global-defaults", "preview-guest", "host-ui", "exit-preview", "cards",
+  "new-card", "edit-private-template", "edit-card", "use-card-template",
+  "remove-card", "card-tools-toggle", "unused-card-tools-toggle",
+  "card-editor-back", "add-card-variable", "add-qr-text", "add-card-field",
+  "remove-card-field", "download-png", "rsvp-card-open", "download-card",
+  "print-card", "share-card", "email-card", "visual-up", "visual-down",
+  "layout-up", "layout-down", "delete-host", "card-preview-edit",
+  "card-save", "card-tool-category", "card-tool-action", "card-preview-back",
+]);
+const toolForms = new Set([
+  "ui-settings", "choose-scope", "admin-preview", "card", "delete-host",
+]);
+const tools = {
+  leaveCard: (...args) => loadedTools?.leaveCard(...args) ?? true,
+  input: (event) => loadedTools?.input(event),
+  action: async (action, target) =>
+    toolActions.has(action)
+      ? (await ensureTools()).action(action, target)
+      : false,
+  submit: async (form, kind) =>
+    toolForms.has(kind)
+      ? (await ensureTools()).submit(form, kind)
+      : false,
+  invitation: async () => (await ensureTools()).invitation(),
+  cardsPage: () => loadedTools?.cardsPage() || "",
+  cardPreviewPage: () => loadedTools?.cardPreviewPage() || "",
+  cardEditorPage: () => loadedTools?.cardEditorPage() || "",
+  cardTopbar: () => loadedTools?.cardTopbar() || "",
+  cleanupPanel: () => loadedTools?.cleanupPanel() || "",
+  mountCardPreview: () => loadedTools?.mountCardPreview(),
+  mountCardEditor: () => loadedTools?.mountCardEditor(),
+};
 await load();
 let refreshing = false;
 async function refreshInBackground() {
