@@ -304,11 +304,11 @@ async function load({ background = false } = {}) {
   if (background && isEditing()) return;
   const generation = ++loadGeneration;
   try {
-    const publicReference = location.pathname.match(
+    let publicReference = location.pathname.match(
       /^\/event\/([A-Za-z0-9_-]{43})$/,
     )?.[1];
     const setupRequest = api("/api/setup");
-    const eventRequest = publicReference
+    let eventRequest = publicReference
       ? api(`/api/public/events/${publicReference}`).then(
           (data) => ({ data }),
           (error) => ({ error }),
@@ -331,6 +331,25 @@ async function load({ background = false } = {}) {
       });
       render();
       return;
+    }
+    const configResult = await configRequest;
+    if (configResult?.error) throw configResult.error;
+    const passwordlessConfig = configResult?.config;
+    const legacyReference = location.pathname.match(
+      /^\/invite\/([A-Za-z0-9_-]{43})$/,
+    )?.[1];
+    if (passwordlessConfig?.hostOnly && legacyReference) {
+      const direct = await api(`/api/public/invitations/${legacyReference}`);
+      if (generation !== loadGeneration) return;
+      publicReference = direct.path.match(
+        /^\/event\/([A-Za-z0-9_-]{43})$/,
+      )?.[1];
+      if (!publicReference) throw new Error("This invitation is unavailable.");
+      history.replaceState(null, "", direct.path);
+      eventRequest = api(`/api/public/events/${publicReference}`).then(
+        (data) => ({ data }),
+        (error) => ({ error }),
+      );
     }
     if (publicReference) {
       const { data, error } = await eventRequest;
@@ -358,20 +377,6 @@ async function load({ background = false } = {}) {
       renderRefresh(background);
       return;
     }
-    const configResult = await configRequest;
-    if (configResult.error) throw configResult.error;
-    const passwordlessConfig = configResult.config;
-    if (passwordlessConfig.hostOnly) {
-      const legacyReference = location.pathname.match(
-        /^\/invite\/([A-Za-z0-9_-]{43})$/,
-      )?.[1];
-      if (legacyReference) {
-        const direct = await api(`/api/public/invitations/${legacyReference}`);
-        location.replace(direct.path);
-        return;
-      }
-    }
-
     state.hostOnly = passwordlessConfig.hostOnly === true;
     if (
       state.hostOnly &&

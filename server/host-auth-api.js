@@ -467,7 +467,7 @@ export async function hostAuthAPI(ctx) {
       );
     }
     cookie(res, auth);
-    json(res, { ok: true });
+    json(res, { ok: true, role: account.role });
     return true;
   }
   if (path === "/api/host-auth/google/start") {

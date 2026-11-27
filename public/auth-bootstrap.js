@@ -16,6 +16,13 @@ const hostCapture =
   (location.pathname === "/signin" &&
     /^#host(?:=|-)/.test(fragment || location.hash));
 let hostFragment = hostCapture ? fragment || location.hash : "";
+if (
+  location.pathname === "/signin" &&
+  /^#host-transfer(?:[=-])/.test(hostFragment)
+) {
+  const startupStatus = document.querySelector("#app > main > p");
+  if (startupStatus) startupStatus.textContent = "Opening your household…";
+}
 if (hostCapture) {
   fragment = "";
   if (location.hash) history.replaceState(null, "", location.pathname);
