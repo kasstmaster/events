@@ -231,12 +231,11 @@ export async function verifyAssetBytes(
         document && reviewedDocument
           ? hashBytes(Buffer.from(reviewedSignInShell(reviewedDocument)))
           : hash;
-      const route =
-        document
-          ? reviewedDocument
-            ? "signin"
-            : ""
-          : path.slice(7);
+      const route = document
+        ? reviewedDocument
+          ? "signin"
+          : ""
+        : path.slice(7);
       let response;
       try {
         response = await fetcher(origin + "/" + route, {
