@@ -11,7 +11,11 @@ const image = (value) => {
     return "none";
   // Quoted CSS URLs are still CSS values: remove structural characters
   // rather than allowing saved appearance data to escape into a style tag.
-  return `url("${source.replace(/[<>\u0000-\u001f\u007f]/g, "").replaceAll("\\", "\\\\").replaceAll('"', '\\"')}")`;
+  const escaped = source
+    .replace(/[<>\u0000-\u001f\u007f]/g, "")
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"');
+  return `url("${escaped}")`;
 };
 
 export function initialThemeStyle(design = {}, defaults = {}) {
