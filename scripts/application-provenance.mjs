@@ -196,29 +196,64 @@ export function assetRouting(version) {
   );
   return fingerprint(canonical);
 }
-export async function verifyAssetBytes(manifest, fetcher = fetch) {
+// / is now a session-aware HTML-first page. Verify the *exact* reviewed
+// public/index.html bytes through the deterministic, unpersonalized /signin
+// rendering instead. This is not a skip: every byte of the served document
+// is checked against a deterministic transform of the signed Git blob.
+export function reviewedSignInShell(source) {
+  return Buffer.from(source)
+    .toString("utf8")
+    .replace(/\\s*<link\\s[^>]*\\bdata-gather-home\\b[^>]*>/, "")
+    .replace(/\\s*<link rel="modulepreload"[^>]*>/g, "")
+    .replace('<script type="module" src="/app.js"></script>', "")
+    .replace(
+      'src="/auth-bootstrap.js"',
+      'src="/auth-bootstrap.js" data-gather-transfer',
+    );
+}
+export async function verifyAssetBytes(
+  manifest,
+  fetcher = fetch,
+  { reviewedIndex } = {},
+) {
   const entries = validManifest(manifest);
+  const reviewedDocument =
+    reviewedIndex === undefined ? null : Buffer.from(reviewedIndex);
+  if (reviewedDocument)
+    need(
+      hashBytes(reviewedDocument) === manifest["public/index.html"],
+      "REVIEWED_ASSET_SOURCE_MISMATCH",
+    );
   for (const origin of ASSET_ORIGINS)
     for (const [path, hash] of entries) {
+      const document = path === "public/index.html";
+      const expected =
+        document && reviewedDocument
+          ? hashBytes(Buffer.from(reviewedSignInShell(reviewedDocument)))
+          : hash;
+      const route =
+        document
+          ? reviewedDocument
+            ? "signin"
+            : ""
+          : path.slice(7);
       let response;
       try {
-        response = await fetcher(
-          origin + "/" + (path === "public/index.html" ? "" : path.slice(7)),
-          {
-            method: "GET",
-            redirect: "error",
-            cache: "no-store",
-            headers: { "Cache-Control": "no-cache" },
-            signal: AbortSignal.timeout(20000),
-          },
-        );
+        response = await fetcher(origin + "/" + route, {
+          method: "GET",
+          redirect: "error",
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache" },
+          signal: AbortSignal.timeout(20000),
+        });
       } catch {
         throw new ProvenanceError("PUBLIC_ASSET_READ_FAILED");
       }
       need(response.ok, "PUBLIC_ASSET_READ_FAILED");
       const bytes = await response.arrayBuffer();
       need(
-        bytes.byteLength <= 8000000 && hashBytes(Buffer.from(bytes)) === hash,
+        bytes.byteLength <= 8000000 &&
+          hashBytes(Buffer.from(bytes)) === expected,
         "PUBLIC_ASSET_BYTES_MISMATCH",
       );
     }
