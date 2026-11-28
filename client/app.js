@@ -493,6 +493,7 @@ async function load({ background = false, routeHome = false } = {}) {
       const [accountData, adminData] = await Promise.all([
         boot.host ||
           boot.family ||
+          boot.admin ||
           api(
             session.role === "admin-pending"
               ? "/api/passwordless/security"
