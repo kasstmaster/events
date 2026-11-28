@@ -31,9 +31,14 @@ export function uiConfig(input = {}) {
   }
   return { copy, design: design(input.design), layouts: savedLayouts };
 }
-export function effectiveUI(store, household, event) {
+export function effectiveUI(
+  store,
+  household,
+  event,
+  platform = store.get("ui", "defaults", "platform"),
+) {
   return resolveUI(
-    store.get("ui", "defaults", "platform"),
+    platform,
     { design: household?.ui?.design },
     { design: household?.design },
     { design: event?.ui?.design },

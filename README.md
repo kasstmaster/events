@@ -41,9 +41,17 @@ The administrator manages shared invitation, thank-you and holiday templates; ho
 
 Text reminders are implemented but **disabled until a separately approved Twilio sender, credentials, webhooks and billing are configured**. No real texts are sent by tests or this default configuration. Administrator account removal requires an explicit scope/email/domain confirmation and receipt-verified cleanup; it is never exercised against live accounts during testing.
 
+### Startup payloads and display images
+
+Host-only Home and public event pages serve large logos, wallpapers and event artwork
+as separate image responses. The original artwork stays in the existing record,
+with its original format and resolution. Host workspace data stays on demand,
+and event template pickers load template names and IDs. Card editors retain their
+full templates. An unchanged host startup check returns a small revision response.
+
 ### Synchronization and conflict handling
 
-Active pages re-fetch authorized server data every 3 seconds and on reconnection. Separate devices see saved changes without sharing browser storage. Polling pauses while an editor or input is active so it cannot erase an unsaved draft. Background refreshes preserve the current page scroll position while adopting updated server content. Close the editor and reload the latest information after a conflict.
+Active pages check authorized server data every 60 seconds and when visibility or connectivity returns. Separate devices see saved changes without sharing browser storage. Polling pauses while an editor or input is active so it cannot erase an unsaved draft. Background refreshes preserve the current page scroll position while adopting updated server content. Close the editor and reload the latest information after a conflict.
 
 Host updates/deletions require the record version (`If-Match`). RSVPs have a version per adult/event. Stale writes return **409**; they never silently overwrite newer data. RSVP capacity validation and reservation run inside one SQLite transaction, so two guests cannot simultaneously claim the last quantity. Declining releases that adult’s items and children cannot attend without their designated adult. After the RSVP deadline (UTC calendar date), all guest RSVP edits are closed. Existing claims are preserved if a host later reduces a requested quantity.
 

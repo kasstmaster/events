@@ -118,7 +118,53 @@ const notify = (message) => {
   clearTimeout(noticeTimer);
   noticeTimer = setTimeout(() => ($("#notice").textContent = ""), 6000);
 };
+// The display URLs are read-only. When an existing form resubmits an
+// image, convert it back to the exact original bytes for the existing validators.
+async function originalImages(data) {
+  const reads = new Map();
+  async function restore(value, key) {
+    if (
+      typeof value === "string" &&
+      ["logo", "icon", "backgroundImage", "containerImage"].includes(key) &&
+      /^\/api\/display-media\/[A-Za-z0-9_/-]+$/.test(value)
+    ) {
+      if (!reads.has(value))
+        reads.set(
+          value,
+          (async () => {
+            const response = await fetch(value, { credentials: "same-origin" });
+            if (!response.ok)
+              throw new Error("The original image is unavailable.");
+            const blob = await response.blob();
+            return new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = () => reject(reader.error);
+              reader.readAsDataURL(blob);
+            });
+          })(),
+        );
+      return reads.get(value);
+    }
+    if (Array.isArray(value))
+      return Promise.all(value.map((item) => restore(item)));
+    if (value && typeof value === "object")
+      return Object.fromEntries(
+        await Promise.all(
+          Object.entries(value).map(async ([name, item]) => [
+            name,
+            await restore(item, name),
+          ]),
+        ),
+      );
+    return value;
+  }
+  return restore(data);
+}
 async function api(path, { method = "GET", data, version } = {}) {
+  let body = data ? JSON.stringify(data) : undefined;
+  if (body?.includes('"/api/display-media/'))
+    body = JSON.stringify(await originalImages(data));
   const pending =
     method === "GET" &&
     (takeStartupRequest(path) || window.gatherEarly?.takeRead(path));
@@ -131,7 +177,7 @@ async function api(path, { method = "GET", data, version } = {}) {
         ...(data ? { "Content-Type": "application/json" } : {}),
         ...(version !== undefined ? { "If-Match": String(version) } : {}),
       },
-      body: data ? JSON.stringify(data) : undefined,
+      body,
     }));
   const result = await response.json();
   if (!response.ok) {
@@ -301,12 +347,15 @@ async function ensureWorkspace() {
   return true;
 }
 
+let startupRevision;
+let foregroundLoads = 0;
 async function load({ background = false, routeHome = false } = {}) {
   if (background && isEditing()) return;
   const generation = ++loadGeneration;
   const current = () =>
     generation === loadGeneration && !(background && isEditing());
   try {
+    if (!background) foregroundLoads++;
     const route = startupRoute(location.pathname, {
       home: routeHome,
       sessionOnly: !!state.preview,
@@ -318,9 +367,14 @@ async function load({ background = false, routeHome = false } = {}) {
           (!background && Object.hasOwn(state.data || {}, "guests"))),
     });
     let { publicReference } = route;
-    const startup = () => api(route.url);
+    const startup = () =>
+      api(
+        background && startupRevision && state.session?.role === "host"
+          ? route.url + "&seen=" + encodeURIComponent(startupRevision)
+          : route.url,
+      );
     let boot = publicReference ? null : await startup();
-    if (!current()) return;
+    if (!current() || boot?.unchanged) return;
     if (boot?.event) {
       publicReference = boot.path.match(/^\/event\/([A-Za-z0-9_-]{43})$/)?.[1];
       if (!publicReference) throw new Error("This invitation is unavailable.");
@@ -505,7 +559,7 @@ async function load({ background = false, routeHome = false } = {}) {
         session.platformAdmin &&
         (state.adminMode ||
           ["admin-approvals", "admin-hosts"].includes(state.view))
-          ? api("/api/admin")
+          ? api(state.hostOnly ? "/api/admin?view=home" : "/api/admin")
           : null,
       ]);
       data = accountData;
@@ -605,6 +659,7 @@ async function load({ background = false, routeHome = false } = {}) {
     }
     if (state.hostOnly)
       hostAuth.metadata(session, data?.household || publicHousehold);
+    startupRevision = boot.revision;
     Object.assign(state, {
       session,
       data,
@@ -665,6 +720,8 @@ async function load({ background = false, routeHome = false } = {}) {
     } else
       $("#app").innerHTML =
         ui`<main id="main"><div class="panel"><h1>${error.status === 404 ? C("This household address is unavailable.") : C("Couldn’t open this page")}</h1><p>${escape(error.message)}</p>${button("reload", H("Try again"))}</div></main>`;
+  } finally {
+    if (!background) foregroundLoads--;
   }
 }
 
@@ -2772,7 +2829,9 @@ async function runAction(target) {
       // Home and event navigation do not need the expensive platform directory.
       // Fetch it only when an administrator actually opens a tool.
       if (!state.data?.hosts) {
-        const admin = await api("/api/admin");
+        const admin = await api(
+          state.hostOnly ? "/api/admin?view=home" : "/api/admin",
+        );
         Object.assign(state.data, {
           approvals: admin.approvals,
           hosts: admin.hosts,
@@ -2975,7 +3034,9 @@ async function runAction(target) {
         contactInviteSaving = true;
         render();
         try {
-          const refreshed = await api("/api/host");
+          const refreshed = await api(
+            state.hostOnly ? "/api/host?view=home" : "/api/host",
+          );
           if (!adoptInvitationSnapshot(refreshed, invitationHousehold)) return;
           contactInviteEventsOpen = true;
           contactEventSelection.clear();
@@ -3045,7 +3106,7 @@ async function runAction(target) {
           contactInviteError = error.message;
           try {
             adoptInvitationSnapshot(
-              await api("/api/host"),
+              await api(state.hostOnly ? "/api/host?view=home" : "/api/host"),
               invitationHousehold,
             );
           } catch {}
@@ -3256,7 +3317,9 @@ async function runAction(target) {
       if (!state.settingsOpen || !event) return;
       if (action === "event-layout-open") {
         if (!state.eventLayoutDraft) {
-          const fresh = await api("/api/host");
+          const fresh = await api(
+            state.hostOnly ? "/api/host?view=home" : "/api/host",
+          );
           const current = fresh.events.find((e) => e.id === event.id);
           if (!current) throw new Error(C("The event is no longer available."));
           state.data = { ...state.data, ...fresh };
@@ -4330,6 +4393,7 @@ let refreshing = false;
 async function refreshInBackground() {
   if (
     refreshing ||
+    foregroundLoads ||
     !state.session?.role ||
     document.visibilityState !== "visible"
   )

@@ -1,6 +1,10 @@
 import { universalRoutingEnabled } from "../server/gather-flags.js";
 import { configuredHosts, hostnameLabel } from "../server/household-domains.js";
-import { forwardRequest, unavailable } from "./gateway-protocol.js";
+import {
+  displayMediaRequest,
+  forwardRequest,
+  unavailable,
+} from "./gateway-protocol.js";
 
 export default {
   async fetch(request, env) {
@@ -46,10 +50,26 @@ export default {
       const response = await fetch(forwarded, { redirect: "manual" });
       // The shared app emits no redirects. Fail closed if an upstream changes that:
       // do not follow a Location with cookies/HMAC or replace the household URL.
-      if (response.status >= 300 && response.status < 400)
+      const cacheableMedia =
+        displayMediaRequest(request) &&
+        response.headers.get("Cache-Control") === "private, no-cache" &&
+        /^"[A-Za-z0-9_-]{43}"$/.test(response.headers.get("ETag") || "");
+      const revalidated =
+        cacheableMedia &&
+        response.status === 304 &&
+        response.headers.get("ETag") === forwarded.headers.get("If-None-Match");
+      if (response.status >= 300 && response.status < 400 && !revalidated)
         return unavailable(502);
       const headers = new Headers(response.headers);
-      headers.set("Cache-Control", "no-store");
+      if (
+        !revalidated &&
+        !(
+          cacheableMedia &&
+          response.status === 200 &&
+          /^image\/(png|jpeg|webp)$/.test(headers.get("Content-Type") || "")
+        )
+      )
+        headers.set("Cache-Control", "no-store");
       headers.delete("Access-Control-Allow-Origin");
       // Refuse Domain cookies or legacy canonical cookies on a household hostname.
       for (const cookie of response.headers.getSetCookie()) {

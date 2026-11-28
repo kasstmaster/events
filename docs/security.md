@@ -279,3 +279,15 @@ SDK-generated official fictional-mode token; normal live captcha tokens are bloc
 The genuine captcha check is separate and has no send capability. Public configuration
 must stay in an owner-only file outside Git; codes are browser-only. Cleanup never
 removes Firebase users or unrelated files. See [scope, limits and manual operation](isolated-firebase-test.md).
+
+## Startup display media
+
+Display URLs identify an existing record, a permitted image field and the SHA-256
+digest of its source. A digest selects bytes but grants no access. Host images
+still require a currently authorized host session for the household. Public event
+images use the same active invitation, household and event checks as the public
+event page. Revalidation runs these checks before returning an empty response.
+The gateway preserves private browser revalidation only for display images and
+signs their conditional header. Offline storage continues to exclude media.
+Existing image records stay authoritative. This workflow needs no asset backfill,
+additional storage binding or paid image processing.

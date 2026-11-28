@@ -1,3 +1,9 @@
+import {
+  displayMedia,
+  mediaPath,
+  sendDisplayMedia,
+  visibleDesignMedia,
+} from "./display-media.js";
 import { publicEventPages } from "./event-pages.js";
 import { hostOnlyMode } from "./host-model.js";
 import { isolatedAddressBook } from "./recipient-isolation.js";
@@ -68,7 +74,7 @@ export function resolvePublicEvent(store, reference, selected) {
   return { link, event, household };
 }
 // Allowlist: never spread event/contact/account records onto a public response.
-export function publicEventView(store, event, household) {
+export function publicEventView(store, event, household, platform) {
   const fields = [
     "id",
     "version",
@@ -101,7 +107,7 @@ export function publicEventView(store, event, household) {
     menu: store.menuView(event, household.id),
     members: [],
     response: { version: 0, attendance: {}, claims: {} },
-    ui: effectiveUI(store, household, event),
+    ui: effectiveUI(store, household, event, platform),
   };
 }
 function recipient(store, link, event, record) {
@@ -130,26 +136,47 @@ function authorized(store, link, event, raw) {
   if (subject.guest !== grant.guest) unavailable();
   return subject;
 }
-function partyView(store, event, household, subject) {
-  const party = addressEvent(store, event, subject);
+function publicMedia(store, event, household, reference) {
   return {
-    ...publicEventView(store, event, household),
+    household: displayMedia(household, "event/" + reference + "/household"),
+    event: displayMedia(event, "event/" + reference + "/event"),
+    platform: displayMedia(store.get("ui", "defaults", "platform"), "platform"),
+  };
+}
+function partyView(store, event, household, subject, reference) {
+  const party = addressEvent(store, event, subject);
+  const display = publicMedia(store, event, household, reference);
+  return {
+    ...publicEventView(
+      store,
+      display.event,
+      display.household,
+      display.platform,
+    ),
     members: party.members,
     response: party.response,
     partyAttendance: party.partyAttendance,
     partyVersions: party.partyVersions,
   };
 }
-function eventSnapshot(store, env, event, household) {
+function eventSnapshot(store, env, event, household, reference) {
+  const display = publicMedia(store, event, household, reference);
   return {
     hostOnly: hostOnlyMode(env),
     household: {
       name: household.name,
       slug: household.slug,
-      logo: household.logo,
+      logo: display.household.logo,
     },
-    ui: effectiveUI(store, household),
-    events: [publicEventView(store, event, household)],
+    ui: effectiveUI(store, display.household, undefined, display.platform),
+    events: [
+      publicEventView(
+        store,
+        display.event,
+        display.household,
+        display.platform,
+      ),
+    ],
   };
 }
 export function readPublicEvent(store, env, reference, selected, peer) {
@@ -162,7 +189,51 @@ export function readPublicEvent(store, env, reference, selected, peer) {
   );
   if (hostOnlyMode(env) && !isolatedAddressBook(store, link.household))
     unavailable();
-  return eventSnapshot(store, env, event, household);
+  return eventSnapshot(store, env, event, household, reference);
+}
+export function publicDisplayMedia({
+  path,
+  method,
+  store,
+  env,
+  selected,
+  req,
+  res,
+}) {
+  if (!path.startsWith(mediaPath + "event/")) return false;
+  const parts = path.slice(mediaPath.length).split("/");
+  const [, reference, source, slot, hash] = parts;
+  if (
+    method !== "GET" ||
+    parts.length !== 5 ||
+    !publicInvitationsEnabled(env) ||
+    !/^[A-Za-z0-9_-]{43}$/.test(reference) ||
+    !["event", "household"].includes(source) ||
+    ![
+      source === "event" ? "icon" : "logo",
+      "background",
+      "container",
+      "ui-background",
+      "ui-container",
+    ].includes(slot)
+  )
+    unavailable();
+  const { link, event, household } = resolvePublicEvent(
+    store,
+    reference,
+    selected,
+  );
+  if (hostOnlyMode(env) && !isolatedAddressBook(store, link.household))
+    unavailable();
+  store.limit(
+    `public-invitation-media:${req.socket.remoteAddress}`,
+    240,
+    60000,
+  );
+  const record = source === "event" ? event : household;
+  if (!visibleDesignMedia(record, slot)) unavailable();
+  sendDisplayMedia(req, res, record, slot, hash);
+  return true;
 }
 export function readLegacyInvitation(store, env, legacy, selected, peer) {
   if (!publicInvitationsEnabled(env)) unavailable();
@@ -309,7 +380,10 @@ export async function publicInvitationsAPI(ctx) {
       guest: subject.guest,
       expires: Date.now() + 30 * 60000,
     });
-    json(res, { grant, event: partyView(store, event, household, subject) });
+    json(res, {
+      grant,
+      event: partyView(store, event, household, subject, visitor[1]),
+    });
     return true;
   }
   if (visitor[2] === "access" && method === "DELETE") {
@@ -341,6 +415,7 @@ export async function publicInvitationsAPI(ctx) {
         store.get("event", event.id, link.household),
         household,
         subject,
+        visitor[1],
       ),
     });
     return true;
