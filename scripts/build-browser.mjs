@@ -21,7 +21,9 @@ for (const entry of ["auth-bootstrap", "app"]) {
     target: "es2022",
     minifyWhitespace: true,
     minifySyntax: true,
-    minifyIdentifiers: false,
+    // Minify local names in the full application bundle to reduce cold downloads
+    // and parse time. Keep the tiny transfer bootstrap unchanged.
+    minifyIdentifiers: entry === "app",
     legalComments: "none",
     plugins: [
       {
