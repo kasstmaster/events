@@ -25,18 +25,24 @@ export const VERIFIED_RECOVERY = Object.freeze({
   run_id: 46089585621,
   run_attempt: 1,
   head_sha: "d9554026e0d77cd4e3b942b8623b6d8a9c898f53",
+  approval_head: "c5c065c5345f674f757b7b64e7db43bf4cf43d4a",
+  approval_merge: "5bd58a12be2b4161fda20ae6d06ca5069a44b03f",
   artifact_id: 15240432916,
   artifact_digest:
     "sha256:ea15f9611d13c6e0440ab9704288a0dd9cd395b1350b3d3b105dffe8fb3368f3",
 });
 async function selectOwnerApprovedRecovery(read) {
   const pinned = VERIFIED_RECOVERY;
-  const [run, approvedRecoveryPR, publishedPR, listing] = await Promise.all([
-    read(`/actions/runs/${pinned.run_id}`),
-    read("/pulls/116"),
-    read("/pulls/114"),
-    read(`/actions/runs/${pinned.run_id}/artifacts?per_page=100`),
-  ]);
+  const [run, associatedPRs, approvedRecoveryPR, publishedPR, listing] =
+    await Promise.all([
+      read(`/actions/runs/${pinned.run_id}`),
+      // GitHub can omit pull_requests on historical Actions run records.
+      // Resolve the pinned run commit through GitHub's commit-to-PR endpoint.
+      read(`/commits/${pinned.head_sha}/pulls?per_page=100`),
+      read("/pulls/116"),
+      read("/pulls/114"),
+      read(`/actions/runs/${pinned.run_id}/artifacts?per_page=100`),
+    ]);
   need(
     run.id === pinned.run_id &&
       run.run_attempt === pinned.run_attempt &&
@@ -50,8 +56,15 @@ async function selectOwnerApprovedRecovery(read) {
       run.actor?.login === "kasstmaster" &&
       run.triggering_actor?.login === "kasstmaster" &&
       run.head_repository?.full_name === "kasstmaster/events" &&
-      run.pull_requests?.some(
-        (pr) => pr.number === 116 && pr.head?.sha === pinned.head_sha,
+      Array.isArray(associatedPRs) &&
+      associatedPRs.length < 100 &&
+      associatedPRs.some(
+        (pr) =>
+          pr.number === 116 &&
+          pr.base?.ref === "main" &&
+          pr.base?.repo?.full_name === "kasstmaster/events" &&
+          pr.head?.repo?.full_name === "kasstmaster/events" &&
+          pr.head?.sha === pinned.approval_head,
       ),
     "RECOVERY_WORKFLOW_IDENTITY_UNPROVEN",
   );
@@ -71,13 +84,11 @@ async function selectOwnerApprovedRecovery(read) {
         pinned.release,
       ) &&
       approvedRecoveryPR.number === 116 &&
-      approvedRecoveryPR.merged === true &&
-      approvedRecoveryPR.merged_by?.login === "kasstmaster" &&
-      approvedRecoveryPR.base?.ref === "main" &&
-      approvedRecoveryPR.base?.repo?.full_name === "kasstmaster/events" &&
-      approvedRecoveryPR.head?.repo?.full_name === "kasstmaster/events" &&
-      // Only the owner's merged recovery PR can activate this one-time proof.
-      /^[a-f0-9]{40}$/.test(approvedRecoveryPR.merge_commit_sha || ""),
+      ownerMerged(
+        approvedRecoveryPR,
+        pinned.approval_head,
+        pinned.approval_merge,
+      ),
     "RECOVERY_OWNER_APPROVAL_UNPROVEN",
   );
   const artifacts = listing.artifacts?.filter(
