@@ -917,11 +917,10 @@ export function createHandler({
           // Read the public template while Firebase checks the session. Keep
           // authorization ahead of private rendering and handle any asset error
           // after the account check has completed.
-          if (replacement && method === "GET" && path === "/")
-            homeAsset = readAsset("index.html").then(
-              (asset) => ({ asset }),
-              (error) => ({ error }),
-            );
+          if (replacement && method === "GET" && path === "/") {
+            homeAsset = Promise.resolve().then(() => readAsset("index.html"));
+            homeAsset.catch(() => {});
+          }
           const active = await validFirebaseHostSession(store, session, env, {
             fetcher: firebaseFetcher || fetch,
           });
@@ -1206,12 +1205,9 @@ export function createHandler({
           (entry) => entry.id === url.searchParams.get("event"),
         );
         if (event) snapshot.hostEvent = event.id;
-        const template = homeAsset
-          ? await homeAsset
-          : { asset: await readAsset("index.html") };
-        if (template.error) throw template.error;
+        const template = await (homeAsset || readAsset("index.html"));
         const content = initialDocument(
-          template.asset.toString(),
+          template.toString(),
           snapshot,
           data
             ? {
