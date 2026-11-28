@@ -46,7 +46,10 @@ async function selectOwnerApprovedRecovery(read) {
       run.head_branch === "fix/gather-trusted-release-recovery" &&
       run.actor?.login === "kasstmaster" &&
       run.triggering_actor?.login === "kasstmaster" &&
-      run.head_repository?.full_name === "kasstmaster/events",
+      run.head_repository?.full_name === "kasstmaster/events" &&
+      run.pull_requests?.some(
+        (pr) => pr.number === 116 && pr.head?.sha === pinned.head_sha,
+      ),
     "RECOVERY_WORKFLOW_IDENTITY_UNPROVEN",
   );
   const ownerMerged = (pr, head, commit) =>
@@ -58,13 +61,19 @@ async function selectOwnerApprovedRecovery(read) {
     pr.head?.sha === head &&
     pr.merge_commit_sha === commit;
   need(
-    ownerMerged(publishedPR, publishedPR.head?.sha, pinned.release) &&
+    publishedPR.number === 114 &&
+      ownerMerged(
+        publishedPR,
+        "9348eb030e63da050c0fd904c15b2b17dec81593",
+        pinned.release,
+      ) &&
+      approvedRecoveryPR.number === 116 &&
       approvedRecoveryPR.merged === true &&
       approvedRecoveryPR.merged_by?.login === "kasstmaster" &&
       approvedRecoveryPR.base?.ref === "main" &&
       approvedRecoveryPR.base?.repo?.full_name === "kasstmaster/events" &&
       approvedRecoveryPR.head?.repo?.full_name === "kasstmaster/events" &&
-      // The approved change must descend from the independently checked run.
+      // Only the owner's merged recovery PR can activate this one-time proof.
       /^[a-f0-9]{40}$/.test(approvedRecoveryPR.merge_commit_sha || ""),
     "RECOVERY_OWNER_APPROVAL_UNPROVEN",
   );
