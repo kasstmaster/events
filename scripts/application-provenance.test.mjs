@@ -329,9 +329,7 @@ test("one-time recovery requires the pinned successful run, artifact and owner a
       actor: { login: "kasstmaster" },
       triggering_actor: { login: "kasstmaster" },
       head_repository: { full_name: "kasstmaster/events" },
-      pull_requests: [
-        { number: 116, head: { sha: VERIFIED_RECOVERY.head_sha } },
-      ],
+      pull_requests: [],
     };
     const published = {
       number: 114,
@@ -346,8 +344,9 @@ test("one-time recovery requires the pinned successful run, artifact and owner a
     };
     const approved = structuredClone(published);
     approved.number = 116;
-    approved.head.sha = "f".repeat(40);
-    approved.merge_commit_sha = "e".repeat(40);
+    approved.head.sha = VERIFIED_RECOVERY.approval_head;
+    approved.merge_commit_sha = VERIFIED_RECOVERY.approval_merge;
+    const associatedPRs = [structuredClone(approved)];
     const artifact = {
       id: VERIFIED_RECOVERY.artifact_id,
       name: "events-read-only-reverification-46089585621-1",
@@ -357,6 +356,8 @@ test("one-time recovery requires the pinned successful run, artifact and owner a
     const read = async (path) => {
       if (path === `/actions/runs/${VERIFIED_RECOVERY.run_id}`)
         return recoveredRun;
+      if (path === `/commits/${VERIFIED_RECOVERY.head_sha}/pulls?per_page=100`)
+        return associatedPRs;
       if (path === "/pulls/114") return published;
       if (path === "/pulls/116") return approved;
       if (
@@ -366,7 +367,7 @@ test("one-time recovery requires the pinned successful run, artifact and owner a
         return { artifacts: [artifact] };
       return base.read(path);
     };
-    return { base, recoveredRun, published, approved, artifact, read };
+    return { recoveredRun, associatedPRs, published, approved, artifact, read };
   };
   const verified = fixture();
   const selected = await selectEvidence(verified.read);
@@ -378,6 +379,10 @@ test("one-time recovery requires the pinned successful run, artifact and owner a
     (f) => (f.recoveredRun.actor.login = "other"),
     (f) => (f.recoveredRun.head_sha = "0".repeat(40)),
     (f) => (f.recoveredRun.path = ".github/workflows/other.yml"),
+    (f) => f.associatedPRs.pop(),
+    (f) => (f.associatedPRs[0].number = 117),
+    (f) => (f.associatedPRs[0].head.sha = VERIFIED_RECOVERY.head_sha),
+    (f) => (f.approved.merge_commit_sha = "0".repeat(40)),
     (f) => (f.approved.merged = false),
     (f) => (f.approved.merged_by.login = "other"),
     (f) => (f.published.merge_commit_sha = "0".repeat(40)),
