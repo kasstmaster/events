@@ -13,6 +13,105 @@ import {
   isolateAddressBook,
 } from "../server/recipient-isolation.js";
 import { publicEventReference } from "../server/public-invitations.js";
+// Delay entry modules while allowing the real CSS and HTML to paint.
+async function firstFrame(context, url, width, title, kind) {
+  const page = await context.newPage();
+  page.setDefaultTimeout(10000);
+  await page.setViewportSize({ width, height: 844 });
+  const { promise, resolve } = Promise.withResolvers();
+  await page.route(/\/(?:app|auth-bootstrap)\.js$/, async (route) => {
+    await promise;
+    try {
+      await route.fallback();
+    } catch (error) {
+      if (!page.isClosed()) throw error;
+    }
+  });
+  const capture = () =>
+    page.evaluate(() => {
+      const selectors = [
+        ".top-shell",
+        ".toolbar",
+        "#main h1",
+        "#main :is([data-event-actions], .home-workspace-cards)",
+      ];
+      const theme = getComputedStyle(document.documentElement);
+      const position = (element) => {
+        if (!element) return null;
+        const { x, y, width, height } = element.getBoundingClientRect();
+        return [x, y, width, height].map((size) => Math.round(size));
+      };
+      const controls = (selector) =>
+        [...document.querySelectorAll(selector)].map((el) => [
+          el.dataset.action || el.getAttribute("href"),
+          el.textContent.trim(),
+        ]);
+      return {
+        geometry: selectors.map((selector) =>
+          position(document.querySelector(selector)),
+        ),
+        footer: controls(".toolbar > [data-action]"),
+        header: controls("#top-navigation [data-action]"),
+        actions: controls("[data-event-actions] :is(button, a)"),
+        theme: [
+          "--bg",
+          "--panel-solid",
+          "--background-image",
+          "--container-image",
+          "--title-font",
+          "--ink",
+          "--button-surface",
+          "--toolbar-label-color",
+        ].map((name) => theme.getPropertyValue(name).trim()),
+      };
+    });
+  try {
+    await page.goto(url, { waitUntil: "commit" });
+    await page.getByRole("heading", { name: title, exact: true }).waitFor();
+    await page.locator(".toolbar button").first().waitFor();
+    await page.waitForFunction(
+      () => !!document.querySelector('link[rel="stylesheet"]').sheet,
+    );
+    await page.evaluate(() => {
+      window.firstFrameNodes = [".top-shell", ".toolbar", "#main"].map(
+        (selector) => document.querySelector(selector),
+      );
+    });
+    const before = await capture();
+    assert.equal(
+      await page.locator("#app").getAttribute("data-gather-initial"),
+      kind,
+    );
+    resolve();
+    await page.waitForFunction(
+      () => !document.querySelector("#app").hasAttribute("data-gather-initial"),
+    );
+    await page.evaluate(
+      () =>
+        new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r)),
+        ),
+    );
+    assert.deepEqual(
+      await capture(),
+      before,
+      "hydration must preserve first-frame styling, geometry and controls",
+    );
+    assert.equal(
+      await page.evaluate(() =>
+        window.firstFrameNodes.every((node) => node.isConnected),
+      ),
+      true,
+    );
+    return { page, before };
+  } catch (error) {
+    await page.close();
+    throw error;
+  } finally {
+    resolve();
+  }
+}
+
 const mode = {
   HOST_ONLY_MODEL_ENABLED: "true",
   HOST_ONLY_MODEL_ACTIVATION_APPROVED: "true",
@@ -105,10 +204,40 @@ test(
         address: "",
       });
     }
+    const image =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lV8AAAAASUVORK5CYII=";
+    const homeTheme = { background: "#26304a", titleFont: "Georgia" };
+    const eventTheme = {
+      background: "#35482c",
+      container: "#f6eed9",
+      backgroundImage: image,
+      containerImage: image,
+      titleFont: "Arial",
+      textColor: "#3a4858",
+      buttonSurface: "#648242",
+      toolbarLabelColor: "#334455",
+    };
+    const household = f.store.household(host.household.id);
+    const themedHome = await f.request("/api/host/household", {
+      method: "PUT",
+      version: household.version,
+      cookie: connected.cookie,
+      data: { ...household, design: homeTheme, appearanceMode: "custom" },
+    });
+    assert.equal(themedHome.status, 200);
     const title = 'Fixture </script><img id="unescaped-event">';
     const event = await f.event({ ...host, cookie: connected.cookie }, [], {
       title,
       date: "2030-05-07",
+      design: eventTheme,
+      appearanceMode: "custom",
+      icon: image,
+      registries: [
+        { title: "Fixture registry", url: "https://example.test/registry" },
+      ],
+      uploadURL: "https://example.test/photos",
+      viewURL: "https://example.test/gallery",
+      containerLayout: "single",
     });
     // The first response includes readable, escaped host content without
     // waiting for JavaScript. Anonymous documents never contain private events.
@@ -133,6 +262,22 @@ test(
     assert.equal(signedInBootstrap.session.role, "host");
     assert.equal(signedInBootstrap.host.events[0].id, event.id);
     assert.equal(signedInBootstrap.host.guests, undefined);
+    const privatePath = "/?event=" + event.id;
+    const privateDocument = await f.request(privatePath, {
+      cookie: connected.cookie,
+    });
+    assert.equal(privateDocument.status, 200);
+    assert.equal(
+      JSON.parse(embeddedPayload(privateDocument.body)).hostEvent,
+      event.id,
+    );
+    assert.match(privateDocument.body, /data-gather-initial="host-event"/);
+    assert.match(privateDocument.body, /data-action="event-pages-manage"/);
+    const anonymousPrivateDocument = await f.request(privatePath);
+    assert.doesNotMatch(
+      anonymousPrivateDocument.body,
+      /Fixture|hostEvent|data-event-actions/,
+    );
     const anonymousDocument = await f.request("/");
     assert.equal(anonymousDocument.status, 200);
     assert.match(anonymousDocument.body, /Welcome to Gather/);
@@ -395,11 +540,131 @@ test(
         await noScriptPage.locator(".home-invitations h2").first().innerText(),
         title,
       );
-      assert.equal(await noScriptPage.locator("#main > p").count(), 0);
+      assert.equal(await noScriptPage.locator("#main > p:visible").count(), 0);
       t.diagnostic(
         `HTML-first host document without JavaScript: ${Date.now() - noScriptStarted}ms`,
       );
       await noScriptPage.close();
+      for (const width of [390, 1440]) {
+        const home = await firstFrame(
+          context,
+          appOrigin,
+          width,
+          household.name,
+          "host",
+        );
+        assert.deepEqual(
+          home.before.footer.map(([id]) => id),
+          ["home", "share-details", "settings"],
+        );
+        assert.deepEqual(
+          home.before.header.map(([id]) => id),
+          ["new-event"],
+        );
+        assert.equal(home.before.theme[0], homeTheme.background);
+        await home.page
+          .getByRole("button", { name: "View Event" })
+          .first()
+          .click();
+        assert.equal(
+          await home.page
+            .locator(".toolbar [data-action=invite-guests]")
+            .count(),
+          1,
+        );
+        assert.equal(
+          await home.page
+            .locator("[data-event-actions] [data-action=event-pages-manage]")
+            .count(),
+          1,
+        );
+        assert.equal(
+          await home.page
+            .locator("html")
+            .evaluate((el) =>
+              getComputedStyle(el).getPropertyValue("--bg").trim(),
+            ),
+          eventTheme.background,
+        );
+        assert.equal(
+          new URL(home.page.url()).searchParams.get("event"),
+          event.id,
+        );
+        await home.page.reload();
+        await home.page.waitForFunction(
+          () =>
+            !document.querySelector("#app").hasAttribute("data-gather-initial"),
+        );
+        assert.equal(await home.page.locator("#main h1").innerText(), title);
+        const privateEvent = await firstFrame(
+          context,
+          appOrigin + privatePath,
+          width,
+          title,
+          "host-event",
+        );
+        assert.deepEqual(
+          privateEvent.before.footer.map(([id]) => id),
+          ["home", "invite-guests", "print", "share-details", "settings"],
+        );
+        assert.ok(
+          privateEvent.before.actions.some(
+            ([id]) => id === "event-pages-manage",
+          ),
+        );
+        await privateEvent.page.close();
+        await home.page.locator(".toolbar [data-action=home]").click();
+        assert.equal(
+          await home.page
+            .locator("html")
+            .evaluate((el) =>
+              getComputedStyle(el).getPropertyValue("--bg").trim(),
+            ),
+          homeTheme.background,
+        );
+        await home.page.close();
+
+        const direct = await firstFrame(
+          context,
+          appOrigin + "/event/" + reference,
+          width,
+          title,
+          "visitor",
+        );
+        assert.deepEqual(
+          direct.before.footer.map(([id]) => id),
+          ["print"],
+        );
+        assert.deepEqual(
+          direct.before.actions.map(([id]) => id),
+          [
+            "rsvp",
+            event.uploadURL,
+            "https://example.test/registry",
+            event.viewURL,
+          ],
+        );
+        assert.deepEqual(direct.before.theme, [
+          eventTheme.background,
+          eventTheme.container,
+          `url("${image}")`,
+          `url("${image}")`,
+          eventTheme.titleFont,
+          eventTheme.textColor,
+          eventTheme.buttonSurface,
+          eventTheme.toolbarLabelColor,
+        ]);
+        assert.equal(
+          await direct.page.locator("[data-event-shell] .event-icon").count(),
+          1,
+        );
+        await direct.page
+          .getByRole("button", { name: "RSVP", exact: true })
+          .click();
+        await direct.page.locator("[data-form=recipient-access]").waitFor();
+        await direct.page.close();
+      }
+
       await page.locator('[data-action="open-event"]').first().click();
       await measure(
         "Home",
@@ -555,7 +820,7 @@ test(
           .waitFor();
         await slowPage.getByText("May 7, 2030", { exact: true }).waitFor();
         assert.equal(await slowPage.locator("#unescaped-event").count(), 0);
-        assert.equal(await slowPage.locator('[data-action="rsvp"]').count(), 0);
+        assert.equal(await slowPage.locator('[data-action="rsvp"]').count(), 1);
         let redundantStartup = 0;
         slowPage.on("request", (request) => {
           if (new URL(request.url()).pathname === "/api/startup")
@@ -731,3 +996,107 @@ test(
     }
   },
 );
+
+test("initial household event and Home controls follow the authenticated role", async (t) => {
+  const f = await application(t, mode);
+  const host = await f.host("RoleHost");
+  const other = await f.host("OtherHost");
+  for (const owner of [host, other])
+    isolateAddressBook(
+      f.store,
+      owner.household.id,
+      addressBookCheckpoint(f.store, owner.household.id).fingerprint,
+      "synthetic",
+    );
+  const child = await f.member(host, "kid", "RoleChild");
+  const adult = await f.member(host, "member", "RoleAdult");
+  const event = await f.event(host, [], {
+    title: "Only the host can see this event",
+  });
+  const url = "/?event=" + event.id;
+  const outsider = await f.request(url, { cookie: other.cookie });
+  assert.equal(outsider.status, 200);
+  assert.doesNotMatch(
+    outsider.body,
+    /Only the host can see this event|data-event-actions/,
+  );
+
+  for (const member of [child, adult]) {
+    const home = await f.request(url, { cookie: member.cookie });
+    assert.equal(home.status, 200);
+    assert.match(home.body, /data-gather-initial="family"/);
+    assert.match(home.body, /data-action="family-search"/);
+    assert.match(home.body, /data-action="family-mine"/);
+    assert.match(home.body, /data-action="settings"/);
+    assert.doesNotMatch(
+      home.body,
+      /Only the host can see this event|data-action="new-event"|data-action="share-details"/,
+    );
+    assert.equal(
+      home.body.includes('data-action="family-new-list"'),
+      member === adult,
+    );
+  }
+  const admin = await f.request("/", { cookie: f.admin });
+  assert.equal(admin.status, 200);
+  assert.match(admin.body, /data-gather-initial="admin"/);
+  assert.match(admin.body, /data-action="admin-hosts"/);
+  assert.match(admin.body, /data-action="global-defaults"/);
+
+  const approved = await f.request(`/api/admin/platform-access/${host.user}`, {
+    method: "POST",
+    cookie: f.admin,
+    data: { password, confirmEmail: "rolehost@example.test" },
+  });
+  assert.equal(approved.status, 200);
+  const restricted = await f.request("/", { cookie: host.cookie });
+  assert.doesNotMatch(restricted.body, /data-action="admin-hosts"/);
+  const elevated = await f.request("/api/host-auth/admin/step-up", {
+    method: "POST",
+    cookie: host.cookie,
+    data: { password },
+  });
+  assert.equal(elevated.status, 200);
+  const promoted = await f.request("/", { cookie: elevated.cookie });
+  assert.match(promoted.body, /data-gather-initial="host"/);
+  assert.match(promoted.body, /data-action="new-event"/);
+  assert.match(promoted.body, /data-action="admin-hosts"/);
+  assert.doesNotMatch(outsider.body, /data-action="admin-hosts"/);
+
+  const browser = await chromium.launch({
+    executablePath:
+      process.env.CHROMIUM_PATH ||
+      (existsSync("/usr/bin/chromium")
+        ? "/usr/bin/chromium"
+        : chromium.executablePath()),
+    args: ["--no-sandbox"],
+  });
+  try {
+    for (const [member, width] of [
+      [child, 390],
+      [adult, 1440],
+    ]) {
+      const context = await browser.newContext({ serviceWorkers: "block" });
+      const [name, value] = member.cookie.split("=");
+      await context.addCookies([{ name, value, url: f.url }]);
+      const { page, before } = await firstFrame(
+        context,
+        f.url + url,
+        width,
+        "Family Workspace",
+        "family",
+      );
+      assert.deepEqual(
+        before.footer.map(([action]) => action),
+        ["home", "settings"],
+      );
+      await page.getByRole("button", { name: "My Tasks", exact: true }).click();
+      await page
+        .getByRole("heading", { name: "My Tasks", exact: true })
+        .waitFor();
+      await context.close();
+    }
+  } finally {
+    await browser.close();
+  }
+});

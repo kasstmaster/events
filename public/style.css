@@ -3218,3 +3218,57 @@ dialog.centered-popup {
   width: 100%;
   height: auto;
 }
+
+/* The initial page needs the actual toolbar heights before script runs. Sticky
+   chrome keeps the same viewport edges while reserving its own space in flow. */
+#app[data-page-chrome] {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+#app[data-page-chrome] > .top-shell {
+  position: sticky;
+  inset: 0 0 auto;
+  margin: 0;
+}
+#app[data-page-chrome] > #main {
+  flex: 1;
+  width: 100%;
+  margin-block: 0;
+  padding-top: 18px;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 26px);
+}
+#app[data-page-chrome] > .toolbar {
+  position: sticky;
+}
+@media print {
+  #app[data-page-chrome] {
+    display: block;
+    min-height: 0;
+  }
+  #app[data-page-chrome] > #main {
+    padding-block: 0;
+  }
+}
+
+/* The family landing has a title as well as toolbar actions. Give the title
+   its usual second row on narrow screens without waiting for a measurement. */
+@media (max-width: 600px) {
+  #app[data-page-chrome="family"] .top-primary {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 8px;
+  }
+  #app[data-page-chrome="family"] :is(#top-navigation, .app-topbar) {
+    display: contents;
+  }
+  #app[data-page-chrome="family"] .browse-heading {
+    grid-area: 2 / 1 / 3 / -1;
+    position: static;
+    transform: none;
+  }
+  #app[data-page-chrome="family"] .browse-top-actions {
+    grid-area: 1 / 2;
+    padding-block: 8px;
+  }
+}

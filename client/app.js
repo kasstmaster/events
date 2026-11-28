@@ -1,3 +1,21 @@
+import {
+  adminHomeContent,
+  adminTopbar,
+  button,
+  eventActions,
+  eventHasPassed,
+  eventPage,
+  eventTopbar,
+  homeEventCollections,
+  homeTopbar,
+  hostHomeContent,
+  mainContent,
+  memberName,
+  pageHeader,
+  pageToolbar,
+  pageToolbarExtras,
+} from "/first-paint.js";
+import { designProperties } from "/page-theme.js";
 import { startupRoute, takeStartupRequest } from "/auth-bootstrap.js";
 import { weddingImportUI } from "/wedding-import-ui.js";
 import { eventPagesUI } from "/event-pages-ui.js";
@@ -12,7 +30,6 @@ import { householdGroups } from "/address-system.js";
 import {
   dateLabel,
   eventInformation,
-  eventIntroduction,
   renderInformation,
   readInformation,
   bindInformationEditor,
@@ -26,19 +43,21 @@ import {
   menu,
   sorting,
   topbar,
-  bottom,
   row,
   searchBox,
   ordered,
 } from "/browse-ui.js";
 import { addressPicker } from "/address-picker.js";
 import { exampleState, annotateExample } from "/default-examples.js";
-import { familyTools } from "/family-ui.js";
+import {
+  familyHomeContent,
+  familyHomeTopbar,
+  familyTools,
+} from "/family-ui.js";
 import { ui, M, C, H, configureCopy } from "/ui-runtime.js";
 import {
   resolveUI,
   order,
-  roleDefaults,
   categoryDesign,
   appearanceKeys,
   independentAppearanceKeys,
@@ -60,17 +79,7 @@ const escape = (value) =>
         c
       ],
   );
-const fullName = (guest) =>
-  [
-    guest.first,
-    ...(guest.parent
-      ? state.hostOnly
-        ? [guest.suffix]
-        : []
-      : [guest.last, guest.suffix]),
-  ]
-    .filter(Boolean)
-    .join(" ") + (guest.plusOne && guest.first !== "+1" ? " · +1" : "");
+const fullName = (guest) => memberName(guest, state.hostOnly);
 const state = {
   session: null,
   setup: null,
@@ -125,8 +134,6 @@ async function api(path, { method = "GET", data, version } = {}) {
   }
   return result;
 }
-const button = (action, label, extra = "", className = "secondary") =>
-  ui`<button type="button" class="${className}" data-action="${action}" ${extra}>${label}</button>`;
 const field = (label, name, value = "", type = "text", extra = "") =>
   ui`<label>${label}<input name="${name}" type="${type}" value="${escape(value)}" ${M(extra)}></label>`;
 const area = (label, name, value = "", extra = "") =>
@@ -134,105 +141,14 @@ const area = (label, name, value = "", extra = "") =>
 const select = (label, name, options, value, extra = "") =>
   ui`<label>${label}<select aria-label="${label}" name="${name}" ${extra}>${options.map(([key, label]) => ui`<option value="${escape(key)}" ${key === value ? "selected" : ""}>${escape(label)}</option>`).join("")}</select></label>`;
 function applyDesign(settings = {}, target = document.documentElement) {
-  const d = categoryDesign({
-    ...roleDefaults,
+  const defaults = {
     ...state.data?.defaults,
     ...state.publicHousehold?.defaults,
-    ...settings,
-  });
-  if (!d.background) return;
-  const root = target.style;
-  root.setProperty("--bg", d.background);
-  root.setProperty("--panel-solid", d.container);
-  root.setProperty(
-    "--panel",
-    d.containerImage
-      ? d.background
-      : `color-mix(in srgb, ${d.container} ${d.opacity}%, transparent)`,
-  );
-  for (const prefix of ["toolbar", "button"]) {
-    root.setProperty(`--${prefix}-surface`, d[prefix + "Surface"]);
-    root.setProperty(
-      `--${prefix}-panel`,
-      `color-mix(in srgb, ${d[prefix + "Surface"]} ${d[prefix + "Opacity"]}%, transparent)`,
-    );
-    root.setProperty(`--${prefix}-border-color`, d[prefix + "BorderColor"]);
-    root.setProperty(
-      `--${prefix}-border-width`,
-      d[prefix + "BorderWidth"] + "px",
-    );
-    root.setProperty(`--${prefix}-border-style`, d[prefix + "BorderStyle"]);
-    root.setProperty(`--${prefix}-label-color`, d[prefix + "LabelColor"]);
-    root.setProperty(`--${prefix}-label-font`, d[prefix + "LabelFont"]);
-    root.setProperty(`--${prefix}-label-size`, d[prefix + "LabelSize"] + "px");
-    root.setProperty(
-      `--${prefix}-label-weight`,
-      d[prefix + "LabelStyle"].includes("bold") ? "700" : "400",
-    );
-    root.setProperty(
-      `--${prefix}-label-style`,
-      /italic/i.test(d[prefix + "LabelStyle"]) ? "italic" : "normal",
-    );
-  }
-  root.setProperty("--heading", d.titleColor);
-  root.setProperty("--ink", d.textColor);
-  root.setProperty("--title-font", d.titleFont);
-  root.setProperty("--body-font", d.textFont);
-  root.setProperty("--title-size", `${d.titleSize}px`);
-  root.setProperty("--text-size", `${d.textSize}px`);
-  for (const role of [
-    "description",
-    "button",
-    "eyebrow",
-    "status",
-    "toolbar",
-    "notes",
-  ]) {
-    root.setProperty(`--${role}-font`, d[role + "Font"]);
-    root.setProperty(`--${role}-size`, d[role + "Size"] + "px");
-    root.setProperty(`--${role}-color`, d[role + "Color"]);
-  }
-  root.setProperty("--button-text", d.buttonText);
-  for (const key of [
-    "borderColor",
-    "statusBackground",
-    "toolbarBackground",
-    "inputColor",
-    "inputBackground",
-    "linkColor",
-    "accentColor",
-    "dangerColor",
-    "dangerBackground",
-    "notesBackground",
-  ])
-    root.setProperty(
-      "--" + key.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase()),
-      d[key],
-    );
-  for (const prefix of ["title", "description", "text"]) {
-    root.setProperty(
-      `--${prefix}-weight`,
-      d[prefix + "Style"].includes("bold") ? "700" : "400",
-    );
-    root.setProperty(
-      `--${prefix}-style`,
-      /italic/i.test(d[prefix + "Style"]) ? "italic" : "normal",
-    );
-  }
-  root.setProperty(
-    "--container-image",
-    d.containerImage ? `url("${d.containerImage}")` : "none",
-  );
-  root.setProperty(
-    "--container-image-opacity",
-    String(d.containerImageOpacity / 100),
-  );
-  root.setProperty("--border-width", d.borderWidth + "px");
-  root.setProperty("--border-style", d.borderStyle);
-  root.setProperty(
-    "--background-image",
-    d.backgroundImage ? `url("${d.backgroundImage}")` : "none",
-  );
+  };
+  for (const [key, value] of Object.entries(
+    designProperties(settings, defaults),
+  ))
+    target.style.setProperty(key, value);
   fitEventSummary();
 }
 let loadGeneration = 0,
@@ -289,9 +205,22 @@ const isEditing = () =>
   $("#editor").open ||
   !!document.querySelector(".browse-menu[open]") ||
   document.activeElement?.matches("input,select,textarea");
+function adoptInitialPage(kind) {
+  const app = $("#app");
+  if (app.dataset.gatherInitial !== kind || state.view !== "home") return false;
+  delete app.dataset.gatherInitial;
+  const event = state.data.events?.find((entry) => entry.id === state.event);
+  state.activeUI = event?.ui || state.data.ui || state.platformUI;
+  configureCopy(state.activeUI);
+  rememberPage();
+  measureChrome();
+  return true;
+}
+
 function renderRefresh(preserveScroll) {
   // Replacing/reordering the page can temporarily shrink it and clamp scrolling.
   // Capture at adoption time, after requests, so in-flight scrolling is retained.
+  delete $("#app").dataset.gatherInitial;
   const position = preserveScroll ? { left: scrollX, top: scrollY } : null;
   render();
   if (position) window.scrollTo({ ...position, behavior: "instant" });
@@ -371,15 +300,28 @@ async function load({ background = false, routeHome = false } = {}) {
           publicHousehold: null,
           event: data.events[0].id,
         });
-        renderRefresh(background);
+        if (!adoptInitialPage("visitor")) renderRefresh(background);
       };
       if (!alreadyVisible) show();
+      const initialPages = data.events[0].extraPages;
       const adoptPrivatePages = await extraPages.hydrate(data, state.visitor);
       if (!current()) return;
       adoptPrivatePages?.();
       if (alreadyVisible) show();
-      else if (adoptPrivatePages && state.view === "home" && !isEditing())
-        renderRefresh(true);
+      else if (
+        JSON.stringify(data.events[0].extraPages) !==
+          JSON.stringify(initialPages) &&
+        state.view === "home" &&
+        !isEditing()
+      ) {
+        const actions = $("#main [data-event-actions]");
+        if (actions)
+          actions.outerHTML = eventActions(data.events[0], {
+            role: "visitor",
+            hostOnly: data.hostOnly,
+            layouts: data.events[0].ui.layouts,
+          });
+      }
       return;
     }
     state.setup = boot.setup;
@@ -499,6 +441,7 @@ async function load({ background = false, routeHome = false } = {}) {
     if (session.role) {
       const [accountData, adminData] = await Promise.all([
         boot.host ||
+          boot.family ||
           api(
             session.role === "admin-pending"
               ? "/api/passwordless/security"
@@ -618,6 +561,12 @@ async function load({ background = false, routeHome = false } = {}) {
       entryHousehold: boot.household,
       lastSync: new Date(),
     });
+    const hostEvent =
+      state.hostOnly &&
+      session.role === "host" &&
+      state.view === "home" &&
+      boot.hostEvent;
+    if (hostEvent) state.event = hostEvent;
     if (!background && state.passwordless?.universal)
       await passwordless.resolveInvitation();
     // A background update that changes only the event list need not remount
@@ -640,7 +589,15 @@ async function load({ background = false, routeHome = false } = {}) {
       JSON.stringify(originalHomeTemplates) === JSON.stringify(templates) &&
       JSON.stringify(originalHomeFamily) === JSON.stringify(state.familyData) &&
       JSON.stringify(originalHomeHousehold) === JSON.stringify(publicHousehold);
-    if (!unchanged && !(sameHomeFrame && patchHomeCollections()))
+    if (
+      !unchanged &&
+      !(sameHomeFrame && patchHomeCollections()) &&
+      !(
+        state.hostOnly &&
+        ["host", "family", "admin"].includes(session.role) &&
+        adoptInitialPage(hostEvent ? "host-event" : session.role)
+      )
+    )
       renderRefresh(preserveScroll);
     else $("#sync-status")?.replaceChildren();
     if (syncCompleted && state.view === "contacts")
@@ -731,49 +688,6 @@ function authPage(designTarget) {
   const register = state.view === "register";
   return ui`<section class="auth"><p class="eyebrow">A place for your people</p><h1>${register ? C("Make yourself at home.") : C("Good things begin together.")}</h1><div class="panel"><h2>${register ? C("Create your host account") : C("Host Login")}</h2><p class="muted">${register ? C("Registration is available only for administrator-approved email addresses. No emails will be sent.") : C("Plan a little. Gather a lot.")}</p><form data-form="${register ? "register" : "login"}">${field(H("Email address"), "email", "", "email", 'required autocomplete="username" maxlength="254"')}${field(H("Password"), "password", "", "password", `required minlength="12" maxlength="256" autocomplete="${register ? "new-password" : "current-password"}"`)}${register ? field(H("Family household name"), "name", "", "text", 'required maxlength="100" placeholder="Household name"') + subdomainField() + ui`<fieldset><legend>Already have a guest account? · optional</legend>${field(H("Existing private username"), "existingUsername", "", "text", 'autocomplete="off"')}${field(H("Existing Household ID"), "existingHouseholdId", "", "password", 'inputmode="numeric" maxlength="4" autocomplete="off"')}</fieldset>` + familyLogoChoice() : ""}<p class="form-error" role="alert"></p><button>${register ? C("Create account") : C("Sign in")}</button></form></div><p class="small">${register ? C("Already registered?") : C("Approved to host?")} ${button(register ? "host-login" : "register", register ? C("Sign in") : C("Create your account"), "", "quiet")}</p>${household ? button("page-back", H("Back"), "", "quiet") : ""}</section>`;
 }
-const administratorMenuItems = () => [
-  { action: "admin-approvals", label: "Approvals" },
-  { action: "admin-hosts", label: "Hosts" },
-  { action: "global-defaults", label: "Defaults" },
-  { action: "admin-templates", label: "Templates" },
-];
-function toolbar(event) {
-  if (state.preview)
-    return bottom([
-      { action: "exit-preview", label: "Exit read-only preview", icon: "back" },
-      ...(event ? [{ action: "print", label: "Print", icon: "print" }] : []),
-    ]);
-  const role = state.session.role;
-  if (role === "visitor")
-    return bottom([{ action: "print", label: "Print", icon: "print" }]);
-  if (
-    role === "guest" &&
-    state.data?.personal?.account.needsUsername &&
-    !state.session?.passwordless &&
-    !state.preview
-  )
-    return bottom([{ action: "logout", label: "Sign Out", icon: "settings" }]);
-  if (role === "host")
-    return bottom([
-      { action: "home", label: "Home", icon: "home" },
-      ...(event && !event.invitingHousehold
-        ? [{ action: "invite-guests", label: "Invite", icon: "invite" }]
-        : []),
-      ...(event ? [{ action: "print", label: "Print", icon: "print" }] : []),
-    ]);
-  if (role === "admin")
-    return bottom([
-      { action: "home", label: "Home", icon: "home" },
-      { action: "admin-approvals", label: "Approvals", icon: "contacts" },
-      { action: "admin-hosts", label: "Hosts", icon: "contacts" },
-      { action: "global-defaults", label: "Defaults", icon: "edit" },
-      { action: "cards", label: "Templates", icon: "list" },
-    ]);
-  return bottom([
-    { action: "home", label: "Home", icon: "home" },
-    ...(event ? [{ action: "print", label: "Print", icon: "print" }] : []),
-  ]);
-}
 function topActions(event) {
   if (state.settingsOpen && state.session?.role === "host")
     return topbar({
@@ -784,112 +698,15 @@ function topActions(event) {
     return tools.cardTopbar();
   const role = state.session?.role;
   if (role === "admin" || (role === "host" && state.adminMode))
-    return topbar({
-      title: "",
-      plus:
-        state.view === "management" && state.managementKind === "cards"
-          ? [{ action: "new-card", label: "Create shared template" }]
-          : [{ action: "admin-approvals", label: "Approve host" }],
-      sort: [{ action: "preview-guest", label: "Preview guest experience" }],
-    });
-  if (event)
-    return topbar({
-      title: "",
-      sort:
-        role === "host" && state.session.platformAdmin
-          ? [{ action: "preview-guest", label: "Preview guest experience" }]
-          : [],
-    });
+    return adminTopbar(
+      state.view === "management" && state.managementKind === "cards",
+    );
+  if (event) return eventTopbar(state.session);
   return "";
 }
 function settingsPage() {
   return ui`<section class="panel"><h1>Settings</h1>${state.session.role === "admin" ? `<form data-form="admin-password">${field(H("Current password"), "currentPassword", "", "password", "required")}${field(H("New password"), "password", "", "password", 'required minlength="12"')}<p class="form-error" role="alert"></p><button>${C("Change Password")}</button></form>` : ""}${button("logout", H("Sign Out"))}</section>`;
 }
-function eventSummary(event) {
-  const host = state.session.role === "host" && !event.invitingHousehold;
-  const items = host
-    ? [
-        [event.totals.attending, "Attending"],
-        [event.totals.invited, "Invited"],
-        [event.totals.declined || 0, "Not attending"],
-        [event.totals.noResponse || 0, "No response"],
-      ]
-    : [
-        [event.totals.attending, "Attending"],
-        [event.totals.invited, "Invited"],
-        ...(event.menu.some((item) => item.kind === "potluck")
-          ? [
-              [
-                event.menu.reduce(
-                  (n, item) =>
-                    n + Math.max(0, item.quantity - (item.claimed || 0)),
-                  0,
-                ),
-                "Items needed",
-              ],
-              [
-                Object.values(event.response?.claims || {}).reduce(
-                  (a, b) => a + b,
-                  0,
-                ),
-                "Your items",
-              ],
-            ]
-          : []),
-      ];
-  return `<div class="event-summary no-print" role="group" tabindex="0" aria-label="${H("Event summary")}"><div class="totals" style="--summary-items:${items.length}">${items.map(([value, label]) => `<div><strong>${value}</strong><span>${H(label)}</span></div>`).join("")}</div></div>`;
-}
-
-function orderedInvitations(events) {
-  const today = new Date().toISOString().slice(0, 10);
-  const rank = (event) => (!event.date ? 1 : event.date >= today ? 0 : 2);
-  return [...events].sort(
-    (a, b) =>
-      rank(a) - rank(b) ||
-      (rank(a) === 2
-        ? String(b.date || "").localeCompare(a.date || "")
-        : String(a.date || "").localeCompare(b.date || "")) ||
-      a.title.localeCompare(b.title) ||
-      a.id.localeCompare(b.id),
-  );
-}
-function eventCard(event) {
-  const logo = event.invitingHousehold
-    ? event.invitingHousehold.logo
-    : state.data.household.logo;
-  const heading = ui`<div class="event-choice-heading">${logo ? ui`<img class="family-logo" src="${escape(logo)}" alt="Household icon">` : ""}</div>`;
-  const content = ui`${event.invitingHousehold ? ui`<p class="eyebrow">${escape(event.invitingHousehold.name)}</p>` : ""}<p class="muted small">${escape(dateLabel(event.date))}</p><h2>${escape(event.title)}</h2><p class="muted">${escape(event.description.slice(0, 120))}</p><div class="row"><span class="pill">${event.totals.attending} attending</span>${event.response?.version && !event.response.uninvited ? M('<span class="pill">RSVP saved</span>') : ""}</div>${button("open-event", H("View Event"), `data-id="${event.invitationKey || event.id}"`)}`;
-  if (state.session.role !== "host" || event.invitingHousehold)
-    return ui`<article class="card event-choice">${heading}<div class="event-overview">${content}</div></article>`;
-  return ui`<article class="card host-event-choice">${heading}<div class="event-overview">${content}</div><div class="event-home-actions" role="group" aria-label="${H("Event actions")}">${[
-    ["dashboard", "RSVPs"],
-    ["cards", "Invitation Cards"],
-  ]
-    .map(([action, label]) =>
-      button("event-action-" + action, H(label), `data-id="${event.id}"`),
-    )
-    .join("")}</div></article>`;
-}
-
-// Home's event collection can be updated without replacing the surrounding
-// toolbar, quick actions, focused controls, or scrollable document.
-function homeEventCollections(role, events, receivedEvents = []) {
-  const homeEvents =
-    role === "host"
-      ? events.filter((event) => !eventHasPassed(event))
-      : orderedInvitations(events);
-  const archivedEvents = role === "host" ? events.filter(eventHasPassed) : [];
-  const home =
-    homeEvents.length || archivedEvents.length
-      ? ui`<section class="home-invitations">${role === "host" ? ui`<p class="eyebrow">${C("Your events")}</p>` : ui`<h2 class="invitations-title">${C("You’re invited to gather")}</h2>`}${homeEvents.length ? ui`<section class="grid home-events ${homeEvents.length > 1 ? "multiple-events" : "single-event"}" aria-label="Events">${homeEvents.map(eventCard).join("")}</section>` : ""}${archivedEvents.length ? ui`<details class="panel"><summary>${C("Archived events")}</summary><section class="grid home-events" aria-label="${H("Archived events")}">${archivedEvents.map(eventCard).join("")}</section></details>` : ""}</section>`
-      : ui`<section class="panel empty"><div class="sprig" aria-hidden="true">❧</div><h2>${role === "host" ? C("Your next memory starts here.") : C("Nothing on the calendar yet.")}</h2><p class="muted">${role === "host" ? C("Choose Create event to plan your first gathering.") : C("Your host will add your invitations here.")}</p></section>`;
-  const received =
-    role === "host" && receivedEvents.length
-      ? ui`<section class="home-invitations received-invitations"><h2 class="invitations-title">${C("You’re invited to gather")}</h2><section class="grid home-events multiple-events">${orderedInvitations(receivedEvents).map(eventCard).join("")}</section></section>`
-      : "";
-  return { home, received };
-}
-
 function patchHomeCollections() {
   const main = $("#main");
   if (!main || !main.querySelector(":scope > .hero")) return false;
@@ -897,6 +714,7 @@ function patchHomeCollections() {
   if (!state.data?.events || !["host", "guest"].includes(role)) return false;
   const { home, received } = homeEventCollections(
     role,
+    state.data.household,
     state.data.events,
     state.data.receivedEvents || [],
   );
@@ -907,6 +725,8 @@ function patchHomeCollections() {
   const archivedOpen = previous.querySelector("details")?.open === true;
   const replacement = document.createRange().createContextualFragment(home);
   const updated = replacement.firstElementChild;
+  if (previous.dataset.layoutItem)
+    updated.dataset.layoutItem = previous.dataset.layoutItem;
   previous.replaceWith(updated);
   if (archivedOpen) {
     const archived = updated.querySelector("details");
@@ -937,43 +757,6 @@ function patchHomeCollections() {
   return true;
 }
 
-function eventHasPassed(event) {
-  if (!event.date) return false;
-  const now = new Date();
-  const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 10);
-  return event.date < today;
-}
-function eventPage(event) {
-  const archived = eventHasPassed(event);
-  const own = event.response || { version: 0, attendance: {}, claims: {} };
-  const content = ui`${eventIntroduction(event)}<div class="row no-print" data-event-actions>${archived ? "" : button("rsvp", C("RSVP"), "", "")}${(event.extraPages || []).map((p) => button("event-extra-page", escape(p.title), `data-id="${escape(p.id)}"`)).join("")}${!archived && state.hostOnly && state.session.role === "host" && !event.invitingHousehold ? button("event-pages-manage", H("Manage event pages")) : ""}${(event.registries || []).length ? ui`<div class="registry-buttons" aria-label="Gift registries">${event.registries.map((r) => ui`<a class="button registry-button" href="${escape(r.url)}" target="_blank" rel="noopener noreferrer">${escape(r.title)}</a>`).join("")}</div>` : ""}${event.uploadURL ? ui`<a class="button" data-event-edit="uploadURL" href="${escape(event.uploadURL)}" target="_blank" rel="noopener noreferrer">Upload Photos & Videos</a>` : ""}${event.viewURL ? ui`<a class="button" data-event-edit="viewURL" href="${escape(event.viewURL)}" target="_blank" rel="noopener noreferrer">View Photos & Videos</a>` : ""}</div><div class="grid">${(event.information || []).some((run) => run.text.trim()) ? ui`<section class="panel" data-event-section="additional-information"><h2>Information</h2><div class="event-additional-content" data-event-edit="information" data-host-content>${renderInformation(event.information)}</div></section>` : ""}${!archived && event.menu.length ? ui`<section class="panel" data-event-section="menus"><p class="eyebrow">Something to share</p><h2>At the table</h2>${event.menu.length ? event.menu.map((item) => ui`<div class="menu-item" data-event-edit="table" data-menu-item="${escape(item.id)}"><div><strong>${escape(item.name)}</strong><div class="muted small">${item.kind === "drink" ? C("Drinks") : C("Potluck")}</div></div><span class="pill">${Math.max(0, item.quantity - (item.claimed || 0))} needed</span></div>`).join("") : M('<p class="muted">Just bring yourself. Your host hasn’t added any menu items yet.</p>')}</section>` : ""}${
-    archived
-      ? ""
-      : own
-        ? ui`<section class="panel" data-event-section="personal"><p class="eyebrow">Your plans</p><h2>Your RSVP & items</h2>${
-            own.version && !own.uninvited
-              ? ui`<ul>${event.members.map((m) => ui`<li>${escape(fullName(m))}: ${(event.partyAttendance || own.attendance)[m.id] === "yes" ? C("Attending") : (event.partyAttendance || own.attendance)[m.id] === "no" ? C("Not attending") : C("No response")}</li>`).join("")}</ul><h3>You’re bringing</h3>${
-                  Object.entries(own.claims).length
-                    ? ui`<ul>${Object.entries(own.claims)
-                        .map(
-                          ([key, n]) =>
-                            ui`<li>${escape(event.menu.find((m) => m.id === key)?.name || "Item")} × ${n}</li>`,
-                        )
-                        .join("")}</ul>`
-                    : M('<p class="muted">No items selected.</p>')
-                }`
-              : M('<p class="muted">We’d love to know if you can join us.</p>')
-          }</section>`
-        : M(
-            '<section class="panel"><p class="eyebrow">Made for this gathering</p><h2>Your invitation</h2><p>Choose an administrator-provided template in Edit event. Event details populate automatically.</p>',
-          ) + "</section>"
-  }</div>`;
-  return event.containerLayout === "single"
-    ? ui`<section class="panel event-content-shell" data-event-shell>${content}</section>`
-    : content;
-}
 const pageTrail = [];
 const browserPages = new Map();
 const browserSession = crypto.randomUUID();
@@ -1031,6 +814,20 @@ function rememberPage() {
       p.adminMode,
       p.view === "family" ? [p.family.selected, p.family.section] : null,
     ]);
+  const eventURL =
+    state.hostOnly && state.session.role === "host" && location.pathname === "/"
+      ? new URL(location.href)
+      : undefined;
+  if (eventURL) {
+    if (
+      page.view === "home" &&
+      page.event &&
+      !page.settingsOpen &&
+      !page.adminMode
+    )
+      eventURL.searchParams.set("event", page.event);
+    else eventURL.searchParams.delete("event");
+  }
   const changed = currentPage && route(currentPage) !== route(page);
   const previousBrowserPage = browserPage;
   if (changed && !returningToPage) {
@@ -1043,14 +840,17 @@ function rememberPage() {
     history.pushState(
       { ...history.state, gather: browserSession, page: browserPage },
       "",
+      eventURL,
     );
   } else if (!browserPage) {
     browserPage = ++nextBrowserPage;
     history.replaceState(
       { ...history.state, gather: browserSession, page: browserPage },
       "",
+      eventURL,
     );
-  }
+  } else if (eventURL && eventURL.href !== location.href)
+    history.replaceState(history.state, "", eventURL);
   browserPages.set(browserPage, {
     previous:
       changed && !returningToPage
@@ -1220,7 +1020,10 @@ function render(target = $("#app"), example = false) {
     state.adminMode = false;
   }
   let content = "",
-    event = null;
+    event = null,
+    standardHome = false,
+    standardEvent = false,
+    standardFamily = false;
   if (state.hostOnly && location.pathname === "/guest")
     content = ui`<section class="auth"><h1>Open your event invitation</h1><p>Guest sign-in has been retired. Use the event link shared by your host. No guest account is required.</p></section>`;
   else if (state.hostOnly && hostAuth.authEntry()) content = hostAuth.page();
@@ -1297,12 +1100,23 @@ function render(target = $("#app"), example = false) {
   else if (role === "host" && state.view === "contacts")
     content = contactsPage();
   else if (!role) content = authPage(designTarget);
-  else if (role === "family" || state.view === "family")
-    content = example
-      ? family.renderExample(state.exampleRecord)
-      : family.render() +
-        (role === "family" ? button("my-account", H("My account")) : "");
-  else if (role === "admin" || (role === "host" && state.adminMode)) {
+  else if (role === "family" || state.view === "family") {
+    const navigation = family.navigation();
+    standardFamily =
+      role === "family" &&
+      state.hostOnly &&
+      !example &&
+      !navigation.selected &&
+      !navigation.section &&
+      !navigation.showSearch &&
+      !navigation.search;
+    content = standardFamily
+      ? familyHomeContent(state.familyData || state.data, button)
+      : example
+        ? family.renderExample(state.exampleRecord)
+        : family.render() +
+          (role === "family" ? button("my-account", H("My account")) : "");
+  } else if (role === "admin" || (role === "host" && state.adminMode)) {
     content =
       state.view === "admin-approvals"
         ? ui`<section class="panel"><h2>Approved emails</h2><form data-form="approval">${field(H("Email address"), "email", "", "email", "required")}<p class="form-error" role="alert"></p><button>Approve host</button></form><ul class="guest-list">${state.data.approvals.map((a) => ui`<li class="row between"><span>${escape(a.email)}</span>${button("revoke", H("Remove"), `data-email="${escape(a.email)}"`, "quiet")}</li>`).join("") || M('<li class="muted">No pending approvals.</li>')}</ul></section>`
@@ -1313,7 +1127,7 @@ function render(target = $("#app"), example = false) {
             (role === "host"
               ? ui`<section class="panel"><h2>Old administrator accounts</h2>${(state.data.legacyAdministrators || []).map((a) => ui`<p>${escape(a.email)} ${button("retire-legacy-admin", H("Remove old administrator"), `data-email="${escape(a.email)}"`, "danger")}</p>`).join("") || M("<p>No old administrator accounts remain.</p>")}</section>`
               : "")
-          : ui`<section class="hero"><p class="eyebrow">Administrator</p><h1>Open the door<br>for your next host.</h1><p>Approve email addresses and manage shared invitation artwork. No emails are sent.</p></section><section class="panel"><h2>Administration</h2><p>Use the toolbar to manage approvals, hosts, templates and shared page defaults.</p></section>`;
+          : adminHomeContent(active.layouts?.introText);
   } else {
     event = [...state.data.events, ...(state.data.receivedEvents || [])].find(
       (e) => (e.invitationKey || e.id) === state.event,
@@ -1331,42 +1145,50 @@ function render(target = $("#app"), example = false) {
         design: appearancePreset("dark", state.platformUI?.design),
       });
     }
-    applyDesign(state.activeUI.design, designTarget);
-    if (event) content = eventPage(event);
-    else {
+    if (state.activeUI !== active)
+      applyDesign(state.activeUI.design, designTarget);
+    if (event) {
+      standardEvent = true;
+      content = eventPage(event, {
+        role,
+        hostOnly: state.hostOnly,
+        layouts: state.activeUI.layouts,
+      });
+    } else {
       state.event = null;
-      content =
-        (role === "host"
-          ? topbar({
-              title: "",
-              plus: [{ action: "new-event", label: "Create Event" }],
-              sort: state.session.platformAdmin
-                ? [
-                    ...administratorMenuItems(),
-                    {
-                      action: "preview-guest",
-                      label: "Preview guest experience",
-                    },
-                  ]
-                : [],
-            })
-          : "") +
-        ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : C("Welcome")}</p><h1>${escape(role === "guest" ? state.data.personal?.person.name || fullName(state.data.guest) : state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? personal.homeActions() : ""}${homeEventCollections(role, state.data.events).home}`;
+      standardHome = role === "host" && state.view === "home";
+      content = standardHome
+        ? hostHomeContent(state.data, state.hostOnly)
+        : ui`<section class="hero"><p class="eyebrow">${role === "host" ? C("Your gathering place") : C("Welcome")}</p><h1>${escape(role === "guest" ? state.data.personal?.person.name || fullName(state.data.guest) : state.data.household.name)}</h1>${role === "guest" ? M('<p class="muted">Your invitations, all in one place.</p>') : ""}</section>${role === "guest" ? personal.homeActions() : ""}${homeEventCollections(role, state.data.household, state.data.events).home}`;
     }
   }
-  if (
-    role === "host" &&
-    !event &&
-    state.view === "home" &&
-    !state.adminMode &&
-    state.data.receivedEvents?.length
-  )
-    content += homeEventCollections(
+  const pageLayout = standardHome
+    ? "hostHome"
+    : standardEvent && event.containerLayout !== "single"
+      ? "event"
+      : "";
+  target.removeAttribute("data-page-chrome");
+  const guestNeedsUsername =
+    role === "guest" &&
+    state.data?.personal?.account.needsUsername &&
+    !state.session.passwordless;
+  target.innerHTML =
+    pageHeader({
+      event,
       role,
-      state.data.events,
-      state.data.receivedEvents,
-    ).received;
-  target.innerHTML = ui`<header class="top-shell no-print ${event ? "event-toolbar" : ""}"><div class="top-primary"><a class="brand" href="/" data-action="home">gather<span>＊</span></a>${event ? eventSummary(event) : ""}<div id="top-navigation">${topActions(event)}</div></div><div id="appearance-toolbar"></div></header><main id="main">${content}${role && state.view !== "card-editor" ? '<p id="sync-status" class="connection" role="status" aria-live="polite"></p>' : ""}</main>${role || state.preview ? toolbar(event) : ""}`;
+      navigation: standardHome
+        ? homeTopbar(state.session.platformAdmin)
+        : standardFamily
+          ? familyHomeTopbar(
+              (state.familyData || state.data).member,
+              (state.familyData || state.data).preferences,
+            )
+          : topActions(event),
+    }) +
+    mainContent(content, role && state.view !== "card-editor", pageLayout) +
+    (role || state.preview
+      ? pageToolbar(event, { role, preview: state.preview, guestNeedsUsername })
+      : "");
   if (keepGuest)
     target
       .querySelector(
@@ -1422,11 +1244,13 @@ function render(target = $("#app"), example = false) {
         '#top-navigation [data-action^="card-"],#top-navigation [data-action="download-card"],#top-navigation [data-action="download-png"],#top-navigation [data-action="print-card"],#top-navigation [data-action="share-card"],#top-navigation [data-action="email-card"]',
       ))
         action.classList.add("labeled-tool");
-      const sortItems = [
-        ...target.querySelectorAll(
-          '#top-navigation [data-action^="family-sort-"]',
-        ),
-      ];
+      const sortItems = standardFamily
+        ? []
+        : [
+            ...target.querySelectorAll(
+              '#top-navigation [data-action^="family-sort-"]',
+            ),
+          ];
       if (sortItems.length) {
         topActions.insertAdjacentHTML(
           "beforeend",
@@ -1451,7 +1275,7 @@ function render(target = $("#app"), example = false) {
       const tasks = target.querySelector(
         '#top-navigation [data-action="family-mine"]',
       );
-      if (tasks) {
+      if (tasks && !standardFamily) {
         topActions.insertAdjacentHTML(
           "beforeend",
           tool("family-mine", "My Tasks", "", "task"),
@@ -1491,26 +1315,12 @@ function render(target = $("#app"), example = false) {
       ))
         if (!details.querySelector('[role="menu"]')?.children.length)
           details.remove();
-      if (role === "host")
-        footer.insertAdjacentHTML(
-          "beforeend",
-          tool("share-details", "Share Invitation", "", "share"),
-        );
-      if (role === "guest" && !footer.querySelector('[data-action="logout"]'))
-        footer.insertAdjacentHTML(
-          "beforeend",
-          tool("logout", "Sign Out", "", "logout"),
-        );
-      if (role === "visitor" && state.visitor?.grant)
-        footer.insertAdjacentHTML(
-          "beforeend",
-          tool("recipient-sign-out", "Sign Out", "", "logout"),
-        );
-      if (!["guest", "visitor"].includes(role))
-        footer.insertAdjacentHTML(
-          "beforeend",
-          tool("settings", "Settings", "", "settings"),
-        );
+      for (const { action, label, icon } of pageToolbarExtras(
+        role,
+        state.visitor?.grant,
+        guestNeedsUsername,
+      ))
+        footer.insertAdjacentHTML("beforeend", tool(action, label, "", icon));
     }
   }
   if (
@@ -1646,6 +1456,8 @@ function render(target = $("#app"), example = false) {
     return;
   }
   if (
+    !standardHome &&
+    !standardEvent &&
     role !== "family" &&
     ![
       "family",
@@ -3969,7 +3781,7 @@ function measureChrome() {
   const top = document.querySelector(".top-shell"),
     footer = document.querySelector(".toolbar");
   const primary = top?.querySelector(".top-primary");
-  if (primary) {
+  if (primary && !primary.closest('#app[data-page-chrome="family"]')) {
     const rect = primary.getBoundingClientRect();
     const left = Math.max(
       ...[
@@ -4526,101 +4338,8 @@ function applyLayoutDOM(event, role, target = $("#app")) {
       anchor.remove();
     }
   }
-  if (event) {
-    const info = main.querySelector(".event-hero"),
-      actions = info?.nextElementSibling,
-      grid = main.querySelector(".grid");
-    move(
-      info,
-      [
-        { id: "artwork", element: info?.querySelector(".event-icon") },
-        { id: "eyebrow", element: info?.querySelector(".eyebrow") },
-        { id: "title", element: info?.querySelector("h1") },
-        { id: "description", element: info?.querySelector("p.event-details") },
-        { id: "details", element: info?.querySelector(".event-meta") },
-        { id: "deadline", element: info?.querySelector(".event-deadline") },
-      ],
-      config.layouts.eventInformation,
-      "eventInformation",
-    );
-    const sections = grid ? [...grid.children] : [];
-    if (grid) grid.remove();
-    move(
-      main.querySelector("[data-event-shell]") || main,
-      [
-        { id: "information", element: info },
-        { id: "actions", element: actions },
-        {
-          id: "menus",
-          element: sections.find((el) => el.dataset.eventSection === "menus"),
-        },
-        {
-          id: "personal",
-          element:
-            sections.find((el) => el.dataset.eventSection === "personal") ||
-            sections.find(
-              (el) =>
-                !["menus", "additional-information"].includes(
-                  el.dataset.eventSection,
-                ),
-            ),
-        },
-      ],
-      config.layouts.event,
-      "event",
-    );
-    const additional = sections.find(
-      (el) => el.dataset.eventSection === "additional-information",
-    );
-    if (additional) {
-      const following =
-        main.querySelector('[data-event-section="menus"]') ||
-        main.querySelector('[data-event-section="personal"]');
-      if (following) following.before(additional);
-      else
-        (main.querySelector("[data-event-shell]") || main).append(additional);
-    }
-    const plans = main.querySelector('[data-event-section="personal"]');
-    if (plans && actions) actions.after(plans);
-    if (actions && ["guest", "host"].includes(role)) {
-      const rsvp = actions.querySelector("[data-action=rsvp]"),
-        registries = actions.querySelector(".registry-buttons");
-      if (rsvp) {
-        const group = document.createElement("div");
-        group.className = "rsvp-stack";
-        group.dataset.layoutAction = "rsvp";
-        rsvp.before(group);
-        group.append(rsvp);
-        if (registries) group.append(registries);
-        group.append(
-          ...actions.querySelectorAll(
-            "[data-event-edit=uploadURL], [data-event-edit=viewURL]",
-          ),
-        );
-      }
-    }
-    if (actions) {
-      const list = [...actions.children].map((el) => ({
-        id:
-          el.dataset.layoutAction ||
-          (el.dataset.action === "edit-event"
-            ? "edit-event"
-            : el.dataset.action === "rsvp"
-              ? "rsvp"
-              : el.dataset.action === "invitation"
-                ? "invitation"
-                : el.dataset.action === "delete-event"
-                  ? "delete-event"
-                  : el.classList.contains("registry-buttons")
-                    ? "registries"
-                    : el.textContent === String(C("Upload Photos & Videos"))
-                      ? "uploads"
-                      : el.dataset.action || ""),
-        element: el,
-      }));
-      move(actions, list, config.layouts.eventButtons, "eventButtons");
-    }
-  } else if (role === "host" || role === "guest") {
+  if (event) return;
+  if (role === "host" || role === "guest") {
     const hero = main.querySelector(".hero"),
       actions = hero?.querySelector(".row"),
       notes = main.querySelector(".private-notes"),

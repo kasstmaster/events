@@ -1,3 +1,4 @@
+import { order } from "./ui-system.js";
 import { C, ui } from "./ui-runtime.js";
 // Store bounded text runs, never arbitrary HTML. Shared by server and browser.
 const escape = (value) =>
@@ -338,8 +339,41 @@ export function bindInformationEditor(doc = document, { showPopup } = {}) {
   });
 }
 
-export function eventIntroduction(event) {
-  return ui`<section class="event-hero">${event.icon ? ui`<img class="event-icon" data-event-edit="iconUpload" src="${escape(event.icon)}" alt="Event artwork">` : ""}<h1 data-event-edit="title">${escape(event.title ?? "")}</h1><p class="event-details" data-event-edit="description">${escape(event.description ?? "")}</p>${eventInformation(event)}</section>`;
+export function eventIntroduction(event, layout = [], item = "") {
+  const [details, deadline] = eventInformationParts(
+    event,
+    false,
+    event.informationLayout,
+  );
+  const slots = [
+    [
+      "artwork",
+      event.icon
+        ? ui`<img class="event-icon" data-event-edit="iconUpload" src="${escape(event.icon)}" alt="Event artwork">`
+        : "",
+    ],
+    ["title", `<h1 data-event-edit="title">${escape(event.title)}</h1>`],
+    [
+      "description",
+      `<p class="event-details" data-event-edit="description">${escape(event.description)}</p>`,
+    ],
+    ["details", details],
+    ["deadline", deadline],
+  ];
+  const items = slots
+    .filter(([, markup]) => markup)
+    .map(([id, markup]) => ({
+      id,
+      markup: layout.includes(id)
+        ? markup.replace(/^(<\w+)/, `$1 data-layout-item="${id}"`)
+        : markup,
+    }));
+  return `<section class="event-hero" data-layout="eventInformation"${item}>${order(
+    items,
+    layout,
+  )
+    .map(({ markup }) => markup)
+    .join("")}</section>`;
 }
 
 export const dateLabel = (value) =>
@@ -355,6 +389,10 @@ export function eventInformation(
   preview = false,
   layout = event.informationLayout,
 ) {
+  return eventInformationParts(event, preview, layout).join("");
+}
+
+function eventInformationParts(event, preview, layout) {
   const edit = (name) =>
     preview ? 'data-host-content=""' : `data-event-edit="${name}"`;
   if (layout === "invitation") {
@@ -384,7 +422,14 @@ export function eventInformation(
         ". " +
         deadline.getUTCDate()
       : "";
-    return ui`<div class="event-meta event-information-invitation"><div class="invitation-date" ${edit("date")}>${escape(date)}</div>${event.time ? ui`<div class="invitation-time" ${edit("time")}>${escape(event.time)}</div>` : ""}${event.address ? ui`<div class="invitation-address" ${edit("eventAddress")}>${escape(event.address)}</div>` : ""}${deadline ? ui`<div class="invitation-rsvp"><span>${C("Kindly RSVP by")}</span> <span ${edit("deadline")}>${escape(rsvp)}</span></div>` : ""}</div>`;
+    return [
+      ui`<div class="event-meta event-information-invitation"><div class="invitation-date" ${edit("date")}>${escape(date)}</div>${event.time ? ui`<div class="invitation-time" ${edit("time")}>${escape(event.time)}</div>` : ""}${event.address ? ui`<div class="invitation-address" ${edit("eventAddress")}>${escape(event.address)}</div>` : ""}${deadline ? ui`<div class="invitation-rsvp"><span>${C("Kindly RSVP by")}</span> <span ${edit("deadline")}>${escape(rsvp)}</span></div>` : ""}</div>`,
+    ];
   }
-  return ui`<div class="event-meta"><div><b>When</b><span ${edit("date")}>${escape(dateLabel(event.date))}</span><span ${edit("time")}>${escape(event.time)}</span></div>${event.address ? ui`<div><b>Where</b><span class="event-details" ${edit("eventAddress")}>${escape(event.address)}</span></div>` : ""}</div>${event.deadline ? ui`<div class="event-deadline"><b>RSVP By</b><span ${edit("deadline")}>${escape(dateLabel(event.deadline))}</span></div>` : ""}`;
+  return [
+    ui`<div class="event-meta"><div><b>When</b><span ${edit("date")}>${escape(dateLabel(event.date))}</span><span ${edit("time")}>${escape(event.time)}</span></div>${event.address ? ui`<div><b>Where</b><span class="event-details" ${edit("eventAddress")}>${escape(event.address)}</span></div>` : ""}</div>`,
+    event.deadline
+      ? ui`<div class="event-deadline"><b>RSVP By</b><span ${edit("deadline")}>${escape(dateLabel(event.deadline))}</span></div>`
+      : "",
+  ];
 }
