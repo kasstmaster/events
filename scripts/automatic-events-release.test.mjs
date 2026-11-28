@@ -293,6 +293,7 @@ async function fixture(fn, previous = PREVIOUS) {
       publicChange: false,
       manifestChange: true,
       healthFailures: 0,
+      dynamicHome: false,
       httpFailure: false,
     };
   const p = {
@@ -447,6 +448,8 @@ async function fixture(fn, previous = PREVIOUS) {
       });
     if (state.healthFailures-- > 0) return new Response("stale");
     if (state.alteredAsset) return new Response("altered asset");
+    if (u.pathname === "/" && state.dynamicHome)
+      return new Response("session-personalized-home");
     return new Response(
       ["/", "/signin"].includes(u.pathname)
         ? "approved-index"
@@ -537,6 +540,7 @@ test("checkpoint precedes a single exact publish; verification checks all assets
     assert.equal(state.publishes, 1);
     state.latest = "c".repeat(40);
     state.healthFailures = 1;
+    state.dynamicHome = true;
     await run("verify", options);
     assert.equal(state.publishes, 1);
     const v = JSON.parse(
