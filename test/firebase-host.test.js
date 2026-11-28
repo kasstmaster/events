@@ -250,13 +250,15 @@ test("cold concurrent host checks share only the service token, never account au
     return {
       ok: true,
       json: async () => ({
-        users: [{
-          localId: identity.uid,
-          email: identity.email,
-          emailVerified: true,
-          disabled,
-          validSince: String(seconds - 3600),
-        }],
+        users: [
+          {
+            localId: identity.uid,
+            email: identity.email,
+            emailVerified: true,
+            disabled,
+            validSince: String(seconds - 3600),
+          },
+        ],
       }),
     };
   };
