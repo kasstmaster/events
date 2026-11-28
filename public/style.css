@@ -1099,6 +1099,7 @@ dialog:has(form[data-form="ui-settings"]) {
   gap: var(--action-gap);
 }
 .family-logo-preview {
+  flex: none;
   width: 100px;
   height: 100px;
   object-fit: contain;

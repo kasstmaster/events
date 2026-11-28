@@ -1,7 +1,7 @@
 // Synthetic isolated data only; network denied outside loopback.
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { chromium } from "playwright";
 import { Store } from "../server/node-store.js";
 import { createApp } from "../server/app.js";
@@ -39,7 +39,11 @@ store.put(
   host.household,
   {
     ...household,
-    logo: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lV8AAAAASUVORK5CYII=",
+    logo:
+      "data:image/png;base64," +
+      readFileSync(
+        new URL("../public/gather-192.png", import.meta.url),
+      ).toString("base64"),
   },
   household.version,
 );
@@ -107,6 +111,22 @@ try {
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     const archive = page.locator(".archived-events");
     await archive.locator("summary").waitFor();
+    const titleStyle = (el) => {
+      const style = getComputedStyle(el);
+      return [
+        style.fontFamily,
+        style.fontSize,
+        style.fontStyle,
+        style.fontWeight,
+        style.color,
+        style.letterSpacing,
+        style.textTransform,
+      ];
+    };
+    assert.deepEqual(
+      await archive.locator("summary").evaluate(titleStyle),
+      await page.locator(".hero .eyebrow").evaluate(titleStyle),
+    );
     assert.equal(
       await archive.evaluate((el) => el.classList.contains("panel")),
       false,
@@ -156,15 +176,47 @@ try {
         assert.ok(await page.evaluate(() => scrollY > 0), label);
         assert.equal(await page.locator("dialog[open]").count(), 0);
         if (label === "Household Details") {
-          const logo = details.locator(".family-logo-options img");
-          await logo.evaluate((img) => img.decode());
-          assert.equal(
-            await logo.evaluate((img) => img.complete && img.naturalWidth > 0),
-            true,
+          const logo = details.getByRole("img", {
+            name: "Current family logo",
+          });
+          assert.match(
+            await logo.getAttribute("src"),
+            /^\/api\/display-media\/host\//,
           );
-          await details
-            .locator(".family-logo-options [name=removeLogo]")
-            .waitFor();
+          await logo.evaluate((img) => img.decode());
+          assert.equal(await logo.evaluate((img) => img.naturalWidth), 192);
+          const logoBox = await logo.boundingBox();
+          const removeBox = await details
+            .getByText("Remove family logo", { exact: true })
+            .boundingBox();
+          assert.equal(logoBox.width, 100);
+          assert.ok(logoBox.x + logoBox.width <= removeBox.x);
+          assert.ok(
+            Math.abs(
+              logoBox.y +
+                logoBox.height / 2 -
+                (removeBox.y + removeBox.height / 2),
+            ) < 2,
+          );
+          if (width === 1366) {
+            await details.locator("[name=removeLogo]").check();
+            await page.locator('[data-action="save-settings"]').click();
+            await details
+              .getByText("No family logo has been saved.", { exact: true })
+              .waitFor();
+            assert.equal(await details.locator("[name=removeLogo]").count(), 0);
+            await details.locator("[name=familyLogo]").setInputFiles({
+              name: "household-logo.png",
+              mimeType: "image/png",
+              buffer: readFileSync(
+                new URL("../public/gather-192.png", import.meta.url),
+              ),
+            });
+            await page.locator('[data-action="save-settings"]').click();
+            await logo.waitFor();
+            await logo.evaluate((img) => img.decode());
+            await details.locator("[name=removeLogo]").waitFor();
+          }
         }
         if (label === "Notifications Settings") {
           const start = String(width === 390 ? 9 : 10);
