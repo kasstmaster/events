@@ -171,7 +171,7 @@ export function personalTools({
       return ui`${topbar({ title: C("Phone sign-in"), back: "page-back" })}<section class="panel"><p>Your phone sign-in is verified. This device stays signed in until you sign out or access is revoked.</p>${field(H("Verified phone"), "verifiedPhone", a.recoveryPhone || "", "tel", "readonly")}<p>Use Recover Account if you lose access to your phone.</p>${button("recover-account", H("Recover Account"))}</section>`;
     return ui`${topbar({ title: C(a.needsUsername ? "Create private sign-in" : "Private sign-in"), back: a.needsUsername ? "" : "page-back", extra: tool("personal-save", "Save", "", "save") })}<section class="panel" data-layout="personalAccount"><p data-layout-item="description">Your username is private. It is never shown to family, friends or hosts.</p><form data-form="personal-account" data-layout-item="credentials" data-version="${a.version}">${field(H("Username"), "username", a.username, "text", 'required minlength="3" maxlength="80" autocomplete="username"')}${field(H("Recovery phone number"), "recoveryPhone", a.recoveryPhone, "tel", 'required maxlength="30" autocomplete="tel"')}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form></section>`;
   }
-  function familyPage() {
+  function familyPage(inline = false) {
     const data = current(),
       p = data.profile,
       edit = state.familyMemberEditing;
@@ -201,9 +201,9 @@ export function personalTools({
       ? tool("personal-save", "Save", "", "save") +
         tool("personal-edit-cancel", "Cancel", "", "close")
       : "";
-    return ui`${topbar({ title: C("Family"), back: "page-back", extra: controls })}<section class="panel"><p>${C("Household ID")} · <code>${esc(data.account.householdId || p.publicCode)}</code></p>${
+    return ui`${inline ? "" : topbar({ title: C("Family"), back: "page-back", extra: controls })}<section class="panel"><p>${C("Household ID")} · <code>${esc(data.account.householdId || p.publicCode)}</code></p>${
       edit
-        ? ui`<form data-form="personal-family" data-edit-scope="${childBatch ? "children" : person ? "person" : "details"}">${person ? ui`<input type="hidden" name="profileVersion" value="${p.version}">${editablePeople.map((m) => memberRow(m, p.members)).join("")}${childBatch ? button("personal-add-another-child", H("Add another child")) : ""}` : familyFields(data, false)}${person?.parent && membership && state.session.role === "host" ? ui`<label class="check"><input type="checkbox" name="allowChildSignIn" ${membership.allowSignIn ? "checked" : ""}>Allow Sign-In</label><p class="small">Child sign-in requires independently verified delivery and administrator approval. Access is limited to authorized Family Workspace records.</p>` : ""}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form>`
+        ? ui`<form data-form="personal-family" data-edit-scope="${childBatch ? "children" : person ? "person" : "details"}">${person ? ui`<input type="hidden" name="profileVersion" value="${p.version}">${editablePeople.map((m) => memberRow(m, p.members)).join("")}${childBatch ? button("personal-add-another-child", H("Add another child")) : ""}` : familyFields(data, false)}${person?.parent && membership && state.session.role === "host" ? ui`<label class="check"><input type="checkbox" name="allowChildSignIn" ${membership.allowSignIn ? "checked" : ""}>Allow Sign-In</label><p class="small">Child sign-in requires independently verified delivery and administrator approval. Access is limited to authorized Family Workspace records.</p>` : ""}<p class="form-error" role="alert"></p><button>${C("Save")}</button>${inline ? button("personal-edit-cancel", H("Cancel")) : ""}</form>`
         : ui`<ul class="browse-rows">${p.members
             .filter((m) => !m.archived)
             .map(
@@ -241,6 +241,7 @@ export function personalTools({
       delete form.dataset.dirty;
       return true;
     },
+    familyPage,
     familyFields,
     collectFamily,
     homeActions,

@@ -32,6 +32,17 @@ isolateAddressBook(
   "synthetic",
 );
 ensureHostRoster(store, host.household);
+const household = store.household(host.household);
+store.put(
+  "household",
+  host.household,
+  host.household,
+  {
+    ...household,
+    logo: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lV8AAAAASUVORK5CYII=",
+  },
+  household.version,
+);
 const guest = store.put("guest", "test-recipient", host.household, {
   first: "Casey",
   last: "Example",
@@ -50,6 +61,12 @@ const event = store.put("event", "test-event", host.household, {
   registries: [],
   information: [],
   design: {},
+});
+store.put("event", "archived-event", host.household, {
+  ...event,
+  title: "Archived gathering",
+  date: "2000-01-01",
+  invited: [],
 });
 const reference = publicEventReference(store, host.household, event.id);
 const server = createApp({
@@ -88,6 +105,108 @@ try {
     await page.locator('[name="email"]').fill("host@example.test");
     await page.locator('[name="password"]').fill(password);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    const archive = page.locator(".archived-events");
+    await archive.locator("summary").waitFor();
+    assert.equal(
+      await archive.evaluate((el) => el.classList.contains("panel")),
+      false,
+    );
+    await archive.locator("summary").click();
+    await archive
+      .locator("article.card")
+      .getByRole("heading", { name: "Archived gathering" })
+      .waitFor();
+    await archive.locator("summary").click();
+
+    if (width !== 768) {
+      await page.setViewportSize({ width, height: 600 });
+      await page.locator('.toolbar [data-action="settings"]').click();
+      const details = page.locator("#main .settings-details");
+      const labels = [
+        "Household Details",
+        "Notifications Settings",
+        "Change Password",
+        "Family Members",
+        "Sign Out",
+        "Sign Out of Other Devices",
+      ];
+      assert.deepEqual(
+        await page
+          .locator("#main .browse-open")
+          .allTextContents()
+          .then((items) => items.filter((item) => labels.includes(item))),
+        labels,
+      );
+      const signOut = await page
+        .locator(".settings-signout > li")
+        .evaluateAll((rows) =>
+          rows.map((row) => ({ top: row.offsetTop, left: row.offsetLeft })),
+        );
+      assert.equal(signOut[0].top, signOut[1].top);
+      assert.ok(signOut[0].left < signOut[1].left);
+      for (const label of labels.slice(0, 4)) {
+        await page.getByRole("button", { name: label, exact: true }).click();
+        await details
+          .getByRole("heading", { name: label, exact: true })
+          .waitFor();
+        assert.equal(
+          await details.evaluate((node) => node === document.activeElement),
+          true,
+        );
+        assert.ok(await page.evaluate(() => scrollY > 0), label);
+        assert.equal(await page.locator("dialog[open]").count(), 0);
+        if (label === "Household Details") {
+          const logo = details.locator(".family-logo-options img");
+          await logo.evaluate((img) => img.decode());
+          assert.equal(
+            await logo.evaluate((img) => img.complete && img.naturalWidth > 0),
+            true,
+          );
+          await details
+            .locator(".family-logo-options [name=removeLogo]")
+            .waitFor();
+        }
+        if (label === "Notifications Settings") {
+          const start = String(width === 390 ? 9 : 10);
+          await details.locator("[name=quietStart]").fill(start);
+          await details
+            .getByRole("button", { name: "Save", exact: true })
+            .click();
+          await page
+            .getByText("Saved to your household.", { exact: true })
+            .waitFor();
+          assert.equal(
+            await details.locator("[name=quietStart]").inputValue(),
+            start,
+          );
+        }
+        if (label === "Change Password")
+          assert.match(
+            await page
+              .getByRole("button", { name: label, exact: true })
+              .first()
+              .locator("xpath=../preceding-sibling::span")
+              .innerHTML(),
+            /M5 10h14v11/,
+          );
+      }
+      await details
+        .getByRole("button", { name: "Add adult", exact: true })
+        .click();
+      await details.locator('form[data-form="personal-family"]').waitFor();
+      await details
+        .getByRole("button", { name: "Cancel", exact: true })
+        .click();
+      await details
+        .getByRole("button", { name: "Add adult", exact: true })
+        .waitFor();
+      await page
+        .getByRole("button", { name: "Household Details", exact: true })
+        .click();
+      await details.locator('form[data-form="household"]').waitFor();
+      await page.getByRole("button", { name: "Back", exact: true }).click();
+      await page.setViewportSize({ width, height: 1000 });
+    }
     await page.locator('[data-action="open-event"]').first().click();
     await page.locator('.toolbar [data-action="settings"]').click();
     await page
@@ -240,6 +359,35 @@ try {
     false,
   );
   await adminContext.close();
+
+  store.put("platform-access", host.user, "platform", {
+    email: "host@example.test",
+  });
+  const promoted = await browser.newPage({
+    viewport: { width: 390, height: 600 },
+  });
+  await promoted.route("**/*", (route) =>
+    new URL(route.request().url()).origin === origin
+      ? route.continue()
+      : route.abort(),
+  );
+  await promoted.goto(origin);
+  await promoted.locator('[name="email"]').fill("host@example.test");
+  await promoted.locator('[name="password"]').fill(password);
+  await promoted.getByRole("button", { name: "Sign in", exact: true }).click();
+  await promoted.locator('.toolbar [data-action="settings"]').click();
+  const adminTools = promoted.getByRole("button", {
+    name: "Administrator Tools",
+    exact: true,
+  });
+  await adminTools.click();
+  await promoted
+    .locator(".settings-details")
+    .getByRole("button", { name: "Hosts", exact: true })
+    .waitFor();
+  assert.equal(await promoted.locator("dialog[open]").count(), 0);
+  assert.ok(await promoted.evaluate(() => scrollY > 0));
+  await promoted.close();
   console.log(
     "Password-confirmed host administration uses full-page existing controls on mobile",
   );

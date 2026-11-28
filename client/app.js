@@ -247,6 +247,7 @@ const isEditing = () =>
   !!state.familyMemberEditing ||
   !!state.eventLayoutDraft ||
   !!state.eventInviteDraft ||
+  (inlineHostSettings() && state.settingsSection === "notifications") ||
   pointerInteraction ||
   pendingActions > 0 ||
   state.view === "card-editor" ||
@@ -606,7 +607,7 @@ async function load({ background = false, routeHome = false } = {}) {
         ? data
         : session.role === "host" &&
             state.view === "family" &&
-            !state.settingsOpen
+            (!state.settingsOpen || state.settingsSection === "notifications")
           ? await api("/api/family")
           : null;
     // An editor may have opened while a background request was in flight.
@@ -1311,7 +1312,11 @@ function render(target = $("#app"), example = false) {
     embeddedTop &&
     state.settingsOpen &&
     role === "host" &&
-    state.view !== "personal-family"
+    state.view !== "personal-family" &&
+    (!inlineHostSettings() ||
+      !["notifications", "password", "members", "administrator"].includes(
+        state.settingsSection,
+      ))
   )
     embeddedTop
       .querySelector(".browse-top-actions")
@@ -1434,6 +1439,7 @@ function render(target = $("#app"), example = false) {
   }
   if (
     role &&
+    !inlineHostSettings() &&
     (state.passwordless?.enabled || state.session?.passwordless) &&
     (state.settingsOpen || state.view === "settings")
   ) {
@@ -1492,7 +1498,7 @@ function render(target = $("#app"), example = false) {
       logout = target
         .querySelector('#main [data-action="logout"]')
         ?.closest(".browse-row");
-    if (details && logout) {
+    if (!inlineHostSettings() && details && logout) {
       const list = document.createElement("ul");
       list.className = "browse-rows settings-signout";
       list.append(logout);
@@ -1634,10 +1640,49 @@ function familyLogoChoice() {
 }
 function householdDetailsFields() {
   const household = state.data.household;
-  return ui`${field(H("Family household name"), "householdName", household.name, "text", 'readonly maxlength="100"')}<p class="small muted">Only the administrator can change the household name.</p>${household.logo ? ui`<img class="family-logo-preview" src="${escape(household.logo)}" alt="Current family logo">` : ""}${field(H("Family logo / icon"), "familyLogo", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<p>You can ask Kassandra to create a family logo for you. This appears when guests choose an event; event artwork is separate.</p><label class="check"><input type="checkbox" name="removeLogo">Remove family logo</label>${state.hostOnly ? "" : field(H("Household IANA timezone"), "householdTimezone", household.timezone || "UTC")}`;
+  return ui`${field(H("Family household name"), "householdName", household.name, "text", 'readonly maxlength="100"')}<p class="small muted">Only the administrator can change the household name.</p>${field(H("Family logo / icon"), "familyLogo", "", "file", 'accept="image/png,image/jpeg,image/webp"')}<p>You can ask Kassandra to create a family logo for you. This appears when guests choose an event; event artwork is separate.</p><div class="family-logo-options">${household.logo ? ui`<img class="family-logo-preview" src="${escape(household.logo)}" alt="Current family logo">` : ""}<label class="check"><input type="checkbox" name="removeLogo">Remove family logo</label></div>${state.hostOnly ? "" : field(H("Household IANA timezone"), "householdTimezone", household.timezone || "UTC")}`;
 }
 function householdDetails() {
   modal(C("Details"), householdDetailsFields(), "household");
+}
+function inlineHostSettings() {
+  return state.hostOnly && state.session?.role === "host" && state.settingsOpen;
+}
+function selectSettingsSection(section) {
+  if (state.settingsSection === "members" && section !== "members") {
+    state.familyMemberEditing = null;
+    state.familyMemberDraft = null;
+  }
+  state.settingsSection = section;
+  render();
+  const content = document.querySelector("#main .settings-details");
+  content?.focus({ preventScroll: true });
+  content?.scrollIntoView({ block: "start" });
+}
+function hostSettingsContent() {
+  const section = state.settingsSection;
+  if (section === "notifications")
+    return {
+      title: "Notifications Settings",
+      content: family.notificationSettings(),
+    };
+  if (section === "password")
+    return { title: "Change Password", content: hostAuth.accountPage(true) };
+  if (section === "members" && state.data.personal)
+    return { title: "Family Members", content: personal.familyPage(true) };
+  if (section === "administrator") {
+    if (state.session.platformAdmin)
+      return {
+        title: "Administrator Tools",
+        content: ui`<ul class="browse-rows">${row({ title: C("Approvals"), action: "admin-approvals", symbol: "contacts" })}${row({ title: C("Hosts"), action: "admin-hosts", symbol: "contacts" })}${row({ title: C("Templates"), action: "admin-templates", symbol: "list" })}${row({ title: C("Defaults"), action: "global-defaults", symbol: "edit" })}</ul>`,
+      };
+    if (state.session.adminStepUpAvailable)
+      return {
+        title: "Administrator Tools",
+        content: hostAuth.stepUpPage(true),
+      };
+  }
+  return null;
 }
 function inlineHouseholdDetails() {
   if (
@@ -1645,13 +1690,16 @@ function inlineHouseholdDetails() {
     (state.hostOnly && !state.settingsSection)
   )
     return "";
+  const selected = inlineHostSettings() && hostSettingsContent();
+  if (selected)
+    return ui`<section class="settings-details" aria-labelledby="settings-section-title" tabindex="-1"><h2 id="settings-section-title">${selected.title}</h2>${selected.content}</section>`;
   const event = settingsAppearanceEvent();
   if (state.settingsEvent && !event) return "";
   if (event) {
     state.editingEvent = event;
-    return ui`<section class="settings-details"><h2>Event Details</h2><form class="inline-event-details" data-form="event" data-version="${event.version}" data-event="${event.id}">${eventDetailsFields(event, true, state.settingsSection)}<p class="form-error" role="alert"></p><button>${C("Save event")}</button></form></section>`;
+    return ui`<section class="settings-details" aria-labelledby="settings-section-title" tabindex="-1"><h2 id="settings-section-title">Event Details</h2><form class="inline-event-details" data-form="event" data-version="${event.version}" data-event="${event.id}">${eventDetailsFields(event, true, state.settingsSection)}<p class="form-error" role="alert"></p><button>${C("Save event")}</button></form></section>`;
   }
-  return ui`<section class="settings-details"><h2>Details</h2><form class="inline-household-details" data-form="household" data-version="${state.data.household.version}">${householdDetailsFields()}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form></section>`;
+  return ui`<section class="settings-details" aria-labelledby="settings-section-title" tabindex="-1"><h2 id="settings-section-title">${inlineHostSettings() ? "Household Details" : C("Details")}</h2><form class="inline-household-details" data-form="household" data-version="${state.data.household.version}">${householdDetailsFields()}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form></section>`;
 }
 let guestMatchTimer,
   guestMatchSequence = 0;
@@ -2726,6 +2774,12 @@ async function runAction(target) {
         "logout",
         "family-workspace",
         "settings",
+        "event-settings-section",
+        "family-preferences",
+        "family-members",
+        "host-account",
+        "passwordless-admin-open",
+        "passwordless-revoke",
         "print",
         "event-action-dashboard",
         "share-details",
@@ -2793,6 +2847,8 @@ async function runAction(target) {
       if (!state.settingsOpen || !state.settingsReturn) {
         state.settingsEvent = visibleAppearanceEvent()?.id || null;
         state.settingsSection = "";
+        state.familyMemberEditing = null;
+        state.familyMemberDraft = null;
         state.settingsReturn = structuredClone({
           view: state.view,
           event: state.event,
@@ -2893,8 +2949,7 @@ async function runAction(target) {
       state.hostOnly &&
       state.settingsOpen
     ) {
-      state.settingsSection = key;
-      render();
+      selectSettingsSection(key);
       return;
     }
     if (action === "event-details") {
@@ -4147,6 +4202,8 @@ async function startAppearance(scope, globalOptions) {
 const family = familyTools({
   appearanceSettings: appearanceSettingsMarkup,
   householdDetails: inlineHouseholdDetails,
+  inlineSettings: inlineHostSettings,
+  selectSettingsSection,
   eventSettings: () =>
     !state.hostOnly
       ? ""
@@ -4173,19 +4230,26 @@ const family = familyTools({
           })
         : state.session.role === "host"
           ? row({
-              title: C("Household Details"),
+              title: "Household Details",
               action: "event-settings-section",
               id: "household",
               symbol: "home",
             })
           : "",
   openFamilyProfile: async () => {
-    state.familyData = await api("/api/family");
-    state.data.personal = await api("/api/personal");
-    state.centralFamily = await api("/api/central/family");
+    const [profile, membership] = await Promise.all([
+      api("/api/personal"),
+      api("/api/central/family"),
+    ]);
+    state.data.personal = profile;
+    state.centralFamily = membership;
     state.familyMemberEditing = null;
-    state.view = "personal-family";
-    render();
+    state.familyMemberDraft = null;
+    if (inlineHostSettings()) selectSettingsSection("members");
+    else {
+      state.view = "personal-family";
+      render();
+    }
   },
   back: previousPage,
   state,
@@ -4260,6 +4324,8 @@ const hostAuth = hostAuthUI({
   fileData,
   familyLogoChoice,
   notify,
+  inlineSettings: inlineHostSettings,
+  selectSettingsSection,
 });
 const passwordless = passwordlessUI({
   escape,

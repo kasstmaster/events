@@ -12,6 +12,8 @@ export function hostAuthUI({
   fileData,
   familyLogoChoice,
   notify,
+  inlineSettings,
+  selectSettingsSection,
 }) {
   const parameters = new URLSearchParams(takeHostFragment().slice(1));
   let invite = parameters.get("invite") || "",
@@ -229,11 +231,11 @@ export function hostAuthUI({
           .catch(() => {});
       }
     },
-    stepUpPage() {
-      return ui`${topbar({ title: C("Administrator verification"), back: "page-back" })}<section class="panel"><form data-form="host-admin-stepup">${field(H("Current system administrator password"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Open administrator tools</button></form></section>`;
+    stepUpPage(inline = false) {
+      return ui`${inline ? "" : topbar({ title: C("Administrator verification"), back: "page-back" })}<section class="panel"><form data-form="host-admin-stepup">${field(H("Current system administrator password"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Open administrator tools</button></form></section>`;
     },
-    accountPage() {
-      return ui`${topbar({ title: C("Host account"), back: "page-back" })}<section class="panel"><h1>Host account</h1>${field(H("Registered email"), "hostEmail", state.hostAccount?.email || "", "email", "readonly")}${config.firebase ? ui`<form data-form="host-firebase-reset"><p>Firebase manages your password and recovery emails.</p><p class="form-error" role="alert"></p><button>Send password reset email</button></form>` : ui`<form data-form="host-password">${field(H("Current password"), "currentPassword", "", "password", 'required autocomplete="current-password"')}${field(H("New password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Change password</button></form>`}${config.google && !state.session?.platformAdmin ? ui`<form data-form="host-connect-google">${field(H("Current password to connect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Connect Google</button></form>` : ""}${state.hostAccount?.googleConnected ? ui`<form data-form="host-disconnect-google">${field(H("Current password to disconnect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Disconnect Google and sign out devices</button></form>` : ""}<div class="row">${button("passwordless-revoke", H("Sign out other devices"))}${button("passwordless-revoke-all", H("Sign out all devices"))}${button("host-recovery", H("Recover host account"))}</div></section>`;
+    accountPage(inline = false) {
+      return ui`${inline ? "" : topbar({ title: C("Host account"), back: "page-back" })}<section class="panel">${inline ? "" : "<h1>Host account</h1>"}${field(H("Registered email"), "hostEmail", state.hostAccount?.email || "", "email", "readonly")}${config.firebase ? ui`<form data-form="host-firebase-reset"><p>Firebase manages your password and recovery emails.</p><p class="form-error" role="alert"></p><button>Send password reset email</button></form>` : ui`<form data-form="host-password">${field(H("Current password"), "currentPassword", "", "password", 'required autocomplete="current-password"')}${field(H("New password"), "password", "", "password", 'required minlength="12" maxlength="256" autocomplete="new-password"')}<p class="form-error" role="alert"></p><button>Change password</button></form>`}${config.google && !state.session?.platformAdmin ? ui`<form data-form="host-connect-google">${field(H("Current password to connect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Connect Google</button></form>` : ""}${state.hostAccount?.googleConnected ? ui`<form data-form="host-disconnect-google">${field(H("Current password to disconnect Google"), "password", "", "password", 'required autocomplete="current-password"')}<p class="form-error" role="alert"></p><button>Disconnect Google and sign out devices</button></form>` : ""}<div class="row">${inline ? "" : button("passwordless-revoke", H("Sign out other devices")) + button("passwordless-revoke-all", H("Sign out all devices"))}${button("host-recovery", H("Recover host account"))}</div></section>`;
     },
     authEntry: () =>
       ["/host-signup", "/host-recovery"].includes(location.pathname),
@@ -342,7 +344,7 @@ export function hostAuthUI({
           method: "POST",
           data: values,
         });
-        state.view = "home";
+        if (!inlineSettings()) state.view = "home";
         await load();
       }
       if (config.firebase && kind === "host-firebase-reset") {
@@ -501,6 +503,10 @@ export function hostAuthUI({
     },
     async action(action, target) {
       if (action === "passwordless-admin-open") {
+        if (inlineSettings()) {
+          selectSettingsSection("administrator");
+          return true;
+        }
         state.settingsOpen = false;
         state.view = "host-admin-stepup";
         render();
@@ -508,6 +514,10 @@ export function hostAuthUI({
       }
       if (["my-account", "personal-account", "host-account"].includes(action)) {
         state.hostAccount = await api("/api/host-auth/account");
+        if (action === "host-account" && inlineSettings()) {
+          selectSettingsSection("password");
+          return true;
+        }
         state.settingsOpen = false;
         state.view = "host-account";
         render();

@@ -1093,6 +1093,11 @@ dialog:has(form[data-form="ui-settings"]) {
 }
 
 /* Family tools share the application roles and responsive form controls. */
+.family-logo-options {
+  display: flex;
+  align-items: center;
+  gap: var(--action-gap);
+}
 .family-logo-preview {
   width: 100px;
   height: 100px;
@@ -2690,6 +2695,18 @@ body.card-editor-active #app > header {
   width: 100%;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+.settings-signout:has(> :nth-child(2)) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--action-gap);
+}
+.settings-signout .browse-open {
+  white-space: normal;
+}
+.archived-events > summary {
+  cursor: pointer;
+  margin-block: 12px;
 }
 .settings-details {
   margin-top: 20px;
