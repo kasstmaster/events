@@ -66,11 +66,35 @@ try {
   for (const width of [390, 768, 1366]) {
     const context = await browser.newContext({
       viewport: { width, height: 900 },
+      hasTouch: width === 390,
     });
     const page = await context.newPage();
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    await page.goto(`${origin}/event/${reference}`);
+    const slow = width !== 768;
+    const bundle = Promise.withResolvers();
+    if (slow)
+      await page.route("**/app.js", async (route) => {
+        await bundle.promise;
+        await route.continue();
+      });
+    let accessRequests = 0;
+    const accessStarted = Promise.withResolvers();
+    const accessResponse = Promise.withResolvers();
+    await page.route("**/access", async (route) => {
+      ++accessRequests;
+      accessStarted.resolve();
+      await accessResponse.promise;
+      await route.continue();
+    });
+    await page.addInitScript(() => {
+      window.print = () => {
+        window.printed = true;
+      };
+    });
+    await page.goto(`${origin}/event/${reference}`, {
+      waitUntil: slow ? "commit" : "load",
+    });
     await page
       .getByRole("heading", { name: event.title, exact: true })
       .waitFor();
@@ -79,10 +103,55 @@ try {
       await page.getByText("Never public", { exact: true }).count(),
       0,
     );
+    if (slow) {
+      await page.getByRole("button", { name: "Print" }).click();
+      assert.equal(await page.evaluate(() => window.printed), true);
+      const launch = page.locator('[data-action="rsvp"]');
+      if (width === 390) await launch.tap();
+      else await launch.press("Enter");
+      assert.equal(
+        await page
+          .locator('[name="householdID"]')
+          .evaluate((input) => input === document.activeElement),
+        true,
+      );
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      assert.equal(
+        await launch.evaluate((button) => button === document.activeElement),
+        true,
+      );
+    }
     await page.locator('[data-action="rsvp"]').click();
     await page.locator('[name="householdID"]').fill(code);
     await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await accessStarted.promise;
+    if (slow) {
+      assert.equal(
+        await page.locator("#app").getAttribute("data-gather-initial"),
+        "visitor",
+      );
+      assert.match(await page.locator("#notice").innerText(), /Checking/);
+      await page
+        .locator('form[data-form="recipient-access"]')
+        .evaluate((form) => form.requestSubmit());
+      assert.equal(accessRequests, 1);
+    }
+    if (width === 390) {
+      accessResponse.resolve();
+      await page.getByText("Opening your RSVP…", { exact: true }).waitFor();
+      assert.equal(await page.locator('form[data-form="rsvp"]').count(), 0);
+      bundle.resolve();
+    } else {
+      bundle.resolve();
+      if (slow)
+        await page.waitForFunction(
+          () =>
+            !document.querySelector("#app").hasAttribute("data-gather-initial"),
+        );
+      accessResponse.resolve();
+    }
     await page.locator('form[data-form="rsvp"]').waitFor();
+    assert.equal(accessRequests, 1);
     assert.equal(await page.locator("dialog[open]").count(), 0);
     await page.locator(`[name="attendance:${guest.id}"]`).selectOption("yes");
     await page

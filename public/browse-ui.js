@@ -95,10 +95,9 @@ export function folderInSection(folder, section, records, seen = new Set()) {
       );
 }
 
-let menusBound = false;
 export function bindBrowseMenus() {
-  if (menusBound) return;
-  menusBound = true;
+  if (document.gatherBrowseMenusBound) return;
+  document.gatherBrowseMenusBound = true;
   document.addEventListener(
     "toggle",
     (event) => {
@@ -139,6 +138,13 @@ export function bindBrowseMenus() {
     if (!event.target.closest(".browse-menu"))
       for (const menu of document.querySelectorAll(".browse-menu[open]"))
         menu.open = false;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    const menu = event.target.closest?.(".browse-menu[open]");
+    if (!menu) return;
+    menu.open = false;
+    menu.querySelector("summary").focus();
   });
 }
 

@@ -1,3 +1,4 @@
+import { requestRecipientAccess } from "/early-interactions.js";
 import {
   adminHomeContent,
   adminTopbar,
@@ -14,6 +15,8 @@ import {
   pageHeader,
   pageToolbar,
   pageToolbarExtras,
+  recipientAccessContent,
+  recipientAccessTopbar,
 } from "/first-paint.js";
 import { designProperties } from "/page-theme.js";
 import { startupRoute, takeStartupRequest } from "/auth-bootstrap.js";
@@ -116,8 +119,12 @@ const notify = (message) => {
   noticeTimer = setTimeout(() => ($("#notice").textContent = ""), 6000);
 };
 async function api(path, { method = "GET", data, version } = {}) {
-  const response = await ((method === "GET" && takeStartupRequest(path)) ||
-    fetch(path, {
+  const pending =
+    method === "GET" &&
+    (takeStartupRequest(path) || window.gatherEarly?.takeRead(path));
+  const response =
+    (pending && (await pending)) ||
+    (await fetch(path, {
       method,
       credentials: "same-origin",
       headers: {
@@ -217,6 +224,49 @@ function adoptInitialPage(kind) {
   return true;
 }
 
+let earlyClaimed = false;
+function finishEarlyInteractions() {
+  const early = window.gatherEarly;
+  if (!early || earlyClaimed) return;
+  earlyClaimed = true;
+  const { intent, recipient, submission } = early.claim();
+  if (recipient && state.session?.role === "visitor") {
+    state.view = "recipient-access";
+    rememberPage();
+    measureChrome();
+    if (submission) {
+      void submission.result
+        .then((result) => {
+          if (submission.form.isConnected) adoptRecipientAccess(result);
+        })
+        .catch((error) => {
+          if (submission.form.isConnected)
+            submission.form.querySelector(".form-error").textContent =
+              error.message;
+        })
+        .finally(() => {
+          submission.reset();
+          if (
+            ["Checking your Household ID…", "Opening your RSVP…"].includes(
+              $("#notice").textContent,
+            )
+          )
+            $("#notice").textContent = "";
+        });
+    }
+  }
+  if (intent?.isConnected && state.session?.role) {
+    const status = $("#notice").textContent;
+    void runAction(intent).finally(() => {
+      early.clearReads();
+      if ($("#notice").textContent === status) $("#notice").textContent = "";
+    });
+  } else {
+    early.clearReads();
+    if (intent) notify(C("Please try that control again."));
+  }
+}
+
 function renderRefresh(preserveScroll) {
   // Replacing/reordering the page can temporarily shrink it and clamp scrolling.
   // Capture at adoption time, after requests, so in-flight scrolling is retained.
@@ -301,6 +351,7 @@ async function load({ background = false, routeHome = false } = {}) {
           event: data.events[0].id,
         });
         if (!adoptInitialPage("visitor")) renderRefresh(background);
+        finishEarlyInteractions();
       };
       if (!alreadyVisible) show();
       const initialPages = data.events[0].extraPages;
@@ -1087,7 +1138,7 @@ function render(target = $("#app"), example = false) {
   else if (role === "admin-pending" || state.view === "passwordless-security")
     content = passwordless.securityPage();
   else if (role === "visitor" && state.view === "recipient-access")
-    content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C("Household ID")}</h1><p>${C("You can find your Household ID on your RSVP card.")}</p><form data-form="recipient-access">${field(H("Household ID"), "householdID", "", "text", 'required maxlength="64" autocomplete="off"')}<p class="form-error" role="alert"></p><div class="row"><button>${C("Continue")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
+    content = recipientAccessTopbar() + recipientAccessContent();
   else if (role && state.view === "rsvp-page")
     content = ui`${topbar({ title: C("RSVP"), back: "rsvp-cancel" })}<section class="panel"><h1>${C(state.manualRSVP?.hostFamily ? "RSVP for your family" : state.manualRSVP ? "Record guest RSVP" : "Will you join us?")}</h1><form data-form="rsvp">${state.rsvpMarkup}<p class="form-error" role="alert"></p><div class="row"><button>${C("RSVP")}</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
   else if (state.view === "rsvp-cards") content = rsvpCards.page();
@@ -2388,13 +2439,9 @@ async function submit(form) {
     return;
   }
   if (kind === "recipient-access") {
-    const result = await api(
-      `/api/public/events/${state.visitor.reference}/access`,
-      { method: "POST", data: { householdID: value.householdID } },
+    adoptRecipientAccess(
+      await requestRecipientAccess(state.visitor.reference, value.householdID),
     );
-    state.visitor.grant = result.grant;
-    state.data.events = [result.event];
-    rsvp(result.event);
     return;
   }
   if (kind === "rsvp") {
@@ -2455,6 +2502,12 @@ async function submit(form) {
     notify(C("Your RSVP is saved. Thank you!"));
   }
 }
+function adoptRecipientAccess(result) {
+  state.visitor.grant = result.grant;
+  state.data.events = [result.event];
+  rsvp(result.event);
+}
+
 document.addEventListener("submit", async (event) => {
   const form = event.target.closest("form[data-form]");
   if (!form) return;
@@ -2553,10 +2606,13 @@ document.addEventListener("input", (event) => {
     addressTimer = setTimeout(() => void checkAddress(form), 400);
   }
 });
-document.addEventListener("click", async (event) => {
-  const target = event.target.closest("[data-action]");
-  if (!target) return;
+document.addEventListener("click", (event) => {
+  const target = event.target.closest?.("[data-action]");
+  if (!target || event.defaultPrevented || !state.session) return;
   event.preventDefault();
+  void runAction(target);
+});
+async function runAction(target) {
   if (target.dataset.actionPending === "true") return;
   const action = target.dataset.action,
     key = target.dataset.id;
@@ -2612,6 +2668,9 @@ document.addEventListener("click", async (event) => {
         "logout",
         "family-workspace",
         "settings",
+        "print",
+        "event-action-dashboard",
+        "share-details",
         "reload",
       ].includes(action) &&
       state.hostOnly &&
@@ -3662,7 +3721,7 @@ document.addEventListener("click", async (event) => {
     delete target.dataset.actionPending;
     target.removeAttribute("aria-busy");
   }
-});
+}
 document.addEventListener("input", (event) => {
   if (event.target.matches("[data-browse-search=contacts]")) {
     contactSearch = event.target.value;
@@ -4265,6 +4324,7 @@ const tools = {
   mountCardEditor: () => loadedTools?.mountCardEditor(),
 };
 await load();
+finishEarlyInteractions();
 let refreshing = false;
 async function refreshInBackground() {
   if (
