@@ -559,7 +559,7 @@ async function load({ background = false, routeHome = false } = {}) {
         session.platformAdmin &&
         (state.adminMode ||
           ["admin-approvals", "admin-hosts"].includes(state.view))
-          ? api("/api/admin")
+          ? api(state.hostOnly ? "/api/admin?view=home" : "/api/admin")
           : null,
       ]);
       data = accountData;
@@ -2829,7 +2829,9 @@ async function runAction(target) {
       // Home and event navigation do not need the expensive platform directory.
       // Fetch it only when an administrator actually opens a tool.
       if (!state.data?.hosts) {
-        const admin = await api("/api/admin");
+        const admin = await api(
+          state.hostOnly ? "/api/admin?view=home" : "/api/admin",
+        );
         Object.assign(state.data, {
           approvals: admin.approvals,
           hosts: admin.hosts,
@@ -3032,7 +3034,9 @@ async function runAction(target) {
         contactInviteSaving = true;
         render();
         try {
-          const refreshed = await api("/api/host");
+          const refreshed = await api(
+            state.hostOnly ? "/api/host?view=home" : "/api/host",
+          );
           if (!adoptInvitationSnapshot(refreshed, invitationHousehold)) return;
           contactInviteEventsOpen = true;
           contactEventSelection.clear();
@@ -3102,7 +3106,7 @@ async function runAction(target) {
           contactInviteError = error.message;
           try {
             adoptInvitationSnapshot(
-              await api("/api/host"),
+              await api(state.hostOnly ? "/api/host?view=home" : "/api/host"),
               invitationHousehold,
             );
           } catch {}
@@ -3313,7 +3317,9 @@ async function runAction(target) {
       if (!state.settingsOpen || !event) return;
       if (action === "event-layout-open") {
         if (!state.eventLayoutDraft) {
-          const fresh = await api("/api/host");
+          const fresh = await api(
+            state.hostOnly ? "/api/host?view=home" : "/api/host",
+          );
           const current = fresh.events.find((e) => e.id === event.id);
           if (!current) throw new Error(C("The event is no longer available."));
           state.data = { ...state.data, ...fresh };

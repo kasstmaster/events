@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { cardInput } from "../server/features.js";
 import { application } from "./helpers/application.js";
 import {
   addressBookCheckpoint,
@@ -158,10 +159,12 @@ test("artwork-heavy snapshots use scoped display URLs and unchanged startup resp
     );
   }
   for (let i = 0; i < 8; i++)
-    f.store.put("template", "artwork-" + i, "platform", {
-      name: "Artwork " + i,
-      artwork: artwork(20 + i),
-    });
+    f.store.put(
+      "template",
+      "artwork-" + i,
+      "platform",
+      cardInput({ name: "Artwork " + i, background: artwork(20 + i) }),
+    );
   const ref = publicEventReference(f.store, household, event.id);
   const startup = "/api/startup?view=home";
   for (const path of [
@@ -170,6 +173,7 @@ test("artwork-heavy snapshots use scoped display URLs and unchanged startup resp
     "/event/" + ref,
     startup,
     startup + "&workspace=1",
+    "/api/host?view=home",
   ]) {
     const result = await f.request(path, { cookie: host.cookie });
     const body =
@@ -184,6 +188,17 @@ test("artwork-heavy snapshots use scoped display URLs and unchanged startup resp
   assert.equal(boot.host.templates, undefined);
   assert.equal(boot.host.guests, undefined);
   assert.equal(boot.host.events.length, 3);
+  const picker = await f.request("/api/host/workspace", {
+    cookie: host.cookie,
+  });
+  assert.deepEqual(picker.body.templates[0], {
+    id: "artwork-0",
+    name: "Artwork 0",
+  });
+  const original = await f.request("/api/admin/templates/artwork-0", {
+    cookie: f.admin,
+  });
+  assert.equal(original.body.background, artwork(20));
   const privateLogo = boot.host.household.logo;
   assert.match(privateLogo, /^\/api\/display-media\/host\//);
   const full = await fetch(f.url + privateLogo, {

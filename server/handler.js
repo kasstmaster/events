@@ -2242,7 +2242,12 @@ export function createHandler({
           return;
         }
         if (path === "/api/admin" && method === "GET") {
-          json(res, adminSnapshot());
+          json(
+            res,
+            adminSnapshot(
+              replacement && url.searchParams.get("view") === "home",
+            ),
+          );
           return;
         }
         if (path === "/api/admin/approvals" && method === "POST") {
@@ -2278,7 +2283,12 @@ export function createHandler({
         return;
       }
       if (path === "/api/host" && method === "GET") {
-        json(res, hostSnapshot());
+        json(
+          res,
+          hostSnapshot({
+            compact: replacement && url.searchParams.get("view") === "home",
+          }),
+        );
         return;
       }
       if (path.startsWith("/api/host")) {
