@@ -206,12 +206,20 @@ export async function provisionHousehold(
       }
       const expected = {
         root: "/app.js",
-        app: "suggestLabel",
+
         normalizer: "export function suggestLabel",
         style: "--",
         asset: "export",
       }[stage];
-      if (!content.includes(expected)) stop(`verification_${stage}_mismatch`);
+      // Identifier minification can rename local functions. Require stable
+      // independent application feature paths rather than a variable name.
+      // Both must be present in the real host application entry.
+      const matches =
+        stage === "app"
+          ? content.includes("/api/host/workspace") &&
+            content.includes("new-event")
+          : content.includes(expected);
+      if (!matches) stop(`verification_${stage}_mismatch`);
     }
   };
   // Bound fan-out below the shared Durable Object connection limit, including
