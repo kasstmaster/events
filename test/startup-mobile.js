@@ -14,7 +14,7 @@ import {
 } from "../server/recipient-isolation.js";
 import { publicEventReference } from "../server/public-invitations.js";
 // Delay entry modules while allowing the real CSS and HTML to paint.
-async function firstFrame(context, url, width, title, kind) {
+async function firstFrame(context, url, width, title, kind, beforeHydration) {
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
   await page.setViewportSize({ width, height: 844 });
@@ -82,6 +82,7 @@ async function firstFrame(context, url, width, title, kind) {
       await page.locator("#app").getAttribute("data-gather-initial"),
       kind,
     );
+    await beforeHydration?.(page);
     resolve();
     await page.waitForFunction(
       () => !document.querySelector("#app").hasAttribute("data-gather-initial"),
@@ -691,6 +692,57 @@ test(
         `Host startup JSON with 250 synthetic contacts: ${fullBytes} → ${slimBytes} bytes`,
       );
       assert.equal((await f.request("/api/host/workspace")).status, 401);
+      const earlyPage = await context.newPage();
+      let holdApp = true;
+      const unblock = Promise.withResolvers();
+      const earlyWorkspace = Promise.withResolvers();
+      let workspaceRequests = 0;
+      earlyPage.on("request", (request) => {
+        if (new URL(request.url()).pathname === "/api/host/workspace") {
+          workspaceRequests++;
+          earlyWorkspace.resolve();
+        }
+      });
+      await earlyPage.route("**/app.js", async (route) => {
+        if (holdApp) await unblock.promise;
+        try {
+          await route.fallback();
+        } catch {}
+      });
+      try {
+        await earlyPage.goto(appOrigin, { waitUntil: "commit" });
+        await earlyPage
+          .getByRole("button", { name: "View Event" })
+          .first()
+          .press("Enter");
+        await earlyPage.waitForURL(appOrigin + privatePath, {
+          waitUntil: "commit",
+        });
+        assert.equal(
+          await earlyPage.locator("#app").getAttribute("data-gather-initial"),
+          "host-event",
+        );
+        await earlyPage.locator(".toolbar [data-action=home]").click();
+        await earlyPage.waitForURL(appOrigin + "/", { waitUntil: "commit" });
+        await earlyPage.locator('[data-action="addresses"]').click();
+        await earlyWorkspace.promise;
+        assert.match(
+          await earlyPage.locator("#notice").innerText(),
+          /Opening Address Book/,
+        );
+        assert.equal(
+          await earlyPage.locator("#app").getAttribute("data-gather-initial"),
+          "host",
+        );
+        await earlyPage.locator('[data-action="addresses"]').click();
+        holdApp = false;
+        unblock.resolve();
+        await earlyPage.locator(".address-book-shell").waitFor();
+        assert.equal(workspaceRequests, 1);
+      } finally {
+        unblock.resolve();
+        await earlyPage.close();
+      }
       requested.length = 0;
       for (let visit = 0; visit < 2; visit++) {
         await page.locator('[data-action="addresses"]:visible').first().click();
@@ -1085,10 +1137,28 @@ test("initial household event and Home controls follow the authenticated role", 
         width,
         "Family Workspace",
         "family",
+        async (early) => {
+          await early
+            .locator('#top-navigation summary[aria-label="Sort"]')
+            .press("Enter");
+          assert.equal(
+            await early.locator("#top-navigation details[open]").count(),
+            1,
+          );
+        },
       );
       assert.deepEqual(
         before.footer.map(([action]) => action),
         ["home", "settings"],
+      );
+      assert.equal(
+        await page.locator("#top-navigation details[open]").count(),
+        1,
+      );
+      await page.locator("#top-navigation summary").press("Escape");
+      assert.equal(
+        await page.locator("#top-navigation details[open]").count(),
+        0,
       );
       await page.getByRole("button", { name: "My Tasks", exact: true }).click();
       await page

@@ -1,6 +1,8 @@
 // Actual local workerd/SQLite; no Cloudflare API or external provider requests.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { runInNewContext } from "node:vm";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -31,6 +33,7 @@ test(
         env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
       },
     );
+    const index = await readFile("public/index.html", "utf8");
     const config = parse(await readFile("wrangler.jsonc", "utf8")),
       origin = "https://gather.ilymmd.com",
       password = "Synthetic-native-runtime-password";
@@ -52,7 +55,14 @@ test(
           ADMIN_SETUP_TOKEN:
             "synthetic-native-setup-token-with-more-than-32-characters",
         },
-        serviceBindings: { ASSETS: async () => new Response("isolated asset") },
+        serviceBindings: {
+          ASSETS: async (request) =>
+            new Response(
+              new URL(request.url).pathname === "/index.html"
+                ? index
+                : "isolated asset",
+            ),
+        },
       }),
     );
     t.after(() => mf.dispose());
@@ -80,6 +90,25 @@ test(
     assert.equal(created.status, 201);
     const cookie = created.headers.get("set-cookie").split(";")[0];
     assert.ok(cookie.startsWith("__Host-events_session="));
+    const documentResponse = await call("/", null, cookie);
+    assert.equal(documentResponse.status, 200);
+    const rendered = await documentResponse.text();
+    const inline = rendered.match(/<script>([\s\S]+?)<\/script>/)?.[1];
+    assert.ok(inline);
+    const hash = createHash("sha256").update(inline).digest("base64");
+    assert.ok(
+      documentResponse.headers
+        .get("content-security-policy")
+        .includes(`'sha256-${hash}'`),
+    );
+    const window = { addEventListener() {} };
+    const listeners = [];
+    runInNewContext(inline, {
+      window,
+      document: { addEventListener: (type) => listeners.push(type) },
+    });
+    assert.equal(typeof window.gatherEarly.claim, "function");
+    assert.ok(listeners.includes("click") && listeners.includes("submit"));
     const startup = await (await call("/api/startup", null, cookie)).json();
     assert.equal(startup.session.role, "admin");
     assert.equal(startup.host, undefined);

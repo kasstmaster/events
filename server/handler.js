@@ -1,4 +1,5 @@
 import { initialDocument } from "./initial-home.js";
+import { earlyInteractionScript } from "./early-interaction-script.js";
 import { validFirebaseHostSession } from "./firebase-host-admin.js";
 import { hostFirebaseEnabled, hostFirebaseConfig } from "./firebase-host.js";
 import { weddingImportAPI } from "./wedding-import.js";
@@ -168,6 +169,7 @@ const files = new Map([
     "wedding-import-ui.js",
     "event-information.js",
     "first-paint.js",
+    "early-interactions.js",
     "page-theme.js",
     "personal-ui.js",
     "passwordless-ui.js",
@@ -513,6 +515,9 @@ export function createHandler({
     });
     res.end(JSON.stringify(data));
   };
+  const earlyScriptHash = createHash("sha256")
+    .update(earlyInteractionScript)
+    .digest("base64");
   return async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     if (secureCookies)
@@ -525,10 +530,14 @@ export function createHandler({
       ((replacement && hostFirebaseEnabled(env)) ||
         (!replacement && firebaseEnabled(env))) &&
         origin === "https://gather.ilymmd.com"
-        ? "default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.google.com https://www.recaptcha.net; frame-src https://www.google.com https://www.recaptcha.net https://" +
+        ? "default-src 'self'; script-src 'self' 'sha256-" +
+            earlyScriptHash +
+            "' https://www.gstatic.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.google.com https://www.recaptcha.net; frame-src https://www.google.com https://www.recaptcha.net https://" +
             firebaseSettings.authDomain +
             "; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://www.gstatic.com; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
-        : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
+        : "default-src 'self'; script-src 'self' 'sha256-" +
+            earlyScriptHash +
+            "'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'",
     );
     try {
       const url = new URL(req.url, origin),
@@ -690,6 +699,7 @@ export function createHandler({
               session: { role: "visitor" },
               data,
               event: data.events[0],
+              reference: (initial.path || path).split("/").at(-1),
             });
           } else if (path === "/signin") {
             // Transfer hops need only the credential-capture module.

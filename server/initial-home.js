@@ -1,3 +1,4 @@
+import { earlyInteractionScript } from "./early-interaction-script.js";
 import { familyHomeContent, familyHomeTopbar } from "../public/family-ui.js";
 import {
   adminHomeContent,
@@ -10,6 +11,8 @@ import {
   mainContent,
   pageHeader,
   pageToolbar,
+  recipientAccessContent,
+  recipientAccessTopbar,
 } from "../public/first-paint.js";
 import { configureCopy } from "../public/ui-runtime.js";
 import { initialThemeStyle } from "./initial-theme.js";
@@ -28,7 +31,7 @@ export function initialHomeHtml(data = {}) {
 export function initialDocument(
   template,
   snapshot,
-  { kind, data, session, event } = {},
+  { kind, data, session, event, reference } = {},
 ) {
   const config = event?.ui || data?.ui;
   const role = session?.role;
@@ -55,10 +58,14 @@ export function initialDocument(
       navigation = adminTopbar();
       markup = adminHomeContent(config?.layouts.introText);
     } else markup = initialHomeHtml();
+    const recipientEntry = /^[A-Za-z0-9_-]{43}$/.test(reference || "")
+      ? `<template id="gather-recipient-entry" data-reference="${reference}">${pageHeader({ navigation: recipientAccessTopbar() })}${mainContent(recipientAccessContent())}</template>`
+      : "";
     const body =
       pageHeader({ role, event, navigation }) +
       mainContent(markup, !!kind, layout) +
-      (kind ? pageToolbar(event, session, true) : "");
+      (kind ? pageToolbar(event, session, true) : "") +
+      recipientEntry;
     // Script data is inert. Escape HTML delimiters before embedding raw text.
     const payload = JSON.stringify(snapshot).replaceAll("<", "\\u003c");
     return template
@@ -67,6 +74,7 @@ export function initialDocument(
         "</head>",
         () =>
           (config ? initialThemeStyle(config.design, data.defaults) : "") +
+          (kind ? `<script>${earlyInteractionScript}</script>` : "") +
           "</head>",
       )
       .replace(

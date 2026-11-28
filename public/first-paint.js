@@ -448,3 +448,9 @@ export function eventPage(
     ? `<section class="panel event-content-shell" data-event-shell data-layout="event">${content}</section>`
     : content;
 }
+
+export const recipientAccessTopbar = () =>
+  topbar({ title: C("RSVP"), back: "rsvp-cancel" });
+export function recipientAccessContent() {
+  return ui`<section class="panel"><h1>Household ID</h1><p>You can find your Household ID on your RSVP card.</p><form data-form="recipient-access"><label>Household ID<input name="householdID" type="text" value="" required maxlength="64" autocomplete="off"></label><p class="form-error" role="alert"></p><div class="row"><button>Continue</button>${button("rsvp-cancel", H("Cancel"))}</div></form></section>`;
+}
