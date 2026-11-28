@@ -18,8 +18,10 @@ export const VERIFIED_RECOVERY = Object.freeze({
   prior_release: "05f10df609eaa671ce835942e717e9618dcdc06c",
   release: "eae56be72e1936d0a96d7411e1d3ef758c236b5d",
   version_id: "21abd81b-95ef-4026-a7ec-82e8db7faa64",
-  code_sha256: "26c464bc3b7a3764bcb3f6d99b498f74e2d785ae86e5a2947a5bfd9f18d539ac",
-  receipt_sha256: "d0d2cf922005aad79beaa9ab740ad7fd82a44aae807b880a6134ed6e7475cb0e",
+  code_sha256:
+    "26c464bc3b7a3764bcb3f6d99b498f74e2d785ae86e5a2947a5bfd9f18d539ac",
+  receipt_sha256:
+    "d0d2cf922005aad79beaa9ab740ad7fd82a44aae807b880a6134ed6e7475cb0e",
   run_id: 46089585621,
   run_attempt: 1,
   head_sha: "d9554026e0d77cd4e3b942b8623b6d8a9c898f53",
@@ -41,7 +43,8 @@ async function selectOwnerApprovedRecovery(read) {
       run.status === "completed" &&
       run.conclusion === "success" &&
       run.event === "pull_request" &&
-      run.path === ".github/workflows/recover-published-release-read-only.yml" &&
+      run.path ===
+        ".github/workflows/recover-published-release-read-only.yml" &&
       run.head_sha === pinned.head_sha &&
       run.head_branch === "fix/gather-trusted-release-recovery" &&
       run.actor?.login === "kasstmaster" &&
@@ -80,7 +83,8 @@ async function selectOwnerApprovedRecovery(read) {
   const artifacts = listing.artifacts?.filter(
     (a) =>
       a.id === pinned.artifact_id &&
-      a.name === `events-read-only-reverification-${pinned.run_id}-${pinned.run_attempt}` &&
+      a.name ===
+        `events-read-only-reverification-${pinned.run_id}-${pinned.run_attempt}` &&
       a.digest === pinned.artifact_digest &&
       a.expired === false,
   );
