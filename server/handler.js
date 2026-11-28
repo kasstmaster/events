@@ -871,6 +871,7 @@ export function createHandler({
         )
         ?.split("=")[1];
       const authStarted = performance.now();
+      let homeAsset;
       let session = store.session(raw, origin, !selected);
       if (replacement && session) {
         const proof = store.get(
@@ -913,6 +914,13 @@ export function createHandler({
             store.one("SELECT email FROM users WHERE id=?", session.user)
               ?.email;
         if (!fallback) {
+          // Read the public template while Firebase checks the session. Keep
+          // authorization ahead of private rendering and handle any asset error
+          // after the account check has completed.
+          if (replacement && method === "GET" && path === "/") {
+            homeAsset = Promise.resolve().then(() => readAsset("index.html"));
+            homeAsset.catch(() => {});
+          }
           const active = await validFirebaseHostSession(store, session, env, {
             fetcher: firebaseFetcher || fetch,
           });
@@ -1096,6 +1104,31 @@ export function createHandler({
           ui: effectiveUI(store, house),
         };
       };
+      const adminSnapshot = () => ({
+        approvals: store.all("SELECT email,created FROM approvals"),
+        templates: store.list("template", "platform"),
+        deletions: store.all(
+          "SELECT household,email,label,phase,error FROM household_deletions",
+        ),
+        hosts: store
+          .all("SELECT id,email,household FROM users WHERE role='host'")
+          .map((host) => ({
+            ...host,
+            householdName: store.household(host.household)?.name,
+            subdomain: store.household(host.household)?.subdomain,
+            householdVersion: store.household(host.household)?.version,
+            logoRequested:
+              store.household(host.household)?.logoRequested === true,
+            platformAdmin: platformAdministrator(store, {
+              user: host.id,
+              household: host.household,
+              role: "host",
+            }),
+          })),
+        legacyAdministrators: store.all(
+          "SELECT email FROM users WHERE role='admin'",
+        ),
+      });
       const sessionSnapshot = () =>
         session
           ? {
@@ -1153,7 +1186,9 @@ export function createHandler({
           household: publicHousehold(ui),
           ...(current.role === "host"
             ? { host: hostSnapshot({ workspace: false }) }
-            : {}),
+            : current.role === "admin" && current.platformAdmin
+              ? { admin: adminSnapshot() }
+              : {}),
         };
         if (current.role === "family")
           snapshot.family = familyWorkspace(
@@ -1170,8 +1205,9 @@ export function createHandler({
           (entry) => entry.id === url.searchParams.get("event"),
         );
         if (event) snapshot.hostEvent = event.id;
+        const template = await (homeAsset || readAsset("index.html"));
         const content = initialDocument(
-          (await readAsset("index.html")).toString(),
+          template.toString(),
           snapshot,
           data
             ? {
@@ -1222,6 +1258,13 @@ export function createHandler({
               }
             : {}),
         };
+        if (
+          current.role === "admin" &&
+          current.platformAdmin &&
+          url.searchParams.get("view") === "home" &&
+          !url.searchParams.has("sessionOnly")
+        )
+          payload.admin = adminSnapshot();
         res.setHeader(
           "Server-Timing",
           `auth;dur=${(snapshotStarted - authStarted).toFixed(1)}, snapshot;dur=${(performance.now() - snapshotStarted).toFixed(1)}`,
@@ -2093,31 +2136,7 @@ export function createHandler({
           return;
         }
         if (path === "/api/admin" && method === "GET") {
-          json(res, {
-            approvals: store.all("SELECT email,created FROM approvals"),
-            templates: store.list("template", "platform"),
-            deletions: store.all(
-              "SELECT household,email,label,phase,error FROM household_deletions",
-            ),
-            hosts: store
-              .all("SELECT id,email,household FROM users WHERE role='host'")
-              .map((host) => ({
-                ...host,
-                householdName: store.household(host.household)?.name,
-                subdomain: store.household(host.household)?.subdomain,
-                householdVersion: store.household(host.household)?.version,
-                logoRequested:
-                  store.household(host.household)?.logoRequested === true,
-                platformAdmin: platformAdministrator(store, {
-                  user: host.id,
-                  household: host.household,
-                  role: "host",
-                }),
-              })),
-            legacyAdministrators: store.all(
-              "SELECT email FROM users WHERE role='admin'",
-            ),
-          });
+          json(res, adminSnapshot());
           return;
         }
         if (path === "/api/admin/approvals" && method === "POST") {

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { once } from "node:events";
 import { createApp } from "../server/app.js";
 import { chromium } from "playwright";
@@ -149,7 +150,10 @@ test(
       "." +
       sign("RSA-SHA256", Buffer.from(signed), privateKey).toString("base64url");
     let lookups = 0,
-      disabled = false;
+      disabled = false,
+      checkOverlap = false;
+    const templateRead = Promise.withResolvers();
+    const lookupStarted = Promise.withResolvers();
     const f = await application(
       t,
       {
@@ -168,6 +172,13 @@ test(
       },
       {
         origin: appOrigin,
+        readAsset: async (name) => {
+          if (name === "index.html" && checkOverlap) {
+            templateRead.resolve();
+            await lookupStarted.promise;
+          }
+          return readFile(new URL("../public/" + name, import.meta.url));
+        },
         firebaseFetcher: async (url) => {
           if (url.includes("/jwk/")) return Response.json({ keys: [jwk] });
           if (url === "https://oauth2.googleapis.com/token")
@@ -177,7 +188,13 @@ test(
               expires_in: 3600,
             });
           assert.match(url, /accounts:lookup/);
-          if (url.includes("/projects/")) lookups++;
+          if (url.includes("/projects/")) {
+            lookups++;
+            if (checkOverlap) {
+              lookupStarted.resolve();
+              await templateRead.promise;
+            }
+          }
           await delay(120);
           return Response.json({
             users: [{ localId: uid, email, emailVerified: true, disabled }],
@@ -197,6 +214,23 @@ test(
       data: { intent: "connect", idToken: token, currentPassword: password },
     });
     assert.equal(connected.status, 200);
+    checkOverlap = true;
+    try {
+      const response = await fetch(f.url + "/", {
+        headers: { Cookie: connected.cookie },
+        signal: AbortSignal.timeout(3000),
+      });
+      assert.equal(response.status, 200);
+      assert.match(
+        response.headers.get("server-timing"),
+        /auth;dur=.*snapshot;dur=/,
+      );
+      await response.text();
+    } finally {
+      checkOverlap = false;
+      templateRead.resolve();
+      lookupStarted.resolve();
+    }
     for (let index = 0; index < 250; index++) {
       f.store.put("guest", "startup-contact-" + index, host.household.id, {
         first: "Synthetic",
@@ -1094,6 +1128,26 @@ test("initial household event and Home controls follow the authenticated role", 
   assert.match(admin.body, /data-gather-initial="admin"/);
   assert.match(admin.body, /data-action="admin-hosts"/);
   assert.match(admin.body, /data-action="global-defaults"/);
+  const adminAPI = await f.request("/api/admin", { cookie: f.admin });
+  const embedded = (document) =>
+    JSON.parse(
+      document.match(/id="gather-public-event"[^>]*>([^<]*)<\/script>/)[1],
+    );
+  assert.deepEqual(embedded(admin.body).admin, adminAPI.body);
+  for (const [cookie, query] of [
+    [f.admin, "?view=home"],
+    [f.admin, "?view=home&sessionOnly=1"],
+    [host.cookie, "?view=home"],
+    [null, "?view=home"],
+  ]) {
+    const startup = await f.request("/api/startup" + query, { cookie });
+    assert.equal(startup.status, 200);
+    assert.deepEqual(
+      startup.body.admin,
+      cookie === f.admin && query === "?view=home" ? adminAPI.body : undefined,
+    );
+  }
+  assert.equal(embedded((await f.request("/")).body).admin, undefined);
 
   const approved = await f.request(`/api/admin/platform-access/${host.user}`, {
     method: "POST",
