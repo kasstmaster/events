@@ -26,12 +26,16 @@ jobs:
           npm run build:browser
           node -e 'const fs=require("fs"); console.log("After bytes",fs.statSync("public/app.js").size)'
           node scripts/automatic-events-release.mjs manifest
+          npx prettier --write scripts/build-browser.mjs server/firebase-host-admin.js test/firebase-host.test.js cloudflare/household-provisioner.js test/provisioning.test.js
           npm run format:check
           npm test
           npm run test:cloudflare
+          npx playwright install --with-deps chromium
+          node --test test/startup-mobile.js
+          node test/host-model-mobile.js
       - name: Commit only verified browser build products
         run: |
-          git add public/app.js .github/release/approved-application.json scripts/build-browser.mjs
+          git add public/app.js .github/release/approved-application.json scripts/build-browser.mjs server/firebase-host-admin.js test/firebase-host.test.js cloudflare/household-provisioner.js test/provisioning.test.js
           git diff --cached --quiet && exit 0
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'build: regenerate smaller reviewed Gather entry and asset manifest'
           git push origin HEAD:fix/gather-cold-start-firebase-token-dedupe
