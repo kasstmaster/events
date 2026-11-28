@@ -13,6 +13,67 @@ import {
 } from "./browse-ui.js";
 import { ui, C, H } from "./ui-runtime.js";
 import { localSchedule } from "./reminder-time.js";
+export function familyHomeTopbar(member, preferences) {
+  return topbar({
+    title: C("Family Workspace"),
+    search: "family-search",
+    plus: member.role === "kid" ? [] : [{ action: "family-new-list" }],
+    labeledSearch: true,
+    labeledCreate: true,
+    extra:
+      menu(
+        "Sort",
+        "sort",
+        sorting("family-", preferences.collectionSort),
+        "Sort",
+      ) + tool("family-mine", "My Tasks", "", "task", "", " labeled-tool"),
+  });
+}
+
+function familyHomeRows(data) {
+  return `<ul class="browse-rows">${sections
+    .map(([key, label]) =>
+      row({
+        title: C(label),
+        symbol: "folder",
+        action: "family-section",
+        id: key,
+        meta:
+          String(
+            data.records.filter((r) => sectionFor(r.type) === key).length,
+          ) +
+          " " +
+          H("items"),
+      }),
+    )
+    .join("")}</ul>`;
+}
+
+function familyBrowseContent(data, content, markRead, status = "") {
+  const notifications = data.notifications.filter((n) => !n.read);
+  return `<div class="browse-content">${notifications.length ? `<details class="browse-notifications"><summary>${H("In-app notifications")} (${notifications.length})</summary><ul class="browse-rows">${notifications.map((n) => row({ title: escapeMarkup(n.title), action: "family-notification", id: n.id, controls: markRead(n.id) })).join("")}</ul></details>` : ""}${content}<p id="family-save-status" class="connection" role="status">${status}</p>${data.pendingHistory ? "<p>Older task history is still being prepared in bounded batches.</p>" : ""}</div>`;
+}
+
+const escapeMarkup = (value) =>
+  String(value ?? "").replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        character
+      ],
+  );
+
+export function familyHomeContent(data, button) {
+  return (
+    `<div class="browse-shell">${familyBrowseContent(
+      data,
+      familyHomeRows(data),
+      (id) =>
+        button("family-read", H("Mark read"), `data-id="${escapeMarkup(id)}"`),
+    )}</div>` + button("my-account", H("My account"))
+  );
+}
+
 export function familyTools(ctx) {
   const {
     state,
@@ -202,8 +263,7 @@ export function familyTools(ctx) {
       content = renderRows(found);
     } else if (r && r.type !== "folder") content = renderRecord(r);
     else if (selected === "__mine__") content = renderTasks(true);
-    else if (!selectedSection)
-      content = `<ul class="browse-rows">${sections.map(([key, label]) => row({ title: C(label), symbol: "folder", action: "family-section", id: key, meta: String(d.records.filter((r) => sectionFor(r.type) === key).length) + " " + H("items") })).join("")}</ul>`;
+    else if (!selectedSection) content = familyHomeRows(d);
     else {
       const folder = r?.type === "folder" ? r.id : "";
       const rows = ordered(
@@ -220,8 +280,7 @@ export function familyTools(ctx) {
       );
       content = renderRows(rows);
     }
-    const notifications = d.notifications.filter((n) => !n.read);
-    return `<div class="browse-shell">${header}${showSearch ? searchBox("family", search, escape, "Search Lists, Tasks, Records and Chores") : ""}<div class="browse-content">${notifications.length ? `<details class="browse-notifications"><summary>${H("In-app notifications")} (${notifications.length})</summary><ul class="browse-rows">${notifications.map((n) => row({ title: escape(n.title), action: "family-notification", id: n.id, controls: action("family-read", "Mark read", n.id) })).join("")}</ul></details>` : ""}${content}<p id="family-save-status" class="connection" role="status">${escape(C(saveStatus))}</p>${d.pendingHistory ? "<p>Older task history is still being prepared in bounded batches.</p>" : ""}</div></div>`;
+    return `<div class="browse-shell">${header}${showSearch ? searchBox("family", search, escape, "Search Lists, Tasks, Records and Chores") : ""}${familyBrowseContent(d, content, (id) => action("family-read", "Mark read", id), escape(C(saveStatus)))}</div>`;
   }
   function recordControls(r) {
     if (!canManageRecord(r)) return "";

@@ -1,9 +1,4 @@
-import {
-  initialHomeHtml,
-  initialHomeTopbar,
-  initialHomeBottomBar,
-} from "./initial-home.js";
-import { initialThemeStyle } from "./initial-theme.js";
+import { initialDocument } from "./initial-home.js";
 import { validFirebaseHostSession } from "./firebase-host-admin.js";
 import { hostFirebaseEnabled, hostFirebaseConfig } from "./firebase-host.js";
 import { weddingImportAPI } from "./wedding-import.js";
@@ -72,10 +67,7 @@ import {
   renamePersonalHousehold,
   savePersonalProfile,
 } from "./personal-accounts.js";
-import {
-  eventIntroduction,
-  informationInput,
-} from "../public/event-information.js";
+import { informationInput } from "../public/event-information.js";
 import {
   platformAdministrator,
   verifyPlatformLogin,
@@ -104,7 +96,7 @@ import {
   claimPermanentCode,
   guestBrandHousehold,
 } from "./guest-identities.js";
-import { familyAPI, membersView } from "./family-api.js";
+import { familyAPI, familyWorkspace, membersView } from "./family-api.js";
 import { familyMember, manager } from "./family-permissions.js";
 import { featureAPI } from "./feature-api.js";
 import {
@@ -175,6 +167,8 @@ const files = new Map([
     "event-pages-ui.js",
     "wedding-import-ui.js",
     "event-information.js",
+    "first-paint.js",
+    "page-theme.js",
     "personal-ui.js",
     "passwordless-ui.js",
     "auth-bootstrap.js",
@@ -690,25 +684,13 @@ export function createHandler({
             }
           }
           if (initial) {
-            const event = initial.event || initial;
-            // Script data is inert. Escape HTML delimiters before placing JSON in raw text.
-            const payload = JSON.stringify(initial).replaceAll("<", "\\u003c");
-            // Event artwork is already carried in the snapshot and can be large.
-            const intro = eventIntroduction({ ...event.events[0], icon: "" });
-            const markup =
-              event.events[0].containerLayout === "single"
-                ? `<section class="panel event-content-shell" data-event-shell>${intro}</section>`
-                : intro;
-            content = content
-              .replace(
-                '<main id="main"><p>Getting things ready…</p></main>',
-                () => `<main id="main">${markup}</main>`,
-              )
-              .replace(
-                "</body>",
-                () =>
-                  `<script id="gather-public-event" type="application/json">${payload}</script></body>`,
-              );
+            const data = initial.event || initial;
+            content = initialDocument(content, initial, {
+              kind: "visitor",
+              session: { role: "visitor" },
+              data,
+              event: data.events[0],
+            });
           } else if (path === "/signin") {
             // Transfer hops need only the credential-capture module.
             content = content
@@ -1163,37 +1145,33 @@ export function createHandler({
             ? { host: hostSnapshot({ workspace: false }) }
             : {}),
         };
-        const household = snapshot.host?.household || null;
-        const events = snapshot.host?.events || [];
-        // Script data is inert, and '<' cannot close its HTML script element.
-        const payload = JSON.stringify(snapshot).replaceAll("<", "\\u003c");
-        const initialTop = snapshot.host
-          ? `<div id="top-navigation">${initialHomeTopbar()}</div>`
-          : "";
-        const initialBottom = snapshot.host ? initialHomeBottomBar() : "";
-        const content = (await readAsset("index.html"))
-          .toString()
-          .replace(/\s*<link\s[^>]*\bdata-gather-home\b[^>]*>/, "")
-          .replace(
-            "</head>",
-            () =>
-              `${snapshot.host ? initialThemeStyle(snapshot.host.ui.design, snapshot.host.defaults) : ""}</head>`,
-          )
-          .replace(
-            '<a class="brand" href="/">gather<span>＊</span></a>',
-            () =>
-              `<a class="brand" href="/" data-action="home">gather<span>＊</span></a>${initialTop}`,
-          )
-          .replace(
-            '<main id="main"><p>Getting things ready…</p></main>',
-            () =>
-              `<main id="main">${initialHomeHtml({ household, events })}</main>${initialBottom}`,
-          )
-          .replace(
-            "</body>",
-            () =>
-              `<script id="gather-public-event" type="application/json">${payload}</script></body>`,
+        if (current.role === "family")
+          snapshot.family = familyWorkspace(
+            store,
+            familyMember(store, session),
           );
+        const data =
+          snapshot.host ||
+          snapshot.family ||
+          (current.role === "admin" ? { ui } : null);
+        // A signed-in event link selects only from the authenticated household
+        // projection. The URL parameter by itself never grants admission.
+        const event = snapshot.host?.events.find(
+          (entry) => entry.id === url.searchParams.get("event"),
+        );
+        if (event) snapshot.hostEvent = event.id;
+        const content = initialDocument(
+          (await readAsset("index.html")).toString(),
+          snapshot,
+          data
+            ? {
+                kind: event ? "host-event" : current.role,
+                data,
+                session: current,
+                event,
+              }
+            : {},
+        );
         res.setHeader(
           "Server-Timing",
           `auth;dur=${(snapshotStarted - authStarted).toFixed(1)}, snapshot;dur=${(performance.now() - snapshotStarted).toFixed(1)}`,

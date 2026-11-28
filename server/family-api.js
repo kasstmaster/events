@@ -313,6 +313,52 @@ function fileInput(input) {
     size: bytes.length,
   };
 }
+export function familyWorkspace(store, member) {
+  const { household } = member;
+  store.limit("family-read:" + member.id, 120, 60000);
+  runFamilyReminders(store, Date.now(), household);
+  const records = store
+    .list("family-record", household)
+    .filter((r) => canRead(store, member, r));
+  const ids = new Set(records.map((r) => r.id));
+  const members = membersView(store, household);
+  return {
+    member,
+    ui: effectiveUI(store, store.household(household)),
+    defaults: effectiveUI(store).design,
+    timezone: store.household(household).timezone || "UTC",
+    household: store.publicHousehold(store.household(household).slug),
+    records: records.map((r) => safeRecord(store, member, r)),
+    items: store.list("family-item", household).filter((i) => ids.has(i.list)),
+    occurrences: store
+      .list("family-occurrence", household)
+      .filter(
+        (o) =>
+          ids.has(o.chore) &&
+          (member.role !== "kid" || o.assignees.includes(member.id)),
+      ),
+    members:
+      member.role === "kid"
+        ? members.filter((m) => m.id === member.id)
+        : manager(member)
+          ? members
+          : members.map(({ id, name, role }) => ({ id, name, role })),
+    preferences: store.get("family-preferences", member.id, household) || {},
+    notifications: store
+      .list("family-notification", household)
+      .filter((n) => notificationAllowed(store, member, n)),
+    storage: {
+      limit: 20000000,
+      fileLimit: 2000000,
+      used: storageUsed(store, household),
+    },
+    pendingHistory: store
+      .list("family-task-cursor", household)
+      .some((c) => c.pending),
+    connection: "poll",
+    pollSeconds: 3,
+  };
+}
 export async function familyAPI(ctx) {
   const { path, method, req, res, store, session, body, version, json, env } =
     ctx;
@@ -320,51 +366,7 @@ export async function familyAPI(ctx) {
   const member = familyMember(store, session),
     household = member.household;
   if (path === "/api/family" && method === "GET") {
-    store.limit("family-read:" + member.id, 120, 60000);
-    runFamilyReminders(store, Date.now(), household);
-    const records = store
-      .list("family-record", household)
-      .filter((r) => canRead(store, member, r));
-    const ids = new Set(records.map((r) => r.id));
-    const members = membersView(store, household);
-    json(res, {
-      member,
-      ui: effectiveUI(store, store.household(household)),
-      defaults: effectiveUI(store).design,
-      timezone: store.household(household).timezone || "UTC",
-      household: store.publicHousehold(store.household(household).slug),
-      records: records.map((r) => safeRecord(store, member, r)),
-      items: store
-        .list("family-item", household)
-        .filter((i) => ids.has(i.list)),
-      occurrences: store
-        .list("family-occurrence", household)
-        .filter(
-          (o) =>
-            ids.has(o.chore) &&
-            (member.role !== "kid" || o.assignees.includes(member.id)),
-        ),
-      members:
-        member.role === "kid"
-          ? members.filter((m) => m.id === member.id)
-          : manager(member)
-            ? members
-            : members.map(({ id, name, role }) => ({ id, name, role })),
-      preferences: store.get("family-preferences", member.id, household) || {},
-      notifications: store
-        .list("family-notification", household)
-        .filter((n) => notificationAllowed(store, member, n)),
-      storage: {
-        limit: 20000000,
-        fileLimit: 2000000,
-        used: storageUsed(store, household),
-      },
-      pendingHistory: store
-        .list("family-task-cursor", household)
-        .some((c) => c.pending),
-      connection: "poll",
-      pollSeconds: 3,
-    });
+    json(res, familyWorkspace(store, member));
     return true;
   }
   if (path === "/api/family/members" && method === "POST") {

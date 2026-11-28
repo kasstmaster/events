@@ -11,11 +11,18 @@ export const sectionFor = (type) =>
 export function toolContents(label, symbol) {
   return ui`${icon(symbol)}<span>${C(label)}</span>`;
 }
-export function tool(action, label, key = "", symbol = action, extra = "") {
-  return ui`<button type="button" class="nav-control" data-icon="${symbol}" data-action="${action}" data-id="${key}" aria-label="${H(label)}" ${extra}>${toolContents(label, symbol)}</button>`;
+export function tool(
+  action,
+  label,
+  key = "",
+  symbol = action,
+  extra = "",
+  className = "",
+) {
+  return ui`<button type="button" class="nav-control${className}" data-icon="${symbol}" data-action="${action}" data-id="${key}" aria-label="${H(label)}" ${extra}>${toolContents(label, symbol)}</button>`;
 }
-export function menu(label, symbol, items) {
-  return ui`<details class="browse-menu"><summary aria-label="${H(label)}">${icon(symbol)}</summary><div role="menu" aria-label="${H(label)} menu">${items.map((i) => ui`<button type="button" role="${i.checked === undefined ? "menuitem" : "menuitemradio"}" ${i.checked === undefined ? "" : `aria-checked="${i.checked}"`} data-action="${i.action}" data-id="${i.id || ""}">${C(i.label)}</button>`).join("")}</div></details>`;
+export function menu(label, symbol, items, visibleLabel = "") {
+  return ui`<details class="browse-menu${visibleLabel ? " toolbar-create" : ""}"><summary${visibleLabel ? ' class="nav-control labeled-tool"' : ""} aria-label="${H(label)}">${visibleLabel ? toolContents(visibleLabel, symbol) : icon(symbol)}</summary><div role="menu" aria-label="${H(label)} menu">${items.map((i) => ui`<button type="button" role="${i.checked === undefined ? "menuitem" : "menuitemradio"}" ${i.checked === undefined ? "" : `aria-checked="${i.checked}"`} data-action="${i.action}" data-id="${i.id || ""}">${C(i.label)}</button>`).join("")}</div></details>`;
 }
 export function sorting(prefix, mode = "manual") {
   return [
@@ -37,13 +44,15 @@ export function topbar({
   subtitle = "",
   back,
   search,
+  labeledSearch = false,
   plus = [],
+  labeledCreate = false,
   sort = [],
   extra = "",
 }) {
   const create =
     plus.find((item) => item.action !== "family-new-folder") || plus[0];
-  return ui`<div class="app-topbar no-print">${back ? tool("page-back", "Back", "", "back") : ""}<div class="browse-heading">${titleControl || (title ? ui`<h1>${title}</h1>` : "")}${subtitle ? ui`<p>${subtitle}</p>` : ""}</div><div class="browse-top-actions">${search ? tool(search, "Search", "", "search") : ""}${create ? tool(create.action, "Create", create.id || "", "plus") : ""}${sort.length ? menu("Sorting and options", "more", sort) : ""}${extra}</div></div>`;
+  return ui`<div class="app-topbar no-print">${back ? tool("page-back", "Back", "", "back") : ""}<div class="browse-heading">${titleControl || (title ? ui`<h1>${title}</h1>` : "")}${subtitle ? ui`<p>${subtitle}</p>` : ""}</div><div class="browse-top-actions">${search ? tool(search, "Search", "", "search", "", labeledSearch ? " labeled-tool" : "") : ""}${create ? tool(create.action, "Create", create.id || "", "plus", "", labeledCreate ? " labeled-tool" : "") : ""}${sort.length ? menu("Sorting and options", "more", sort) : ""}${extra}</div></div>`;
 }
 export function bottom(items, label = "Main navigation") {
   return ui`<nav class="toolbar no-print" aria-label="${H(label)}">${items.map((i) => tool(i.action, i.label, i.id || "", i.icon || i.action, i.current ? 'aria-current="page"' : "")).join("")}</nav>`;
