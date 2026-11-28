@@ -4,6 +4,9 @@ import { fail } from "./model.js";
 import { hostFirebaseConfig, hostFirebaseKey } from "./firebase-host.js";
 
 const tokenCache = new Map();
+// Share only concurrent OAuth access-token acquisition, never Firebase account
+// status or authorization decisions: each request still checks revocation.
+const tokenReads = new Map();
 const encode = (data) =>
   Buffer.from(JSON.stringify(data)).toString("base64url");
 
@@ -40,57 +43,79 @@ export async function firebaseHostAccountStatus(
   )
     fail(503, "Firebase host session verification is not configured.");
 
-  let bearer = tokenCache.get(config.projectId + ":" + serviceEmail);
+  const cacheKey = config.projectId + ":" + serviceEmail;
+  let bearer = tokenCache.get(cacheKey);
   if (!bearer || bearer.expires <= now() + 120000) {
-    const issued = Math.floor(now() / 1000);
-    const payload = [
-      encode({ alg: "RS256", typ: "JWT" }),
-      encode({
-        iss: serviceEmail,
-        scope: "https://www.googleapis.com/auth/identitytoolkit",
-        aud: "https://oauth2.googleapis.com/token",
-        iat: issued,
-        exp: issued + 3600,
-      }),
-    ].join(".");
-    let signature;
-    try {
-      signature = createSign("RSA-SHA256")
-        .update(payload)
-        .sign(secret.replace(/\\n/g, "\n"), "base64url");
-    } catch {
-      fail(503, "Firebase host session verification is unavailable.");
+    let pending = tokenReads.get(cacheKey);
+    if (!pending) {
+      // A cold instance can receive several signed-in requests together.
+      // Only the access-token exchange is shared; account status is always
+      // fetched separately for each request below.
+      pending = (async () => {
+        let bearer;
+        const issued = Math.floor(now() / 1000);
+        const payload = [
+          encode({ alg: "RS256", typ: "JWT" }),
+          encode({
+            iss: serviceEmail,
+            scope: "https://www.googleapis.com/auth/identitytoolkit",
+            aud: "https://oauth2.googleapis.com/token",
+            iat: issued,
+            exp: issued + 3600,
+          }),
+        ].join(".");
+        let signature;
+        try {
+          signature = createSign("RSA-SHA256")
+            .update(payload)
+            .sign(secret.replace(/\\n/g, "\n"), "base64url");
+        } catch {
+          fail(503, "Firebase host session verification is unavailable.");
+        }
+        let response;
+        try {
+          response = await fetcher("https://oauth2.googleapis.com/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+              assertion: payload + "." + signature,
+            }).toString(),
+            redirect: "error",
+            signal: AbortSignal.timeout(10000),
+          });
+        } catch {
+          fail(503, "Firebase host session verification is unavailable.");
+        }
+        if (!response.ok)
+          fail(503, "Firebase host session verification is unavailable.");
+        const result = await response.json();
+        if (
+          typeof result.access_token !== "string" ||
+          result.token_type?.toLowerCase() !== "bearer" ||
+          !Number.isFinite(result.expires_in) ||
+          result.expires_in < 120
+        )
+          fail(503, "Firebase host session verification is unavailable.");
+        bearer = {
+          token: result.access_token,
+          expires: now() + Math.min(result.expires_in, 3600) * 1000,
+        };
+        tokenCache.set(cacheKey, bearer);
+
+        return bearer;
+      })();
+      tokenReads.set(cacheKey, pending);
+      void pending.then(
+        () => {
+          if (tokenReads.get(cacheKey) === pending) tokenReads.delete(cacheKey);
+        },
+        () => {
+          if (tokenReads.get(cacheKey) === pending) tokenReads.delete(cacheKey);
+        },
+      );
     }
-    let response;
-    try {
-      response = await fetcher("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-          assertion: payload + "." + signature,
-        }).toString(),
-        redirect: "error",
-        signal: AbortSignal.timeout(10000),
-      });
-    } catch {
-      fail(503, "Firebase host session verification is unavailable.");
-    }
-    if (!response.ok)
-      fail(503, "Firebase host session verification is unavailable.");
-    const result = await response.json();
-    if (
-      typeof result.access_token !== "string" ||
-      result.token_type?.toLowerCase() !== "bearer" ||
-      !Number.isFinite(result.expires_in) ||
-      result.expires_in < 120
-    )
-      fail(503, "Firebase host session verification is unavailable.");
-    bearer = {
-      token: result.access_token,
-      expires: now() + Math.min(result.expires_in, 3600) * 1000,
-    };
-    tokenCache.set(config.projectId + ":" + serviceEmail, bearer);
+    bearer = await pending;
   }
   let response;
   try {

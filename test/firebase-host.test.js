@@ -216,6 +216,69 @@ test("Firebase host sessions are checked against active account status", async (
     true,
   );
 });
+test("cold concurrent host checks share only the service token, never account authorization", async () => {
+  const coldEnv = {
+    ...privileged,
+    HOST_FIREBASE_ADMIN_CLIENT_EMAIL:
+      "firebase-cold-start@gather-58a79.iam.gserviceaccount.com",
+  };
+  let tokenReads = 0;
+  let accountReads = 0;
+  let unblock;
+  const gate = new Promise((resolve) => {
+    unblock = resolve;
+  });
+  let disabled = false;
+  const coldFetcher = async (url) => {
+    if (url === "https://oauth2.googleapis.com/token") {
+      tokenReads++;
+      await gate;
+      return {
+        ok: true,
+        json: async () => ({
+          access_token: "cold-synthetic-only",
+          token_type: "Bearer",
+          expires_in: 3600,
+        }),
+      };
+    }
+    accountReads++;
+    assert.equal(
+      url,
+      "https://identitytoolkit.googleapis.com/v1/projects/gather-58a79/accounts:lookup",
+    );
+    return {
+      ok: true,
+      json: async () => ({
+        users: [
+          {
+            localId: identity.uid,
+            email: identity.email,
+            emailVerified: true,
+            disabled,
+            validSince: String(seconds - 3600),
+          },
+        ],
+      }),
+    };
+  };
+  const check = () =>
+    firebaseHostAccountStatus(coldEnv, identity, {
+      fetcher: coldFetcher,
+      now: () => now,
+    });
+  const first = check();
+  const second = check();
+  unblock();
+  assert.deepEqual(await Promise.all([first, second]), [true, true]);
+  assert.equal(tokenReads, 1, "only the OAuth token exchange is shared");
+  assert.equal(accountReads, 2, "every request rechecks Firebase status");
+  disabled = true;
+  assert.equal(await check(), false, "revocation is never cached");
+  assert.equal(tokenReads, 1);
+  assert.equal(accountReads, 3);
+});
+
 test("revoked, disabled, deleted, changed or unverified Firebase accounts cannot retain Gather sessions", async () => {
   for (const account of [
     { disabled: true },
