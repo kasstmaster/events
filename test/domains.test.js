@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { Store } from "../server/node-store.js";
 import {
   normalizeLabel,
@@ -276,6 +277,39 @@ test(
       } = await seedDomains(f),
       { request } = f;
     assert.equal(alpha.shareUrl, alphaOrigin + "/");
+    const defaults = await request("/api/admin/defaults", {
+      cookie: admin.cookie,
+    });
+    const wallpaper =
+      "data:image/png;base64," + Buffer.alloc(2100, 42).toString("base64");
+    assert.equal(
+      (
+        await request("/api/admin/defaults", {
+          cookie: admin.cookie,
+          method: "PUT",
+          version: defaults.body.version,
+          data: {
+            design: { backgroundImage: wallpaper },
+            copy: {},
+            layouts: {},
+          },
+        })
+      ).status,
+      200,
+    );
+    const hash = createHash("sha256").update(wallpaper).digest("base64url");
+    const media = "/api/display-media/platform/background/" + hash;
+    const asset = await request(media, { origin: alphaOrigin });
+    assert.equal(asset.status, 200);
+    assert.equal(asset.headers.get("cache-control"), "private, no-cache");
+    assert.equal(asset.headers.get("etag"), '"' + hash + '"');
+    const cached = await request(media, {
+      origin: alphaOrigin,
+      headers: { "If-None-Match": asset.headers.get("etag") },
+    });
+    assert.equal(cached.status, 304);
+    assert.equal(cached.headers.get("cache-control"), "private, no-cache");
+    assert.equal(cached.body, "");
     assert.equal((await request("/", { origin: alphaOrigin })).status, 200);
     for (const path of ["/app.js", "/style.css"])
       assert.equal((await request(path, { origin: alphaOrigin })).status, 200);

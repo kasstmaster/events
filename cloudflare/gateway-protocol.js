@@ -28,6 +28,12 @@ export function unavailable(status = 404) {
     },
   );
 }
+export const displayMediaRequest = (request) =>
+  request.method === "GET" &&
+  /^\/api\/display-media\/(?:host|event|entry|platform)\//.test(
+    new URL(request.url).pathname,
+  );
+const optionalHeaders = new Set(["x-events-routing-probe", "if-none-match"]);
 const forwardedHeaders = [
   "content-type",
   "if-match",
@@ -35,6 +41,7 @@ const forwardedHeaders = [
   "origin",
   "x-events-client-ip",
   "x-events-routing-probe",
+  "if-none-match",
 ];
 async function digest(request) {
   if (!request.body) return createHash("sha256").update("").digest("hex");
@@ -58,9 +65,7 @@ async function signature(request, secret) {
     request.headers.get("x-events-time"),
     request.headers.get("x-events-nonce"),
     forwardedHeaders
-      .filter(
-        (key) => key !== "x-events-routing-probe" || request.headers.has(key),
-      )
+      .filter((key) => !optionalHeaders.has(key) || request.headers.has(key))
       .map((key) => [key, request.headers.get(key)]),
     await digest(request),
   ]);
@@ -81,7 +86,13 @@ export async function forwardRequest(request, env) {
   // No caller-controlled destination, forwarding header or Authorization is propagated.
   const headers = new Headers();
   for (const key of forwardedHeaders)
-    if (key !== "x-events-client-ip" && request.headers.has(key))
+    if (
+      key !== "x-events-client-ip" &&
+      request.headers.has(key) &&
+      (key !== "if-none-match" ||
+        (displayMediaRequest(request) &&
+          /^"[A-Za-z0-9_-]{43}"$/.test(request.headers.get(key))))
+    )
       headers.set(key, request.headers.get(key));
   headers.set(
     "x-events-client-ip",

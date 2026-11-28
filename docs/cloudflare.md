@@ -95,3 +95,9 @@ See [shared feature operations](shared-editors.md) for the additive `household_d
 The additive family/member/shared-identity schema and rollout are documented in [family workspace operations](family-workspace.md). New private files remain in the existing SQLite Durable Object. Family scheduling reuses the existing alarm/cron; retain all current Worker configuration and `global_fetch_strictly_public`. No gateway deployment, extra storage binding, paid notification provider or external message is part of this release. Keep SMS and automatic/preview builds disabled.
 
 The reviewed source is the application merge on `feat/household-subdomains`; `main` has a separate manual release pin. Pin the actual reviewed merge only after validation, then use the existing events-only manual workflow with a fresh live version/recovery checkpoint. Never substitute the older main application tree or silently roll back to name-only authentication. Existing users must privately distribute permanent guest codes before guests can sign in again; no links, QR destinations or responses are replaced.
+
+Display images work through the existing gateway as separate, authorized responses.
+Preserving browser revalidation requires the compatible gateway build after the
+guarded events Worker release. An older gateway continues to serve images with
+its existing no-store policy. Use the separately approved gateway rollout for
+the cache behavior. There are no new bindings, data backfills or provider settings.

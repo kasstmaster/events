@@ -197,13 +197,14 @@ export function hostAuthUI({
       if (favicon.getAttribute("href") !== icon) favicon.href = icon;
       let manifest = document.querySelector('link[rel="manifest"]');
       if (hostPWA) {
+        const href = "/api/app/manifest?v=" + (household?.version || 0);
         if (!manifest) {
           manifest = document.createElement("link");
           manifest.rel = "manifest";
+          manifest.crossOrigin = "use-credentials";
+          manifest.href = href;
           document.head.append(manifest);
-        }
-        const href = "/api/app/manifest?v=" + (household?.version || 0);
-        if (manifest.getAttribute("href") !== href) manifest.href = href;
+        } else if (manifest.getAttribute("href") !== href) manifest.href = href;
         if (!previous)
           navigator.serviceWorker?.register("/gather-sw.js").catch(() => {});
       } else if (previous !== false) {

@@ -1,3 +1,9 @@
+import {
+  displayMedia,
+  mediaPath,
+  sendDisplayMedia,
+  visibleDesignMedia,
+} from "./display-media.js";
 import { initialDocument } from "./initial-home.js";
 import { earlyInteractionScript } from "./early-interaction-script.js";
 import { validFirebaseHostSession } from "./firebase-host-admin.js";
@@ -37,6 +43,7 @@ import {
 import { accountHome, handoffAPI } from "./auth-handoff.js";
 import {
   publicInvitationsAPI,
+  publicDisplayMedia,
   readPublicEvent,
   readLegacyInvitation,
   publicEventReference,
@@ -104,6 +111,7 @@ import {
   uiConfig,
   hostUI,
   effectiveUI,
+  safeEvent,
   webURL,
   contactPhone,
 } from "./features.js";
@@ -178,6 +186,8 @@ const files = new Map([
     "rsvp-cards-ui.js",
   ].map((file) => ["/" + file, [file, "text/javascript; charset=utf-8"]]),
 ]);
+const startupRevision = (snapshot) =>
+  createHash("sha256").update(JSON.stringify(snapshot)).digest("base64url");
 const date = (value) => {
   const result = text(value ?? "", 10);
   if (
@@ -556,6 +566,38 @@ export function createHandler({
           410,
           "Guest sign-in is retired. Open the event link shared by your host.",
         );
+      const platform = () => store.get("ui", "defaults", "platform");
+      const platformDisplay = () => displayMedia(platform(), "platform") ?? {};
+      const householdDisplay = (house) =>
+        displayMedia(house, "host/" + house.id + "/household");
+      if (publicDisplayMedia({ path, method, store, env, selected, req, res }))
+        return;
+      const displayAsset = path.startsWith(mediaPath)
+        ? path.slice(mediaPath.length).split("/")
+        : null;
+      if (displayAsset && ["platform", "entry"].includes(displayAsset[0])) {
+        const [scope, slot, hash] = displayAsset;
+        if (
+          method !== "GET" ||
+          displayAsset.length !== 3 ||
+          ![
+            "background",
+            "container",
+            "ui-background",
+            "ui-container",
+            "logo",
+          ].includes(slot) ||
+          (scope === "platform" &&
+            !["background", "container"].includes(slot)) ||
+          (scope === "entry" && !selected)
+        )
+          fail(404, "Image not found.");
+        const record =
+          scope === "platform" ? platform() : store.household(selected.id);
+        if (!visibleDesignMedia(record, slot)) fail(404, "Image not found.");
+        sendDisplayMedia(req, res, record, slot, hash);
+        return;
+      }
       const authConfiguration = () =>
         replacement
           ? {
@@ -617,14 +659,21 @@ export function createHandler({
             setupSecret.length <= 256,
         };
       };
-      const publicHousehold = (platformUI) =>
-        selected
-          ? {
-              ...selected,
-              defaults: platformUI.design,
-              ui: effectiveUI(store, store.household(selected.id)),
-            }
-          : null;
+      const publicHousehold = (platformUI, compact = false) => {
+        if (!selected) return null;
+        const entry = store.household(selected.id);
+        const house = compact ? displayMedia(entry, "entry") : entry;
+        return {
+          ...(compact ? displayMedia(selected, "entry") : selected),
+          defaults: platformUI.design,
+          ui: effectiveUI(
+            store,
+            house,
+            undefined,
+            compact ? platformDisplay() : undefined,
+          ),
+        };
+      };
       if (selected && (path === "/setup" || path === "/api/setup")) {
         if (method === "GET" && path === "/api/setup") {
           json(res, { required: false, enabled: false });
@@ -1036,6 +1085,26 @@ export function createHandler({
         if (session.role !== role)
           fail(403, "This action is not available to your account.");
       };
+      if (displayAsset) {
+        requireRole("host");
+        const [scope, household, source, ...rest] = displayAsset;
+        const [recordId, slot, hash] =
+          source === "event" ? rest : [null, ...rest];
+        if (
+          method !== "GET" ||
+          scope !== "host" ||
+          household !== session.household ||
+          !["household", "event"].includes(source) ||
+          rest.length !== (source === "event" ? 3 : 2)
+        )
+          fail(404, "Image not found.");
+        const record =
+          source === "event"
+            ? store.get("event", recordId, household)
+            : store.household(household);
+        sendDisplayMedia(req, res, record, slot, hash);
+        return;
+      }
       const owned = (kind, key) => {
         const item = store.get(kind, key, session.household);
         if (!item) fail(404, "Record not found.");
@@ -1049,7 +1118,13 @@ export function createHandler({
           10,
         );
       };
-      const hostWorkspace = (household) => ({
+      const templates = (compact) =>
+        store
+          .list("template", "platform")
+          .map((record) =>
+            compact ? { id: record.id, name: record.name } : record,
+          );
+      const hostWorkspace = (household, compact = false) => ({
         personal:
           session.role === "host"
             ? replacement
@@ -1063,12 +1138,14 @@ export function createHandler({
         savedMenu: store.list("menu-saved", household),
         tableTemplates: store.list("table-template", household),
         addresses: store.list("address", household),
-        templates: store.list("template", "platform"),
+        templates: templates(compact),
       });
-      const hostSnapshot = ({ workspace = true } = {}) => {
+      const hostSnapshot = ({ workspace = true, compact = false } = {}) => {
         requireRole("host");
         const household = session.household;
-        const house = store.household(household);
+        const rawHouse = store.household(household);
+        const house = compact ? householdDisplay(rawHouse) : rawHouse;
+        const defaults = compact ? platformDisplay() : platform();
         return {
           household: presentHousehold(house),
           receivedEvents:
@@ -1081,10 +1158,16 @@ export function createHandler({
                 ).events.filter((e) => e.invitingHousehold?.slug !== house.slug)
               : [],
           integrations: integrationCapabilities(store, env, household),
-          events: store.list("event", household).map((e) => {
-            const family = store.hostFamilyEvent(e, household);
+          events: store.list("event", household).map((record) => {
+            const family = store.hostFamilyEvent(record, household);
+            const e = compact
+              ? displayMedia(
+                  record,
+                  "host/" + household + "/event/" + record.id,
+                )
+              : record;
             return {
-              ...e,
+              ...(compact ? safeEvent(e) : e),
               ...(replacement
                 ? {
                     extraPages: eventPages(store, e, household).map(
@@ -1096,17 +1179,18 @@ export function createHandler({
               response: family.response,
               menu: family.menu,
               totals: family.totals,
-              ui: effectiveUI(store, house, e),
+              ui: effectiveUI(store, house, e, defaults ?? {}),
             };
           }),
-          ...(workspace ? hostWorkspace(household) : {}),
-          defaults: effectiveUI(store).design,
-          ui: effectiveUI(store, house),
+          ...(workspace ? hostWorkspace(household, compact) : {}),
+          defaults: effectiveUI(store, undefined, undefined, defaults ?? {})
+            .design,
+          ui: effectiveUI(store, house, undefined, defaults ?? {}),
         };
       };
-      const adminSnapshot = () => ({
+      const adminSnapshot = (compact = false) => ({
         approvals: store.all("SELECT email,created FROM approvals"),
-        templates: store.list("template", "platform"),
+        ...(!compact ? { templates: templates(false) } : {}),
         deletions: store.all(
           "SELECT household,email,label,phase,error FROM household_deletions",
         ),
@@ -1129,7 +1213,7 @@ export function createHandler({
           "SELECT email FROM users WHERE role='admin'",
         ),
       });
-      const sessionSnapshot = () =>
+      const sessionSnapshot = (compact = false) =>
         session
           ? {
               adminStepUpAvailable:
@@ -1166,7 +1250,12 @@ export function createHandler({
                     ? store.publicHousehold(
                         store.household(session.household).slug,
                       )
-                    : presentHousehold(store.household(session.household))
+                    : compact
+                      ? {
+                          id: session.household,
+                          slug: store.household(session.household).slug,
+                        }
+                      : presentHousehold(store.household(session.household))
                 : null,
             }
           : { role: null };
@@ -1176,20 +1265,22 @@ export function createHandler({
       // validation or /api/startup call after the browser downloads JavaScript.
       if (replacement && method === "GET" && path === "/") {
         const snapshotStarted = performance.now();
-        const current = sessionSnapshot();
-        const ui = effectiveUI(store);
+        const current = sessionSnapshot(true);
+        const ui = effectiveUI(store, undefined, undefined, platformDisplay());
         const snapshot = {
           setup: setupStatus(),
           config: authConfiguration(),
           session: current,
           ui,
-          household: publicHousehold(ui),
+          household: publicHousehold(ui, true),
           ...(current.role === "host"
-            ? { host: hostSnapshot({ workspace: false }) }
+            ? { host: hostSnapshot({ workspace: false, compact: true }) }
             : current.role === "admin" && current.platformAdmin
-              ? { admin: adminSnapshot() }
+              ? { admin: adminSnapshot(true) }
               : {}),
         };
+        if (current.role === "host")
+          snapshot.revision = startupRevision(snapshot);
         if (current.role === "family")
           snapshot.family = familyWorkspace(
             store,
@@ -1228,7 +1319,8 @@ export function createHandler({
       }
       if (startup) {
         const snapshotStarted = performance.now();
-        const current = sessionSnapshot();
+        const compact = replacement && url.searchParams.get("view") === "home";
+        const current = sessionSnapshot(compact);
         const home =
           replacement &&
           current.role === "host" &&
@@ -1240,16 +1332,22 @@ export function createHandler({
           json(res, { setup, config: authConfiguration(), home });
           return;
         }
-        const ui = effectiveUI(store);
+        const ui = effectiveUI(
+          store,
+          undefined,
+          undefined,
+          compact ? platformDisplay() : undefined,
+        );
         const payload = {
           setup,
           config: authConfiguration(),
           session: current,
           ui,
-          household: publicHousehold(ui),
+          household: publicHousehold(ui, compact),
           ...(current.role === "host" && !url.searchParams.has("sessionOnly")
             ? {
                 host: hostSnapshot({
+                  compact,
                   workspace:
                     !replacement ||
                     url.searchParams.get("view") !== "home" ||
@@ -1264,12 +1362,20 @@ export function createHandler({
           url.searchParams.get("view") === "home" &&
           !url.searchParams.has("sessionOnly")
         )
-          payload.admin = adminSnapshot();
+          payload.admin = adminSnapshot(compact);
+        if (compact && current.role === "host") {
+          payload.revision = startupRevision(payload);
+        }
         res.setHeader(
           "Server-Timing",
           `auth;dur=${(snapshotStarted - authStarted).toFixed(1)}, snapshot;dur=${(performance.now() - snapshotStarted).toFixed(1)}`,
         );
-        json(res, payload);
+        json(
+          res,
+          payload.revision && url.searchParams.get("seen") === payload.revision
+            ? { unchanged: true, revision: payload.revision }
+            : payload,
+        );
         return;
       }
       if (
@@ -2168,7 +2274,7 @@ export function createHandler({
       }
       if (path === "/api/host/workspace" && method === "GET") {
         requireRole("host");
-        json(res, hostWorkspace(session.household));
+        json(res, hostWorkspace(session.household, replacement));
         return;
       }
       if (path === "/api/host" && method === "GET") {

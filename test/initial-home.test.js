@@ -1,5 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { application } from "./helpers/application.js";
+import {
+  addressBookCheckpoint,
+  isolateAddressBook,
+} from "../server/recipient-isolation.js";
+import { publicEventReference } from "../server/public-invitations.js";
 import {
   initialHomeHtml,
   initialHomeTopbar,
@@ -98,4 +104,155 @@ test("image-based household themes retain data URL MIME separators", () => {
     markup,
     /--container-image:url\("data:image\/png;base64,BBBB"\)/,
   );
+});
+
+test("artwork-heavy snapshots use scoped display URLs and unchanged startup responses stay small", async (t) => {
+  const mode = {
+    HOST_ONLY_MODEL_ENABLED: "true",
+    HOST_ONLY_MODEL_ACTIVATION_APPROVED: "true",
+  };
+  const f = await application(t, mode);
+  const host = await f.host("ArtHost");
+  const other = await f.host("OtherArtHost");
+  const household = host.household.id;
+  isolateAddressBook(
+    f.store,
+    household,
+    addressBookCheckpoint(f.store, household).fingerprint,
+    "synthetic",
+  );
+  isolateAddressBook(
+    f.store,
+    other.household.id,
+    addressBookCheckpoint(f.store, other.household.id).fingerprint,
+    "synthetic",
+  );
+  const artwork = (fill) =>
+    "data:image/png;base64," + Buffer.alloc(1_500_000, fill).toString("base64");
+  const logo = artwork(1);
+  const house = f.store.household(household);
+  f.store.put(
+    "household",
+    household,
+    household,
+    {
+      ...house,
+      logo,
+      design: { backgroundImage: artwork(2), containerImage: artwork(3) },
+    },
+    house.version,
+  );
+  let event;
+  for (let i = 0; i < 3; i++) {
+    const record = await f.event(host, [], { title: "Gathering " + i });
+    event = f.store.put(
+      "event",
+      record.id,
+      household,
+      {
+        ...record,
+        icon: artwork(4 + i),
+        design: { backgroundImage: artwork(9) },
+      },
+      record.version,
+    );
+  }
+  for (let i = 0; i < 8; i++)
+    f.store.put("template", "artwork-" + i, "platform", {
+      name: "Artwork " + i,
+      artwork: artwork(20 + i),
+    });
+  const ref = publicEventReference(f.store, household, event.id);
+  const startup = "/api/startup?view=home";
+  for (const path of [
+    "/",
+    "/?event=" + event.id,
+    "/event/" + ref,
+    startup,
+    startup + "&workspace=1",
+  ]) {
+    const result = await f.request(path, { cookie: host.cookie });
+    const body =
+      typeof result.body === "string"
+        ? result.body
+        : JSON.stringify(result.body);
+    assert.equal(result.status, 200, path);
+    assert.ok(Buffer.byteLength(body) < 100_000, path);
+    assert.doesNotMatch(body, /data:image\//);
+  }
+  const boot = (await f.request(startup, { cookie: host.cookie })).body;
+  assert.equal(boot.host.templates, undefined);
+  assert.equal(boot.host.guests, undefined);
+  assert.equal(boot.host.events.length, 3);
+  const privateLogo = boot.host.household.logo;
+  assert.match(privateLogo, /^\/api\/display-media\/host\//);
+  const full = await fetch(f.url + privateLogo, {
+    headers: { Cookie: host.cookie },
+  });
+  assert.equal(full.status, 200);
+  assert.equal(full.headers.get("content-type"), "image/png");
+  assert.deepEqual(
+    Buffer.from(await full.arrayBuffer()),
+    Buffer.alloc(1_500_000, 1),
+  );
+  const conditional = { "If-None-Match": full.headers.get("etag") };
+  assert.equal(
+    (
+      await f.request(privateLogo, {
+        cookie: host.cookie,
+        headers: conditional,
+      })
+    ).status,
+    304,
+  );
+  assert.equal(
+    (await f.request(privateLogo, { headers: conditional })).status,
+    401,
+  );
+  assert.equal(
+    (
+      await f.request(privateLogo, {
+        cookie: other.cookie,
+        headers: conditional,
+      })
+    ).status,
+    404,
+  );
+  const publicBoot = (await f.request("/api/public/events/" + ref)).body;
+  const publicArtwork = publicBoot.events[0].icon;
+  assert.match(publicArtwork, /^\/api\/display-media\/event\//);
+  const publicImage = await fetch(f.url + publicArtwork);
+  assert.deepEqual(
+    Buffer.from(await publicImage.arrayBuffer()),
+    Buffer.alloc(1_500_000, 6),
+  );
+  const seen = startup + "&seen=" + boot.revision;
+  assert.deepEqual((await f.request(seen, { cookie: host.cookie })).body, {
+    unchanged: true,
+    revision: boot.revision,
+  });
+  const raw = f.store.get("event", event.id, household);
+  f.store.put(
+    "event",
+    raw.id,
+    household,
+    { ...raw, title: "Changed" },
+    raw.version,
+  );
+  const changed = (await f.request(seen, { cookie: host.cookie })).body;
+  assert.notEqual(changed.revision, boot.revision);
+  assert.equal(
+    changed.host.events.find((e) => e.id === raw.id).title,
+    "Changed",
+  );
+  assert.equal(f.store.household(household).logo, logo);
+  const link = f.store.get("public-event", ref, "platform");
+  f.store.put(
+    "public-event",
+    ref,
+    "platform",
+    { ...link, revoked: true },
+    link.version,
+  );
+  assert.equal((await f.request(publicArtwork)).status, 404);
 });

@@ -1133,7 +1133,8 @@ test("initial household event and Home controls follow the authenticated role", 
     JSON.parse(
       document.match(/id="gather-public-event"[^>]*>([^<]*)<\/script>/)[1],
     );
-  assert.deepEqual(embedded(admin.body).admin, adminAPI.body);
+  const { templates: _templates, ...compactAdmin } = adminAPI.body;
+  assert.deepEqual(embedded(admin.body).admin, compactAdmin);
   for (const [cookie, query] of [
     [f.admin, "?view=home"],
     [f.admin, "?view=home&sessionOnly=1"],
@@ -1144,7 +1145,7 @@ test("initial household event and Home controls follow the authenticated role", 
     assert.equal(startup.status, 200);
     assert.deepEqual(
       startup.body.admin,
-      cookie === f.admin && query === "?view=home" ? adminAPI.body : undefined,
+      cookie === f.admin && query === "?view=home" ? compactAdmin : undefined,
     );
   }
   assert.equal(embedded((await f.request("/")).body).admin, undefined);
