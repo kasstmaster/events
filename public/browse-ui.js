@@ -163,7 +163,7 @@ export function editorToolbar({
 
 export function addressBookDescription(canInvite = false, independent = false) {
   if (independent)
-    return ui`<p class="small" data-address-book-description>${C("Your Address Book contains contacts maintained only for this household. Other hosts have separate Address Books.")} ${canInvite ? C("Select contacts to invite or uninvite them from your events.") : ""}</p>`;
+    return ui`<p class="small" data-address-book-description>${canInvite ? C("Select contacts to invite or uninvite them from your events.") : C("Your Address Book contains contacts maintained only for this household. Other hosts have separate Address Books.")}</p>`;
   return ui`<p class="small" data-address-book-description>${C("Your Address Book contains contacts and household information shared with you.")} ${canInvite ? C("Select contacts to invite or uninvite them from your events.") : C("Shared information updates according to each household’s sharing choices.")}</p>`;
 }
 export function addressBookHome(
