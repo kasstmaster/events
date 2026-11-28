@@ -23,6 +23,8 @@ const paths = {
   hide: "M3 3l18 18M2 12c5-8 15-8 20 0-2 3-4 5-7 6M9 6c-3 1-5 3-7 6m7-2a4 4 0 0 0 5 5",
 
   home: "M3 10 12 3l9 7v10h-6v-6H9v6H3Z",
+  lock: "M5 10h14v11H5ZM8 10V6a4 4 0 0 1 8 0v4m-4 5v2",
+  bell: "M4 17h16l-2-3V9a6 6 0 1 0-12 0v5Zm6 3a2 2 0 0 0 4 0",
   logout: "M9 4H4v16h5m5-16 7 8-7 8m-5-8h12",
   print: "M6 9V3h12v6M6 17H3V9h18v8h-3M6 14h12v7H6Z",
   rsvp: "M4 5h16v16H4ZM8 2v6m8-6v6M8 14l3 3 5-6",

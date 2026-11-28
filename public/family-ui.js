@@ -155,7 +155,27 @@ export function familyTools(ctx) {
       data: { ...data().preferences, ...extra },
     });
   }
+  function notificationFields() {
+    const p = data().preferences;
+    return ui`${field(H("IANA timezone"), "timezone", p.timezone || data().timezone || "UTC")}<label class="check"><input name="notifications" type="checkbox" ${p.notifications !== false ? "checked" : ""}>Enable in-app task reminders</label>${field(H("Quiet hours start · 0–23"), "quietStart", p.quietStart || 0, "number", 'min="0" max="23"')}${field(H("Quiet hours end · 0–23"), "quietEnd", p.quietEnd || 0, "number", 'min="0" max="23"')}${
+      manager()
+        ? select(
+            H("Settings for"),
+            "member",
+            [
+              [data().member.id, C("Myself")],
+              ...data()
+                .members.filter((m) => m.role === "kid")
+                .map((m) => [m.id, m.name]),
+            ],
+            data().member.id,
+          )
+        : ""
+    }<p>These settings apply to in-app notifications. Browser push, email and SMS are not enabled.</p>`;
+  }
   function renderWorkspace() {
+    if (selected === "__settings__" && ctx.inlineSettings())
+      return ui`${topbar({ title: C("Settings"), back: "family-back" })}<ul class="browse-rows">${ctx.appearanceSettings()}${ctx.eventSettings()}${row({ title: "Notifications Settings", action: "family-preferences", symbol: "bell" })}${row({ title: "Change Password", action: "host-account", symbol: "lock" })}${["owner", "administrator"].includes(state.session.householdRole ?? data()?.member?.role) ? row({ title: "Family Members", action: "family-members", symbol: "contacts" }) : ""}${state.session.adminStepUpAvailable || state.session.platformAdmin ? row({ title: "Administrator Tools", action: "passwordless-admin-open", symbol: "settings" }) : ""}</ul><ul class="browse-rows settings-signout">${row({ title: "Sign Out", action: "logout", symbol: "logout" })}${state.session.passwordless ? row({ title: "Sign Out of Other Devices", action: "passwordless-revoke", symbol: "logout" }) : ""}</ul>${ctx.householdDetails()}`;
     if (selected === "__settings__")
       return ui`${topbar({ title: C("Settings"), back: "family-back" })}<ul class="browse-rows">${state.hostOnly ? ctx.appearanceSettings?.() || "" : ""}${ctx.eventSettings?.() || ""}${row({ title: C("Notification settings"), action: "family-preferences", symbol: "settings" })}${row({ title: C("Change Password"), action: state.hostOnly && state.session.role === "host" ? "host-account" : "family-password", symbol: "edit" })}${["owner", "administrator"].includes(state.session.householdRole ?? data()?.member?.role) ? row({ title: C("Family Members"), action: "family-members", symbol: "contacts" }) : ""}${state.hostOnly ? "" : ctx.appearanceSettings?.() || ""}${row({ title: C("Sign Out"), action: "logout", symbol: "logout" })}</ul>${ctx.householdDetails?.() || ""}`;
     const d = data(),
@@ -727,6 +747,8 @@ export function familyTools(ctx) {
       }
     },
     refresh,
+    notificationSettings: () =>
+      ui`<form data-form="family-preferences">${notificationFields()}<p class="form-error" role="alert"></p><button>${C("Save")}</button></form>`,
     saving,
     async action(actionName, target) {
       if (!actionName.startsWith("family-")) return false;
@@ -1038,25 +1060,13 @@ export function familyTools(ctx) {
           );
           return true;
         }
-        modal(
-          C("Notification settings"),
-          ui`${field(H("IANA timezone"), "timezone", p.timezone || data().timezone || "UTC")}<label class="check"><input name="notifications" type="checkbox" ${p.notifications !== false ? "checked" : ""}>Enable in-app task reminders</label>${field(H("Quiet hours start · 0–23"), "quietStart", p.quietStart || 0, "number", 'min="0" max="23"')}${field(H("Quiet hours end · 0–23"), "quietEnd", p.quietEnd || 0, "number", 'min="0" max="23"')}${
-            manager()
-              ? select(
-                  H("Settings for"),
-                  "member",
-                  [
-                    [data().member.id, C("Myself")],
-                    ...data()
-                      .members.filter((m) => m.role === "kid")
-                      .map((m) => [m.id, m.name]),
-                  ],
-                  data().member.id,
-                )
-              : ""
-          }<p>These settings apply to in-app notifications. Browser push, email and SMS are not enabled.</p>`,
-          "family-preferences",
-        );
+        if (ctx.inlineSettings()) ctx.selectSettingsSection("notifications");
+        else
+          modal(
+            C("Notification settings"),
+            notificationFields(),
+            "family-preferences",
+          );
       } else if (actionName === "family-notification") {
         const n = data().notifications.find((n) => n.id === key),
           o = data().occurrences.find((o) => o.id === n.occurrence);
