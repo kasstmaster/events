@@ -142,7 +142,7 @@ function network(
       url.pathname === "/"
         ? '<script src="/app.js"></script>'
         : url.pathname === "/app.js"
-          ? "suggestLabel"
+          ? "/api/host/workspace new-event"
           : url.pathname === "/household-address.js"
             ? "export function suggestLabel"
             : url.pathname.endsWith(".js")
