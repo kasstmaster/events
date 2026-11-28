@@ -109,6 +109,22 @@ try {
     await page.locator('[name="email"]').fill("host@example.test");
     await page.locator('[name="password"]').fill(password);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    assert.equal(
+      await page
+        .locator('[data-home-card="contacts"] [data-address-book-description]')
+        .textContent(),
+      "Select contacts to invite or uninvite them from your events.",
+    );
+    if (width === 390) {
+      await page.locator('[data-home-card="contacts"] button').click();
+      assert.equal(
+        await page
+          .locator(".address-book-panel [data-address-book-description]")
+          .textContent(),
+        "Select contacts to invite or uninvite them from your events.",
+      );
+      await page.locator('.toolbar [data-action="home"]').click();
+    }
     const archive = page.locator(".archived-events");
     await archive.locator("summary").waitFor();
     const titleStyle = (el) => {
