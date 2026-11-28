@@ -20,6 +20,7 @@ import {
   selectEvidence,
   downloadEvidence,
   loadEvidence,
+  VERIFIED_RECOVERY,
 } from "./select-release-evidence.mjs";
 import { validateForward } from "./automatic-events-release.mjs";
 const COMMIT = "39bf57fd6b3f1a3e11176d1aeadbbdc31aa31138",
@@ -312,6 +313,83 @@ test("trusted evidence selection requires successful release job, exact owner me
     await assert.rejects(selectEvidence(g.read));
   }
 });
+test("one-time recovery requires the pinned successful run, artifact and owner approval", async () => {
+  const fixture = () => {
+    const base = ghFixture();
+    base.pr.merge_commit_sha = VERIFIED_RECOVERY.prior_release;
+    const recoveredRun = {
+      id: VERIFIED_RECOVERY.run_id,
+      run_attempt: VERIFIED_RECOVERY.run_attempt,
+      status: "completed",
+      conclusion: "success",
+      event: "pull_request",
+      path: ".github/workflows/recover-published-release-read-only.yml",
+      head_sha: VERIFIED_RECOVERY.head_sha,
+      head_branch: "fix/gather-trusted-release-recovery",
+      actor: { login: "kasstmaster" },
+      triggering_actor: { login: "kasstmaster" },
+      head_repository: { full_name: "kasstmaster/events" },
+      pull_requests: [
+        { number: 116, head: { sha: VERIFIED_RECOVERY.head_sha } },
+      ],
+    };
+    const published = {
+      number: 114,
+      merged: true,
+      merged_by: { login: "kasstmaster" },
+      base: { ref: "main", repo: { full_name: "kasstmaster/events" } },
+      head: {
+        sha: "9348eb030e63da050c0fd904c15b2b17dec81593",
+        repo: { full_name: "kasstmaster/events" },
+      },
+      merge_commit_sha: VERIFIED_RECOVERY.release,
+    };
+    const approved = structuredClone(published);
+    approved.number = 116;
+    approved.head.sha = "f".repeat(40);
+    approved.merge_commit_sha = "e".repeat(40);
+    const artifact = {
+      id: VERIFIED_RECOVERY.artifact_id,
+      name: "events-read-only-reverification-46089585621-1",
+      digest: VERIFIED_RECOVERY.artifact_digest,
+      expired: false,
+    };
+    const read = async (path) => {
+      if (path === `/actions/runs/${VERIFIED_RECOVERY.run_id}`)
+        return recoveredRun;
+      if (path === "/pulls/114") return published;
+      if (path === "/pulls/116") return approved;
+      if (
+        path ===
+        `/actions/runs/${VERIFIED_RECOVERY.run_id}/artifacts?per_page=100`
+      )
+        return { artifacts: [artifact] };
+      return base.read(path);
+    };
+    return { base, recoveredRun, published, approved, artifact, read };
+  };
+  const verified = fixture();
+  const selected = await selectEvidence(verified.read);
+  assert.equal(selected.recovered, true);
+  assert.equal(selected.release, VERIFIED_RECOVERY.release);
+  assert.equal(selected.artifact_id, VERIFIED_RECOVERY.artifact_id);
+  for (const mutate of [
+    (f) => (f.recoveredRun.conclusion = "failure"),
+    (f) => (f.recoveredRun.actor.login = "other"),
+    (f) => (f.recoveredRun.head_sha = "0".repeat(40)),
+    (f) => (f.recoveredRun.path = ".github/workflows/other.yml"),
+    (f) => (f.approved.merged = false),
+    (f) => (f.approved.merged_by.login = "other"),
+    (f) => (f.published.merge_commit_sha = "0".repeat(40)),
+    (f) => (f.artifact.digest = "sha256:" + "0".repeat(64)),
+    (f) => (f.artifact.expired = true),
+  ]) {
+    const attempt = fixture();
+    mutate(attempt);
+    await assert.rejects(selectEvidence(attempt.read));
+  }
+});
+
 test("configuration allowlist retains ordinary public Firebase updates while keeping both activation flags false", () => {
   const raw = {
     bindings: Object.entries({
